@@ -4,7 +4,7 @@ description = "Edge inference coding IDE — AI that runs where you are"
 version = "0.1.0"
 schema_version = 1
 authors = ["Taylor William Buley"]
-repository = "https://github.com/affectively-ai/zedge"
+repository = "https://github.com/forkjoin-ai/zedge"
 
 [slash_commands.zedge-status]
 description = "Show inference chain health, compute pool stats, and token balance"
