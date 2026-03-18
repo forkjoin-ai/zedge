@@ -15,7 +15,7 @@
  */
 
 import { DashRelay } from '@dashrelay/client';
-import { QDoc, QMap, QArray, QText } from '@affectively/gnosis';
+import { QDoc, QMap, QArray, QText } from '@a0n/gnosis';
 
 // ---------------------------------------------------------------------------
 // Types

@@ -6,7 +6,7 @@
  */
 import { createHash } from 'node:crypto';
 import { encryptAes256Gcm, decryptAes256Gcm } from './crypto-utils';
-import { QDoc, QMap, QArray, QText } from '@affectively/gnosis';
+import { QDoc, QMap, QArray, QText } from '@a0n/gnosis';
 
 export interface CrdtEncryptionConfig {
   passphrase: string;
