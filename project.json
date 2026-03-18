@@ -1,40 +1,44 @@
 {
   "name": "zedge",
-  "$schema": "../../node_modules/nx/schemas/project-schema.json",
   "projectType": "library",
   "sourceRoot": "open-source/zedge/src",
-  "tags": ["scope:open-source", "type:lib"],
+  "tags": [
+    "scope:open-source",
+    "type:lib"
+  ],
   "targets": {
     "build": {
-      "executor": "nx:run-commands",
+      "executor": "a0:run-commands",
       "options": {
         "command": "echo 'zedge: Rust extension built via cargo, companion via bun'"
       }
     },
     "build:companion": {
-      "executor": "nx:run-commands",
+      "executor": "a0:run-commands",
       "options": {
         "command": "bun build companion/src/index.ts --outdir companion/dist --target bun --minify",
         "cwd": "open-source/zedge"
       }
     },
     "test": {
-      "executor": "nx:run-commands",
-      "outputs": ["{workspaceRoot}/coverage/{projectRoot}"],
+      "executor": "a0:run-commands",
+      "outputs": [
+        "{workspaceRoot}/coverage/{projectRoot}"
+      ],
       "options": {
         "command": "bun test",
         "cwd": "{workspaceRoot}/open-source/zedge"
       }
     },
     "typecheck": {
-      "executor": "nx:run-commands",
+      "executor": "a0:run-commands",
       "options": {
         "command": "../../node_modules/.bin/tsc -p companion/tsconfig.json --noEmit",
         "cwd": "open-source/zedge"
       }
     },
     "lint": {
-      "executor": "nx:run-commands",
+      "executor": "a0:run-commands",
       "options": {
         "command": "bunx eslint companion/src scripts --ext .ts",
         "cwd": "open-source/zedge"
