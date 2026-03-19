@@ -7,6 +7,7 @@
  */
 
 import { BettyCompiler, type Diagnostic, type GraphAST } from '../../../gnosis/src/betty/compiler';
+import { checkTypeScriptWithGnosis } from '../../../gnosis/src/ts-check';
 
 type JsonRpcId = string | number | null;
 
@@ -214,7 +215,48 @@ function sendError(
   });
 }
 
+function isTypeScriptUri(uri: string): boolean {
+  return uri.endsWith('.ts') || uri.endsWith('.tsx');
+}
+
+async function publishTypeScriptDiagnostics(uri: string, text: string): Promise<void> {
+  try {
+    const filePath = uri.startsWith('file://') ? uri.slice(7) : uri;
+    const result = await checkTypeScriptWithGnosis(text, filePath);
+    const diagnostics: LspDiagnostic[] = result.diagnostics.map((d) => ({
+      range: {
+        start: { line: d.line - 1, character: d.column - 1 },
+        end: {
+          line: (d.endLine ?? d.line) - 1,
+          character: (d.endColumn ?? d.column) - 1,
+        },
+      },
+      severity: d.level === 'error' ? 1 : d.level === 'warning' ? 2 : 3,
+      message: `[${d.ruleId}] ${d.message}`,
+      source: 'gnosis-ts',
+    }));
+
+    send({
+      jsonrpc: '2.0',
+      method: 'textDocument/publishDiagnostics',
+      params: { uri, diagnostics },
+    });
+  } catch {
+    // TS files that can't be bridged produce no diagnostics
+    send({
+      jsonrpc: '2.0',
+      method: 'textDocument/publishDiagnostics',
+      params: { uri, diagnostics: [] },
+    });
+  }
+}
+
 function publishDiagnostics(uri: string, text: string): void {
+  if (isTypeScriptUri(uri)) {
+    void publishTypeScriptDiagnostics(uri, text);
+    return;
+  }
+
   const parseResult = compiler.parse(text);
   const diagnostics = parseResult.diagnostics.map((diagnostic) =>
     toLspDiagnostic(diagnostic, text)
@@ -455,6 +497,28 @@ async function dispatchRequest(req: JsonRpcRequest): Promise<unknown> {
           value: help,
         },
       };
+    }
+
+    case 'gnosis/getTopologyGraph': {
+      const graphUri = getUriFromParams(req.params);
+      if (!graphUri) {
+        return { nodes: [], edges: [], metrics: null };
+      }
+      const graphText = documents.get(graphUri) ?? '';
+      if (!graphText || !isTypeScriptUri(graphUri)) {
+        return { nodes: [], edges: [], metrics: null };
+      }
+      try {
+        const graphFilePath = graphUri.startsWith('file://') ? graphUri.slice(7) : graphUri;
+        const graphResult = await checkTypeScriptWithGnosis(graphText, graphFilePath);
+        return {
+          nodes: graphResult.topology.nodes,
+          edges: graphResult.topology.edges,
+          metrics: graphResult.metrics,
+        };
+      } catch {
+        return { nodes: [], edges: [], metrics: null };
+      }
     }
 
     case 'shutdown':

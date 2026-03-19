@@ -51,6 +51,42 @@ import {
   COMPOSITION_PRESETS,
 } from './superinference';
 import { BettyCompiler } from '../../../gnosis/src/betty/compiler';
+import { checkTypeScriptWithGnosis } from '../../../gnosis/src/ts-check';
+import { GnosisFileWatcher, type WatcherEvent } from '../../../gnosis/src/ts-check-watcher';
+import { GnosisIncrementalChecker } from '../../../gnosis/src/ts-check-incremental';
+import { generateAutofixSuggestions } from '../../../gnosis/src/ts-check-autofix';
+
+// Global file watcher for live topology updates
+const gnosisWatcher = new GnosisFileWatcher({ debounceMs: 500, enableAutofix: true });
+const gnosisIncrementalChecker = new GnosisIncrementalChecker();
+const gnosisSseClients = new Set<ReadableStreamDefaultController>();
+
+gnosisWatcher.addListener((event: WatcherEvent) => {
+  if (event.type === 'check-complete' && event.result) {
+    const payload = JSON.stringify({
+      type: 'topology-update',
+      filePath: event.filePath,
+      timestamp: event.timestamp,
+      nodes: event.result.topology.nodes,
+      edges: event.result.topology.edges,
+      metrics: event.result.metrics,
+      diagnostics: event.result.diagnostics,
+      autofixes: event.autofixes ?? [],
+    });
+    const encoder = new TextEncoder();
+    for (const controller of gnosisSseClients) {
+      try {
+        controller.enqueue(encoder.encode(`data: ${payload}\n\n`));
+      } catch {
+        gnosisSseClients.delete(controller);
+      }
+    }
+  }
+});
+
+// Start watching the workspace
+const workspaceRoot = process.env.AEON_ROOT || process.cwd();
+void gnosisWatcher.watchDirectory(workspaceRoot);
 import type { VfsBridge } from './vfs-bridge';
 import type { CollabBridge, CollabPresenceUpdate } from './collab-bridge';
 import type { KernelBridge } from './kernel-bridge';
@@ -499,6 +535,138 @@ async function handleRequest(req: Request): Promise<Response> {
         500
       );
     }
+  }
+
+  // ==================== Gnosis TS Check ====================
+
+  if (path === '/gnosis/ts-check' && req.method === 'POST') {
+    try {
+      const body = (await req.json()) as {
+        sourceText?: string;
+        filePath?: string;
+        maxBuley?: number;
+        target?: string;
+        exportName?: string;
+      };
+      if (!body.sourceText)
+        return jsonResponse({ error: 'sourceText is required' }, 400);
+      const filePath = body.filePath ?? 'inline.ts';
+      const result = await checkTypeScriptWithGnosis(body.sourceText, filePath, {
+        maxBuley: body.maxBuley,
+        target: body.target as any,
+        exportName: body.exportName,
+      });
+      return jsonResponse(result);
+    } catch (err) {
+      return jsonResponse(
+        {
+          error: err instanceof Error ? err.message : 'TS check failed',
+          ok: true,
+          diagnostics: [],
+          skipped: true,
+        },
+        200
+      );
+    }
+  }
+
+  if (path === '/gnosis/topology-graph' && req.method === 'POST') {
+    try {
+      const body = (await req.json()) as {
+        sourceText?: string;
+        filePath?: string;
+        exportName?: string;
+      };
+      if (!body.sourceText)
+        return jsonResponse({ error: 'sourceText is required' }, 400);
+      const filePath = body.filePath ?? 'inline.ts';
+      const result = await checkTypeScriptWithGnosis(body.sourceText, filePath, {
+        exportName: body.exportName,
+      });
+      return jsonResponse({
+        nodes: result.topology.nodes,
+        edges: result.topology.edges,
+        metrics: result.metrics,
+      });
+    } catch (err) {
+      return jsonResponse(
+        {
+          error: err instanceof Error ? err.message : 'Topology graph failed',
+          nodes: [],
+          edges: [],
+          metrics: null,
+        },
+        200
+      );
+    }
+  }
+
+  if (path === '/gnosis/autofix' && req.method === 'POST') {
+    try {
+      const body = (await req.json()) as {
+        sourceText?: string;
+        filePath?: string;
+      };
+      if (!body.sourceText)
+        return jsonResponse({ error: 'sourceText is required' }, 400);
+      const filePath = body.filePath ?? 'inline.ts';
+      const result = await checkTypeScriptWithGnosis(body.sourceText, filePath);
+      const suggestions = generateAutofixSuggestions(result, body.sourceText);
+      return jsonResponse({
+        diagnostics: result.diagnostics,
+        suggestions,
+        metrics: result.metrics,
+      });
+    } catch (err) {
+      return jsonResponse(
+        { error: err instanceof Error ? err.message : 'Autofix failed', suggestions: [] },
+        200
+      );
+    }
+  }
+
+  if (path === '/gnosis/viz' && req.method === 'GET') {
+    const { default: serveGnosisViz } = await import('./gnosis-viz');
+    return serveGnosisViz(url);
+  }
+
+  if (path === '/gnosis/viz/events' && req.method === 'GET') {
+    // SSE endpoint for live topology updates via file watcher
+    const stream = new ReadableStream({
+      start(controller) {
+        const encoder = new TextEncoder();
+        controller.enqueue(encoder.encode('data: {"type":"connected"}\n\n'));
+        gnosisSseClients.add(controller);
+
+        const interval = setInterval(() => {
+          try {
+            controller.enqueue(encoder.encode(': heartbeat\n\n'));
+          } catch {
+            clearInterval(interval);
+            gnosisSseClients.delete(controller);
+          }
+        }, 15_000);
+      },
+      cancel() {
+        // Client disconnected -- cleanup handled by error in enqueue
+      },
+    });
+    return new Response(stream, {
+      headers: {
+        'Content-Type': 'text/event-stream',
+        'Cache-Control': 'no-cache',
+        Connection: 'keep-alive',
+        'Access-Control-Allow-Origin': '*',
+      },
+    });
+  }
+
+  if (path === '/gnosis/watcher/stats' && req.method === 'GET') {
+    return jsonResponse({
+      watcher: gnosisWatcher.getStats(),
+      checker: gnosisIncrementalChecker.getStats(),
+      sseClients: gnosisSseClients.size,
+    });
   }
 
   if (path === '/edgework/exec' && req.method === 'POST') {

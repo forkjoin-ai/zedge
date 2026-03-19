@@ -33,6 +33,7 @@ impl zed::Extension for ZedgeExtension {
             "zedge-scaffold" => slash_commands::run_scaffold(&_args),
             "zedge-gnosis" => slash_commands::run_gnosis(&_args),
             "zedge-gnosis-run" => slash_commands::run_gnosis_run(worktree),
+            "zedge-gnosis-viz" => slash_commands::run_gnosis_viz(worktree),
             "zedge-test" => slash_commands::run_test(worktree),
             "zedge-feedback" => slash_commands::run_feedback(),
             _ => Err(format!("Unknown command: {}", command.name)),

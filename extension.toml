@@ -66,6 +66,10 @@ requires_argument = true
 description = "Run and evaluate the active Gnosis topology file"
 requires_argument = false
 
+[slash_commands.zedge-gnosis-viz]
+description = "Open Gnosis topology visualization in browser for the active file"
+requires_argument = false
+
 [slash_commands.zedge-test]
 description = "Run isolated tests via Gnosis topological pipeline"
 requires_argument = false
@@ -78,4 +82,4 @@ requires_argument = false
 
 [language_servers.gnosis-lsp]
 name = "Gnosis Language Server"
-languages = ["Gnosis"]
+languages = ["Gnosis", "TypeScript", "TSX"]

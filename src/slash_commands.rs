@@ -914,6 +914,41 @@ pub fn run_gnosis_run(worktree: Option<&Worktree>) -> Result<SlashCommandOutput,
     }
 }
 
+/// /zedge-gnosis-viz — open topology visualization in browser
+pub fn run_gnosis_viz(worktree: Option<&Worktree>) -> Result<SlashCommandOutput, String> {
+    let mut parts: Vec<String> = Vec::new();
+
+    let file_path = if let Some(wt) = worktree {
+        // Try to find an active .ts or .gg file
+        wt.read_text_file("main.ts")
+            .map(|_| "main.ts".to_string())
+            .or_else(|_| {
+                wt.read_text_file("index.ts")
+                    .map(|_| "index.ts".to_string())
+            })
+            .unwrap_or_default()
+    } else {
+        String::new()
+    };
+
+    let viz_url = if file_path.is_empty() {
+        format!("{}/gnosis/viz", provider::COMPANION_URL)
+    } else {
+        format!("{}/gnosis/viz?file={}", provider::COMPANION_URL, file_path)
+    };
+
+    parts.push("## Gnosis Topology Visualization\n".to_string());
+    parts.push(format!("Open in browser: {viz_url}\n"));
+    parts.push("The visualization shows:".to_string());
+    parts.push("- **Nodes**: color-coded by kind (entry, call, assign, return, join)".to_string());
+    parts.push("- **Edges**: color-coded by type (FORK, RACE, FOLD, PROCESS, VENT, INTERFERE)".to_string());
+    parts.push("- **Metrics HUD**: Buley number, Wallace number, steering regime, beta-1".to_string());
+    parts.push("- **Interactive**: hover for details, click to navigate to source".to_string());
+
+    let text = parts.join("\n");
+    Ok(output_with_section(text, "Gnosis Visualization"))
+}
+
 /// /zedge-test — run isolated tests via Gnosis
 pub fn run_test(worktree: Option<&Worktree>) -> Result<SlashCommandOutput, String> {
     let wt = worktree.ok_or("No active workspace")?;
