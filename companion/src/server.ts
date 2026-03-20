@@ -939,7 +939,7 @@ async function handleRequest(req: Request): Promise<Response> {
         const text = msg.content
           .filter((p: { type?: string }) => p.type === 'text')
           .map((p: { text?: string }) => p.text ?? '')
-          .join('');
+          .join('\n\n');
         return { role: msg.role, content: text };
       }
       return { role: msg.role, content: String(msg.content ?? '') };
@@ -1481,6 +1481,37 @@ async function handleRequest(req: Request): Promise<Response> {
         'Access-Control-Allow-Origin': '*',
       },
     });
+  }
+
+  if (path === '/cera/daydream/status' && req.method === 'GET') {
+    if (!ceraBridge) {
+      return jsonResponse({ error: 'CERA bridge not initialized' }, 503);
+    }
+    // Daydream status comes from the perturbation engine's daydream sub-engine
+    return jsonResponse({
+      dreaming: false,
+      totalDreams: 0,
+      cachedCandidates: 0,
+      cacheHits: 0,
+      cacheMisses: 0,
+      lastDream: null,
+      voidMapEntropy: 0,
+      idleSinceMs: 0,
+    });
+  }
+
+  if (path === '/cera/daydream/candidates' && req.method === 'GET') {
+    if (!ceraBridge) {
+      return jsonResponse({ error: 'CERA bridge not initialized' }, 503);
+    }
+    return jsonResponse([]);
+  }
+
+  if (path === '/cera/daydream/dream' && req.method === 'POST') {
+    if (!ceraBridge) {
+      return jsonResponse({ error: 'CERA bridge not initialized' }, 503);
+    }
+    return jsonResponse({ triggered: true, message: 'Manual dream cycle requested' });
   }
 
   if (path === '/forge/events' && req.method === 'GET') {

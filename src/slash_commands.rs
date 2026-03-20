@@ -1008,11 +1008,12 @@ pub fn run_feedback() -> Result<SlashCommandOutput, String> {
 /// /zedge-cera — CERA perturbation engine control
 ///
 /// Subcommands:
-///   status     — CERA cycle status + void map stats
+///   status     — CERA cycle status + void map stats + daydream state
 ///   mutations  — pending mutations with entropy scores
 ///   accept <id> — accept mutation
 ///   reject <id> — reject mutation
 ///   history    — recent graduated mutations
+///   daydream   — daydream status, cached candidates, learned patterns
 pub fn run_cera(args: &str) -> Result<SlashCommandOutput, String> {
     let parts: Vec<&str> = args.trim().splitn(2, ' ').collect();
     let subcommand = parts.first().unwrap_or(&"status");
@@ -1127,8 +1128,42 @@ pub fn run_cera(args: &str) -> Result<SlashCommandOutput, String> {
                 Ok(output_with_section(format!("```\n{body}\n```"), "Zedge CERA"))
             }
         }
+        "daydream" => {
+            let body = companion_get("/cera/daydream/status")?;
+            if let Ok(v) = serde_json::from_str::<serde_json::Value>(&body) {
+                let dreaming = v["dreaming"].as_bool().unwrap_or(false);
+                let total = v["totalDreams"].as_u64().unwrap_or(0);
+                let cached = v["cachedCandidates"].as_u64().unwrap_or(0);
+                let hits = v["cacheHits"].as_u64().unwrap_or(0);
+                let misses = v["cacheMisses"].as_u64().unwrap_or(0);
+                let idle_ms = v["idleSinceMs"].as_u64().unwrap_or(0);
+                let entropy = v["voidMapEntropy"].as_f64().unwrap_or(0.0);
+
+                let hit_rate = if hits + misses > 0 {
+                    format!("{:.0}%", (hits as f64 / (hits + misses) as f64) * 100.0)
+                } else {
+                    "N/A".to_string()
+                };
+
+                let text = format!(
+                    "## CERA Daydream Engine\n\n\
+                     **State**: {}\n\
+                     **Idle**: {}ms | **Total dreams**: {}\n\
+                     **Cached candidates**: {} | **Hit rate**: {}\n\
+                     **Void map entropy**: {:.3}\n\n\
+                     Daydreaming is void walking during idle windows.\n\
+                     The engine speculatively explores mutation strategies\n\
+                     so the next real alert finds a pre-warmed walker.",
+                    if dreaming { "Dreaming" } else { "Awake" },
+                    idle_ms, total, cached, hit_rate, entropy
+                );
+                Ok(output_with_section(text, "Zedge CERA"))
+            } else {
+                Ok(output_with_section(format!("```\n{body}\n```"), "Zedge CERA"))
+            }
+        }
         _ => Ok(output_with_section(
-            "Unknown subcommand. Available: `status`, `mutations`, `accept <id>`, `reject <id>`, `history`".to_string(),
+            "Unknown subcommand. Available: `status`, `mutations`, `accept <id>`, `reject <id>`, `history`, `daydream`".to_string(),
             "Zedge CERA",
         )),
     }
