@@ -22,8 +22,8 @@ mock.module('@dashrelay/client', () => ({
 mock.module('yjs', () => {
   class MockYText {
     _content = '';
-    _observers: Function[] = [];
-    _doc: any = null;
+    _observers: ((...args: unknown[]) => void)[] = [];
+    _doc: unknown = null;
     get length() {
       return this._content.length;
     }
@@ -39,8 +39,13 @@ mock.module('yjs', () => {
     }
     _notifyDoc() {
       if (this._doc) {
-        const fns = this._doc._listeners.get('update') || [];
-        fns.forEach((cb: Function) => cb(new Uint8Array(0), null));
+        const doc = this._doc as {
+          _listeners: Map<string, ((...args: unknown[]) => void)[]>;
+        };
+        const fns = doc._listeners.get('update') || [];
+        fns.forEach((cb: (...args: unknown[]) => void) =>
+          cb(new Uint8Array(0), null)
+        );
       }
     }
     toString() {
@@ -49,7 +54,7 @@ mock.module('yjs', () => {
     toJSON() {
       return this._content;
     }
-    observe(fn: Function) {
+    observe(fn: (...args: unknown[]) => void) {
       this._observers.push(fn);
     }
     unobserve() {}
@@ -57,8 +62,8 @@ mock.module('yjs', () => {
 
   class MockYMap {
     _map = new Map();
-    _observers: Function[] = [];
-    set(k: string, v: any) {
+    _observers: ((...args: unknown[]) => void)[] = [];
+    set(k: string, v: unknown) {
       this._map.set(k, v);
     }
     get(k: string) {
@@ -73,8 +78,8 @@ mock.module('yjs', () => {
     toJSON() {
       return Object.fromEntries(this._map);
     }
-    forEach(fn: Function) {
-      this._map.forEach((v: any, k: string) => fn(v, k));
+    forEach(fn: (value: unknown, key: string) => void) {
+      this._map.forEach((v: unknown, k: string) => fn(v, k));
     }
     entries() {
       return this._map.entries();
@@ -91,18 +96,18 @@ mock.module('yjs', () => {
     get size() {
       return this._map.size;
     }
-    observe(fn: Function) {
+    observe(fn: (...args: unknown[]) => void) {
       this._observers.push(fn);
     }
     unobserve() {}
   }
 
   class MockYArray {
-    _arr: any[] = [];
-    push(items: any[]) {
+    _arr: unknown[] = [];
+    push(items: unknown[]) {
       this._arr.push(...items);
     }
-    insert(index: number, content: any[]) {
+    insert(index: number, content: unknown[]) {
       this._arr.splice(index, 0, ...content);
     }
     delete(index: number, length: number) {
@@ -120,11 +125,11 @@ mock.module('yjs', () => {
     get length() {
       return this._arr.length;
     }
-    forEach(fn: (value: any, index: number, array: any[]) => void) {
+    forEach(fn: (value: unknown, index: number, array: unknown[]) => void) {
       this._arr.forEach(fn);
     }
-    map(fn: Function) {
-      return this._arr.map(fn as any);
+    map(fn: (value: unknown, index: number, array: unknown[]) => unknown) {
+      return this._arr.map(fn);
     }
     observe() {}
     unobserve() {}
@@ -132,10 +137,10 @@ mock.module('yjs', () => {
 
   class MockDoc {
     clientID = Math.floor(Math.random() * 1e9);
-    _texts = new Map<string, any>();
-    _maps = new Map<string, any>();
-    _arrays = new Map<string, any>();
-    _listeners = new Map<string, Function[]>();
+    _texts = new Map<string, MockYText>();
+    _maps = new Map<string, MockYMap>();
+    _arrays = new Map<string, MockYArray>();
+    _listeners = new Map<string, ((...args: unknown[]) => void)[]>();
 
     getText(name: string) {
       if (!this._texts.has(name)) {
@@ -153,7 +158,7 @@ mock.module('yjs', () => {
       if (!this._arrays.has(name)) this._arrays.set(name, new MockYArray());
       return this._arrays.get(name)!;
     }
-    getXmlFragment(name: string) {
+    getXmlFragment(_name: string) {
       return {
         insert() {},
         delete() {},
@@ -165,12 +170,12 @@ mock.module('yjs', () => {
         },
       };
     }
-    transact(fn: Function, origin?: any) {
+    transact(fn: () => void, origin?: unknown) {
       fn();
       const fns = this._listeners.get('update') || [];
       fns.forEach((cb) => cb(new Uint8Array(0), origin));
     }
-    on(event: string, fn: Function) {
+    on(event: string, fn: (...args: unknown[]) => void) {
       if (!this._listeners.has(event)) this._listeners.set(event, []);
       this._listeners.get(event)!.push(fn);
     }
@@ -181,17 +186,17 @@ mock.module('yjs', () => {
   }
 
   class MockUndoManager {
-    _scope: any;
-    _trackedOrigins: Set<any>;
+    _scope: MockYText;
+    _trackedOrigins: Set<unknown>;
     _undoStack: { content: string }[] = [];
     _redoStack: { content: string }[] = [];
 
-    constructor(scope: any, options?: { trackedOrigins?: Set<any> }) {
+    constructor(scope: MockYText, options?: { trackedOrigins?: Set<unknown> }) {
       this._scope = scope;
       this._trackedOrigins = options?.trackedOrigins ?? new Set();
-      const doc = scope._doc;
+      const doc = scope._doc as MockDoc | null;
       if (doc) {
-        doc.on('update', (_update: Uint8Array, origin: any) => {
+        doc.on('update', (_update: Uint8Array, origin: unknown) => {
           if (this._trackedOrigins.has(origin)) {
             this._undoStack.push({ content: scope.toString() });
             this._redoStack.length = 0;
@@ -239,8 +244,11 @@ mock.module('yjs', () => {
     encodeStateAsUpdate: () => new Uint8Array(0),
     encodeStateVector: () => new Uint8Array(0),
     applyUpdate: () => {},
-    transact: (doc: any, fn: Function, origin?: any) =>
-      doc.transact(fn, origin),
+    transact: (
+      doc: { transact: (fn: () => void, o?: unknown) => void },
+      fn: () => void,
+      origin?: unknown
+    ) => doc.transact(fn, origin),
     diffUpdate: (update: Uint8Array) => update,
     mergeUpdates: (updates: Uint8Array[]) => updates[0] || new Uint8Array(0),
   };

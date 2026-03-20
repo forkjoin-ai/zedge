@@ -3,8 +3,8 @@ import { describe, test, expect, beforeEach, mock } from 'bun:test';
 // Mock DashRelay
 mock.module('@dashrelay/client', () => ({
   DashRelay: class {
-    config: any;
-    constructor(c: any) {
+    config: Record<string, unknown>;
+    constructor(c: Record<string, unknown>) {
       this.config = c;
     }
     async connect() {}
@@ -18,7 +18,7 @@ mock.module('@dashrelay/client', () => ({
 mock.module('yjs', () => {
   class T {
     _content = '';
-    _doc: any = null;
+    _doc: unknown = null;
     get length() {
       return this._content.length;
     }
@@ -36,7 +36,7 @@ mock.module('yjs', () => {
   }
   class M {
     _map = new Map();
-    set(k: string, v: any) {
+    set(k: string, v: unknown) {
       this._map.set(k, v);
     }
     get(k: string) {
@@ -48,8 +48,8 @@ mock.module('yjs', () => {
     delete(k: string) {
       return this._map.delete(k);
     }
-    forEach(fn: Function) {
-      this._map.forEach((v: any, k: string) => fn(v, k));
+    forEach(fn: (value: unknown, key: string) => void) {
+      this._map.forEach((v: unknown, k: string) => fn(v, k));
     }
     values() {
       return this._map.values();
@@ -64,8 +64,8 @@ mock.module('yjs', () => {
     unobserve() {}
   }
   class A {
-    _arr: any[] = [];
-    push(items: any[]) {
+    _arr: unknown[] = [];
+    push(items: unknown[]) {
       this._arr.push(...items);
     }
     delete(i: number, l: number) {
@@ -77,7 +77,7 @@ mock.module('yjs', () => {
     get length() {
       return this._arr.length;
     }
-    forEach(fn: any) {
+    forEach(fn: (value: unknown, index: number, array: unknown[]) => void) {
       this._arr.forEach(fn);
     }
     observe() {}
@@ -88,11 +88,11 @@ mock.module('yjs', () => {
     _texts = new Map();
     _maps = new Map();
     _arrays = new Map();
-    _listeners = new Map<string, Function[]>();
+    _listeners = new Map<string, ((...args: unknown[]) => void)[]>();
     getText(n: string) {
       if (!this._texts.has(n)) {
         const t = new T();
-        (t as any)._doc = this;
+        (t as unknown as { _doc: unknown })._doc = this;
         this._texts.set(n, t);
       }
       return this._texts.get(n)!;
@@ -117,13 +117,13 @@ mock.module('yjs', () => {
         },
       };
     }
-    transact(fn: Function, origin?: any) {
+    transact(fn: () => void, origin?: unknown) {
       fn();
       (this._listeners.get('update') || []).forEach((cb) =>
         cb(new Uint8Array(0), origin)
       );
     }
-    on(e: string, fn: Function) {
+    on(e: string, fn: (...args: unknown[]) => void) {
       if (!this._listeners.has(e)) this._listeners.set(e, []);
       this._listeners.get(e)!.push(fn);
     }
@@ -133,8 +133,8 @@ mock.module('yjs', () => {
     }
   }
   class U {
-    _scope: any;
-    constructor(s: any, o?: any) {
+    _scope: unknown;
+    constructor(s: unknown, _o?: unknown) {
       this._scope = s;
     }
     undo() {}
@@ -150,7 +150,11 @@ mock.module('yjs', () => {
     encodeStateAsUpdate: () => new Uint8Array(0),
     encodeStateVector: () => new Uint8Array(0),
     applyUpdate: () => {},
-    transact: (d: any, fn: Function, o?: any) => d.transact(fn, o),
+    transact: (
+      d: { transact: (fn: () => void, o?: unknown) => void },
+      fn: () => void,
+      o?: unknown
+    ) => d.transact(fn, o),
   };
 });
 
@@ -165,7 +169,10 @@ describe('VfsCrdtAdapter', () => {
       displayName: 'Alice',
     });
     await crdt.connect();
-    const adapter = new VfsCrdtAdapter(null as any, crdt);
+    const adapter = new VfsCrdtAdapter(
+      null as unknown as import('../virtual-fs').VirtualFileSystem,
+      crdt
+    );
 
     await adapter.syncLocalToCrdt('src/main.ts', 'const x = 1;');
 
@@ -181,7 +188,10 @@ describe('VfsCrdtAdapter', () => {
       displayName: 'Alice',
     });
     await crdt.connect();
-    const adapter = new VfsCrdtAdapter(null as any, crdt);
+    const adapter = new VfsCrdtAdapter(
+      null as unknown as import('../virtual-fs').VirtualFileSystem,
+      crdt
+    );
 
     await adapter.syncLocalToCrdt('src/main.ts', 'v1');
     await adapter.syncLocalToCrdt('src/main.ts', 'v2');
@@ -196,7 +206,10 @@ describe('VfsCrdtAdapter', () => {
       displayName: 'Alice',
     });
     await crdt.connect();
-    const adapter = new VfsCrdtAdapter(null as any, crdt);
+    const adapter = new VfsCrdtAdapter(
+      null as unknown as import('../virtual-fs').VirtualFileSystem,
+      crdt
+    );
 
     expect(adapter.getCrdtContent('nope.ts')).toBeNull();
   });
@@ -208,7 +221,10 @@ describe('VfsCrdtAdapter', () => {
       displayName: 'Alice',
     });
     await crdt.connect();
-    const adapter = new VfsCrdtAdapter(null as any, crdt);
+    const adapter = new VfsCrdtAdapter(
+      null as unknown as import('../virtual-fs').VirtualFileSystem,
+      crdt
+    );
 
     await adapter.syncLocalToCrdt('a.ts', 'content');
     adapter.unbind();
@@ -223,7 +239,10 @@ describe('VfsCrdtAdapter', () => {
       displayName: 'Alice',
     });
     await crdt.connect();
-    const adapter = new VfsCrdtAdapter(null as any, crdt);
+    const adapter = new VfsCrdtAdapter(
+      null as unknown as import('../virtual-fs').VirtualFileSystem,
+      crdt
+    );
 
     adapter.bind('mount-1');
     // No error

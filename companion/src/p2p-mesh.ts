@@ -71,7 +71,7 @@ const SERVICE_TYPE = '_zedge._tcp.local';
 
 // --- Mesh State ---
 
-let meshState: {
+const meshState: {
   running: boolean;
   nodeId: string;
   peers: Map<string, PeerNode>;
@@ -423,7 +423,9 @@ function detectGpu(): boolean {
   try {
     // macOS: check for Metal support via system_profiler
     if (process.platform === 'darwin') {
+      /* eslint-disable @typescript-eslint/no-require-imports */
       const { execSync } = require('child_process');
+      /* eslint-enable @typescript-eslint/no-require-imports */
       const output = execSync(
         'system_profiler SPDisplaysDataType 2>/dev/null',
         { encoding: 'utf-8', timeout: 3_000 }
@@ -432,9 +434,12 @@ function detectGpu(): boolean {
     }
     // Linux: check for nvidia-smi or /dev/dri
     if (process.platform === 'linux') {
+      /* eslint-disable @typescript-eslint/no-require-imports */
       const { existsSync } = require('fs');
+      /* eslint-enable @typescript-eslint/no-require-imports */
       if (existsSync('/dev/dri')) return true;
       try {
+        // eslint-disable-next-line @typescript-eslint/no-require-imports
         const { execSync } = require('child_process');
         execSync('nvidia-smi', { timeout: 3_000 });
         return true;

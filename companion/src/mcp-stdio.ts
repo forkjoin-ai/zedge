@@ -166,9 +166,7 @@ async function handleToolCall(
         });
         const data = await resp.json();
         return {
-          content: [
-            { type: 'text', text: JSON.stringify(data, null, 2) },
-          ],
+          content: [{ type: 'text', text: JSON.stringify(data, null, 2) }],
         };
       }
 
@@ -178,9 +176,7 @@ async function handleToolCall(
         });
         const data = await resp.json();
         return {
-          content: [
-            { type: 'text', text: JSON.stringify(data, null, 2) },
-          ],
+          content: [{ type: 'text', text: JSON.stringify(data, null, 2) }],
         };
       }
 
@@ -218,7 +214,9 @@ async function handleToolCall(
       content: [
         {
           type: 'text',
-          text: `Error calling ${name}: ${err instanceof Error ? err.message : String(err)}`,
+          text: `Error calling ${name}: ${
+            err instanceof Error ? err.message : String(err)
+          }`,
         },
       ],
       isError: true,

@@ -52,12 +52,18 @@ import {
 } from './superinference';
 import { BettyCompiler } from '../../../gnosis/src/betty/compiler';
 import { checkTypeScriptWithGnosis } from '../../../gnosis/src/ts-check';
-import { GnosisFileWatcher, type WatcherEvent } from '../../../gnosis/src/ts-check-watcher';
+import {
+  GnosisFileWatcher,
+  type WatcherEvent,
+} from '../../../gnosis/src/ts-check-watcher';
 import { GnosisIncrementalChecker } from '../../../gnosis/src/ts-check-incremental';
 import { generateAutofixSuggestions } from '../../../gnosis/src/ts-check-autofix';
 
 // Global file watcher for live topology updates
-const gnosisWatcher = new GnosisFileWatcher({ debounceMs: 500, enableAutofix: true });
+const gnosisWatcher = new GnosisFileWatcher({
+  debounceMs: 500,
+  enableAutofix: true,
+});
 const gnosisIncrementalChecker = new GnosisIncrementalChecker();
 const gnosisSseClients = new Set<ReadableStreamDefaultController>();
 
@@ -173,7 +179,9 @@ let _edgeworkPrompt: string | null = null;
 function getEdgeworkPrompt(): string {
   if (_edgeworkPrompt !== null) return _edgeworkPrompt;
   try {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
     const fs = require('fs');
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
     const path = require('path');
     // Walk up from companion/src to find EDGEWORK.md at repo root
     let dir = __dirname;
@@ -551,11 +559,15 @@ async function handleRequest(req: Request): Promise<Response> {
       if (!body.sourceText)
         return jsonResponse({ error: 'sourceText is required' }, 400);
       const filePath = body.filePath ?? 'inline.ts';
-      const result = await checkTypeScriptWithGnosis(body.sourceText, filePath, {
-        maxBuley: body.maxBuley,
-        target: body.target as any,
-        exportName: body.exportName,
-      });
+      const result = await checkTypeScriptWithGnosis(
+        body.sourceText,
+        filePath,
+        {
+          maxBuley: body.maxBuley,
+          target: body.target as any,
+          exportName: body.exportName,
+        }
+      );
       return jsonResponse(result);
     } catch (err) {
       return jsonResponse(
@@ -580,9 +592,13 @@ async function handleRequest(req: Request): Promise<Response> {
       if (!body.sourceText)
         return jsonResponse({ error: 'sourceText is required' }, 400);
       const filePath = body.filePath ?? 'inline.ts';
-      const result = await checkTypeScriptWithGnosis(body.sourceText, filePath, {
-        exportName: body.exportName,
-      });
+      const result = await checkTypeScriptWithGnosis(
+        body.sourceText,
+        filePath,
+        {
+          exportName: body.exportName,
+        }
+      );
       return jsonResponse({
         nodes: result.topology.nodes,
         edges: result.topology.edges,
@@ -619,7 +635,10 @@ async function handleRequest(req: Request): Promise<Response> {
       });
     } catch (err) {
       return jsonResponse(
-        { error: err instanceof Error ? err.message : 'Autofix failed', suggestions: [] },
+        {
+          error: err instanceof Error ? err.message : 'Autofix failed',
+          suggestions: [],
+        },
         200
       );
     }

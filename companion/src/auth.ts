@@ -150,7 +150,9 @@ export async function login(): Promise<{
       )}&client=zedge`;
 
       // Open browser
+      /* eslint-disable @typescript-eslint/no-require-imports */
       const { exec } = require('child_process');
+      /* eslint-enable @typescript-eslint/no-require-imports */
       const openCmd =
         process.platform === 'darwin'
           ? 'open'

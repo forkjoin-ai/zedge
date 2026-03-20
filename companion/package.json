@@ -1,7 +1,7 @@
 {
   "name": "@affectively/zedge-companion",
   "version": "5.0.0",
-  "description": "Zedge companion sidecar \u2014 inference bridge + compute pool node",
+  "description": "Zedge companion sidecar — inference bridge + compute pool node",
   "type": "module",
   "main": "src/index.ts",
   "scripts": {

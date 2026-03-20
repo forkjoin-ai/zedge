@@ -1,7 +1,12 @@
 import { describe, test, expect } from 'bun:test';
 import { CrdtEncryptionProvider } from '../crdt-encryption';
 // Use a minimal doc mock since yjs is shimmed
-const mockDoc = { on() {}, off() {}, destroy() {}, clientID: 1 } as any;
+const mockDoc = {
+  on() {},
+  off() {},
+  destroy() {},
+  clientID: 1,
+} as unknown as import('yjs').Doc;
 
 describe('CrdtEncryptionProvider', () => {
   test('encrypt -> decrypt roundtrip preserves data', () => {

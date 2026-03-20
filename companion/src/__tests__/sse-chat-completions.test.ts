@@ -83,7 +83,9 @@ describe('SSE Chat Completions (createSSEProxyStream)', () => {
 
     const dataObjects = parseSSEDataObjects(output);
     expect(dataObjects.length).toBeGreaterThanOrEqual(1);
-    const first = dataObjects[0] as { choices: Array<{ delta: { content: string } }> };
+    const first = dataObjects[0] as {
+      choices: Array<{ delta: { content: string } }>;
+    };
     expect(first.choices[0].delta.content).toBe('Hello');
   });
 
@@ -138,9 +140,7 @@ describe('SSE Chat Completions (createSSEProxyStream)', () => {
       object: 'chat.completion.chunk',
       created: 1000,
       model: 'test-model',
-      choices: [
-        { index: 0, delta: { content: 'World' }, finish_reason: null },
-      ],
+      choices: [{ index: 0, delta: { content: 'World' }, finish_reason: null }],
     });
     const upstream = sseStream(
       `: heartbeat\n\n: some-comment\n\ndata: ${chunk}\n\ndata: [DONE]\n\n`
@@ -213,9 +213,7 @@ describe('SSE Chat Completions (createSSEProxyStream)', () => {
       object: 'chat.completion.chunk',
       created: 1000,
       model: 'test-model',
-      choices: [
-        { index: 0, delta: { content: 'Start' }, finish_reason: null },
-      ],
+      choices: [{ index: 0, delta: { content: 'Start' }, finish_reason: null }],
     });
 
     const upstream = new ReadableStream<Uint8Array>({
@@ -233,7 +231,7 @@ describe('SSE Chat Completions (createSSEProxyStream)', () => {
 
     // Should have an error event
     const errorEvents = parseSSEDataObjects(output).filter(
-      (d: any) => d.error
+      (d) => (d as Record<string, unknown>).error
     );
     expect(errorEvents.length).toBeGreaterThanOrEqual(1);
   });
@@ -269,9 +267,7 @@ describe('SSE Chat Completions (createSSEProxyStream)', () => {
         object: 'chat.completion.chunk',
         created: 1000,
         model: 'test-model',
-        choices: [
-          { index: 0, delta: { content }, finish_reason: null },
-        ],
+        choices: [{ index: 0, delta: { content }, finish_reason: null }],
       });
 
     const upstream = sseStream(
@@ -281,14 +277,20 @@ describe('SSE Chat Completions (createSSEProxyStream)', () => {
     const proxy = createSSEProxyStream(upstream, 'wasm');
     const output = await consumeStream(proxy);
 
-    const dataObjects = parseSSEDataObjects(output) as Array<Record<string, unknown>>;
+    const dataObjects = parseSSEDataObjects(output) as Array<
+      Record<string, unknown>
+    >;
     for (const obj of dataObjects) {
       // Every chunk must have these OpenAI-required fields
       expect(obj).toHaveProperty('id');
       expect(obj).toHaveProperty('object');
       expect(obj).toHaveProperty('choices');
-      expect((obj as any).object).toBe('chat.completion.chunk');
-      const choices = (obj as any).choices;
+      expect((obj as Record<string, unknown>).object).toBe(
+        'chat.completion.chunk'
+      );
+      const choices = (obj as Record<string, unknown>).choices as Array<
+        Record<string, unknown>
+      >;
       expect(Array.isArray(choices)).toBe(true);
       expect(choices.length).toBeGreaterThan(0);
       expect(choices[0]).toHaveProperty('index');
@@ -302,9 +304,7 @@ describe('SSE Chat Completions (createSSEProxyStream)', () => {
       object: 'chat.completion.chunk',
       created: 1000,
       model: 'test-model',
-      choices: [
-        { index: 0, delta: { content: 'test' }, finish_reason: null },
-      ],
+      choices: [{ index: 0, delta: { content: 'test' }, finish_reason: null }],
     });
     const upstream = sseStream(`data: ${chunk}\n\ndata: [DONE]\n\n`);
 
@@ -385,26 +385,35 @@ describe('SSE JSON-to-SSE drip-feed (server path)', () => {
 
     const output = await consumeStream(sseStream);
     const events = parseSSEEvents(output);
-    const dataObjects = parseSSEDataObjects(output) as Array<Record<string, unknown>>;
+    const dataObjects = parseSSEDataObjects(output) as Array<
+      Record<string, unknown>
+    >;
 
     // Should have content chunks + finish chunk + [DONE]
     expect(events).toContain('[DONE]');
     expect(dataObjects.length).toBe(tokens.length + 1); // content chunks + finish
 
     // First chunk should have role + content
-    const first = dataObjects[0] as any;
+    type SSEChunk = {
+      choices: Array<{
+        delta: { role?: string; content?: string };
+        finish_reason: string | null;
+      }>;
+      usage?: Record<string, unknown>;
+    };
+    const first = dataObjects[0] as SSEChunk;
     expect(first.choices[0].delta.role).toBe('assistant');
     expect(first.choices[0].delta.content).toBeDefined();
 
     // Last data chunk should have finish_reason: stop
-    const last = dataObjects[dataObjects.length - 1] as any;
+    const last = dataObjects[dataObjects.length - 1] as SSEChunk;
     expect(last.choices[0].finish_reason).toBe('stop');
     expect(last).toHaveProperty('usage');
 
     // Reassembled content should match original
     const reassembled = dataObjects
-      .filter((d: any) => d.choices?.[0]?.delta?.content)
-      .map((d: any) => d.choices[0].delta.content)
+      .filter((d) => (d as SSEChunk).choices?.[0]?.delta?.content)
+      .map((d) => (d as SSEChunk).choices[0].delta.content)
       .join('');
     expect(reassembled).toBe(content);
   });

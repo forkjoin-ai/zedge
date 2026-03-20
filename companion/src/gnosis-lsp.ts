@@ -6,7 +6,11 @@
  * Speaks JSON-RPC over stdin/stdout.
  */
 
-import { BettyCompiler, type Diagnostic, type GraphAST } from '../../../gnosis/src/betty/compiler';
+import {
+  BettyCompiler,
+  type Diagnostic,
+  type GraphAST,
+} from '../../../gnosis/src/betty/compiler';
 import { checkTypeScriptWithGnosis } from '../../../gnosis/src/ts-check';
 
 type JsonRpcId = string | number | null;
@@ -145,7 +149,11 @@ function getDidChangeDocument(
 
   const textDocument = asObject(paramsObj.textDocument);
   const contentChanges = paramsObj.contentChanges;
-  if (!textDocument || !Array.isArray(contentChanges) || contentChanges.length < 1) {
+  if (
+    !textDocument ||
+    !Array.isArray(contentChanges) ||
+    contentChanges.length < 1
+  ) {
     return null;
   }
 
@@ -165,12 +173,16 @@ function diagnosticSeverity(value: Diagnostic['severity']): 1 | 2 | 3 {
   return 3;
 }
 
-function toLspDiagnostic(diagnostic: Diagnostic, sourceText: string): LspDiagnostic {
+function toLspDiagnostic(
+  diagnostic: Diagnostic,
+  sourceText: string
+): LspDiagnostic {
   const lines = sourceText.split('\n');
   const line = Math.max(0, diagnostic.line - 1);
   const character = Math.max(0, diagnostic.column - 1);
   const lineText = lines[line] ?? '';
-  const endCharacter = lineText.length > character ? character + 1 : lineText.length;
+  const endCharacter =
+    lineText.length > character ? character + 1 : lineText.length;
 
   return {
     range: {
@@ -219,7 +231,10 @@ function isTypeScriptUri(uri: string): boolean {
   return uri.endsWith('.ts') || uri.endsWith('.tsx');
 }
 
-async function publishTypeScriptDiagnostics(uri: string, text: string): Promise<void> {
+async function publishTypeScriptDiagnostics(
+  uri: string,
+  text: string
+): Promise<void> {
   try {
     const filePath = uri.startsWith('file://') ? uri.slice(7) : uri;
     const result = await checkTypeScriptWithGnosis(text, filePath);
@@ -299,7 +314,9 @@ function nodeHoverMarkdown(token: string, ast: GraphAST): string | null {
   const propertyEntries = Object.entries(node.properties);
   const propertiesText =
     propertyEntries.length > 0
-      ? propertyEntries.map(([key, value]) => `- \`${key}\`: ${value}`).join('\n')
+      ? propertyEntries
+          .map(([key, value]) => `- \`${key}\`: ${value}`)
+          .join('\n')
       : '- none';
 
   return `### Node \`${token}\`\nLabels: ${labelText}\nProperties:\n${propertiesText}`;
@@ -321,7 +338,10 @@ function keywordHoverMarkdown(keyword: string): string | null {
   return docs[keyword] ? `### ${keyword}\n${docs[keyword]}` : null;
 }
 
-function buildDocumentSymbols(uri: string, text: string): Array<Record<string, unknown>> {
+function buildDocumentSymbols(
+  uri: string,
+  text: string
+): Array<Record<string, unknown>> {
   const symbols: Array<Record<string, unknown>> = [];
   const lines = text.split('\n');
 
@@ -364,10 +384,7 @@ function buildCompletionItems(labels: string[]): CompletionItem[] {
 function isJsonRpcRequest(value: unknown): value is JsonRpcRequest {
   const object = asObject(value);
   if (!object) return false;
-  return (
-    object.jsonrpc === '2.0' &&
-    typeof object.method === 'string'
-  );
+  return object.jsonrpc === '2.0' && typeof object.method === 'string';
 }
 
 async function dispatchRequest(req: JsonRpcRequest): Promise<unknown> {
@@ -484,7 +501,9 @@ async function dispatchRequest(req: JsonRpcRequest): Promise<unknown> {
       const uppercaseToken = token.toUpperCase();
       const parseResult = compiler.parse(text);
       const keywordHelp = keywordHoverMarkdown(uppercaseToken);
-      const nodeHelp = parseResult.ast ? nodeHoverMarkdown(token, parseResult.ast) : null;
+      const nodeHelp = parseResult.ast
+        ? nodeHoverMarkdown(token, parseResult.ast)
+        : null;
       const help = keywordHelp ?? nodeHelp;
 
       if (!help) {
@@ -509,8 +528,13 @@ async function dispatchRequest(req: JsonRpcRequest): Promise<unknown> {
         return { nodes: [], edges: [], metrics: null };
       }
       try {
-        const graphFilePath = graphUri.startsWith('file://') ? graphUri.slice(7) : graphUri;
-        const graphResult = await checkTypeScriptWithGnosis(graphText, graphFilePath);
+        const graphFilePath = graphUri.startsWith('file://')
+          ? graphUri.slice(7)
+          : graphUri;
+        const graphResult = await checkTypeScriptWithGnosis(
+          graphText,
+          graphFilePath
+        );
         return {
           nodes: graphResult.topology.nodes,
           edges: graphResult.topology.edges,
@@ -527,6 +551,7 @@ async function dispatchRequest(req: JsonRpcRequest): Promise<unknown> {
 
     case 'exit':
       process.exit(shutdownRequested ? 0 : 1);
+      break;
 
     default:
       if (req.id !== undefined) {
@@ -543,7 +568,8 @@ async function handleRequest(req: JsonRpcRequest): Promise<void> {
       sendResponse(req.id, result);
     }
   } catch (error) {
-    const message = error instanceof Error ? error.message : 'Unknown LSP error';
+    const message =
+      error instanceof Error ? error.message : 'Unknown LSP error';
     if (req.id !== undefined) {
       sendError(req.id, -32601, message);
     }

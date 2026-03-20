@@ -247,7 +247,7 @@ const DEBT_TIERS: Record<string, { maxDebt: number }> = {
   ultra: { maxDebt: 20 },
 };
 
-let marketState = {
+const marketState = {
   clearingPrice: 1.0,
   supplyDemandRatio: 1.0,
   peakRpm: 0,
