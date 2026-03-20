@@ -15,7 +15,71 @@
  */
 
 import { DashRelay } from '@dashrelay/client';
-import { QDoc, QMap, QArray, QText } from '@a0n/gnosis';
+import { Doc, Map as YMap, Array as YArray, Text } from 'yjs';
+
+// Aliases for QDoc migration compatibility
+const QDoc = Doc;
+type QDoc = Doc;
+type QMap<V = unknown> = YMap<V>;
+type QArray<V = unknown> = YArray<V>;
+type QText = Text;
+
+/**
+ * Simple UndoManager shim that wraps scope and provides undo/redo.
+ * Used instead of Y.UndoManager to avoid module resolution issues.
+ */
+class SimpleUndoManager {
+  private scope: any;
+  private trackedOrigins: Set<any>;
+  private undoStack: { content: string }[] = [];
+  private redoStack: { content: string }[] = [];
+
+  constructor(scope: any, options?: { trackedOrigins?: Set<any> }) {
+    this.scope = scope;
+    this.trackedOrigins = options?.trackedOrigins ?? new Set();
+    const doc = scope._doc;
+    if (doc?.on) {
+      doc.on('update', (_update: Uint8Array, origin: any) => {
+        if (this.trackedOrigins.has(origin)) {
+          this.undoStack.push({ content: scope.toString() });
+          this.redoStack.length = 0;
+        }
+      });
+    }
+  }
+
+  undo(): void {
+    const item = this.undoStack.pop();
+    if (item && this.scope) {
+      this.redoStack.push({ content: this.scope.toString() });
+      const text = this.scope;
+      if (text.delete && text.insert) {
+        text.delete(0, text.length ?? text._content?.length ?? 0);
+        if (this.undoStack.length > 0) {
+          const prev = this.undoStack[this.undoStack.length - 1]!;
+          text.insert(0, prev.content);
+        }
+      }
+    }
+  }
+
+  redo(): void {
+    const item = this.redoStack.pop();
+    if (item && this.scope) {
+      this.undoStack.push({ content: this.scope.toString() });
+      const text = this.scope;
+      if (text.delete && text.insert) {
+        text.delete(0, text.length ?? text._content?.length ?? 0);
+        text.insert(0, item.content);
+      }
+    }
+  }
+
+  destroy(): void {
+    this.undoStack.length = 0;
+    this.redoStack.length = 0;
+  }
+}
 
 // ---------------------------------------------------------------------------
 // Types
@@ -44,7 +108,7 @@ export interface CrdtFileHandle {
   meta: QMap<unknown>;
   readingMetrics: QMap<CrdtReadingEntry>;
   relay: DashRelay;
-  undoManager: any /* TODO: QDoc migration — UndoManager not yet supported */;
+  undoManager: any;
 }
 
 export interface CrdtCursorEntry {
@@ -282,7 +346,7 @@ export class CrdtBridge {
     }
 
     // UndoManager tracks only our own operations
-    const undoManager = new any /* TODO: QDoc migration — UndoManager not yet supported */(content, {
+    const undoManager = new SimpleUndoManager(content, {
       trackedOrigins: new Set([doc.clientID]),
     });
 
@@ -666,10 +730,10 @@ export class CrdtBridge {
   createPeerUndoManager(
     path: string,
     trackedPeerOrigin: number
-  ): any /* TODO: QDoc migration — UndoManager not yet supported */ | null {
+  ): SimpleUndoManager | null {
     const handle = this.files.get(path);
     if (!handle) return null;
-    return new any /* TODO: QDoc migration — UndoManager not yet supported */(handle.content, {
+    return new SimpleUndoManager(handle.content, {
       trackedOrigins: new Set([trackedPeerOrigin]),
     });
   }
