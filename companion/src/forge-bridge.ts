@@ -8,6 +8,26 @@
 
 import { join } from 'node:path';
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
+import { spawn as nodeSpawn } from 'node:child_process';
+
+/** Run a shell command and collect output */
+function execShellForge(
+  command: string,
+  options: { cwd?: string; env?: Record<string, string> } = {}
+): Promise<{ output: string; exitCode: number }> {
+  return new Promise((resolve) => {
+    const proc = nodeSpawn('bash', ['-c', command], {
+      cwd: options.cwd ?? process.cwd(),
+      stdio: ['ignore', 'pipe', 'pipe'],
+      env: options.env as NodeJS.ProcessEnv,
+    });
+    const chunks: Buffer[] = [];
+    proc.stdout?.on('data', (c: Buffer) => chunks.push(c));
+    proc.stderr?.on('data', (c: Buffer) => chunks.push(c));
+    proc.on('close', (code) => resolve({ output: Buffer.concat(chunks).toString(), exitCode: code ?? 1 }));
+    proc.on('error', (err) => resolve({ output: err.message, exitCode: 1 }));
+  });
+}
 import type {
   ForgoProject,
   ForgoProcess,
@@ -145,21 +165,13 @@ export class ForgeBridge {
 
         const workDir = join(this.workspacePath, target.dir);
         try {
-          const buildProc = Bun.spawn(
-            ['sh', '-c', target.config.buildCommand],
-            {
-              cwd: workDir,
-              stdout: 'pipe',
-              stderr: 'pipe',
-              env: process.env as Record<string, string>,
-            }
+          const { output: buildOutput, exitCode } = await execShellForge(
+            target.config.buildCommand,
+            { cwd: workDir, env: process.env as Record<string, string> }
           );
 
-          const exitCode = await buildProc.exited;
-
           if (exitCode !== 0) {
-            const stderr = await new Response(buildProc.stderr).text();
-            this.appendLog(pid, 'error', `Build failed: ${stderr}`);
+            this.appendLog(pid, 'error', `Build failed: ${buildOutput}`);
             proc.state = 'failed';
             this.processes.set(target.name, { ...proc });
             return {
@@ -204,14 +216,14 @@ export class ForgeBridge {
       }
 
       try {
-        Bun.spawn(['bun', 'run', entryPoint], {
+        nodeSpawn('node', ['--import', 'tsx', entryPoint], {
           cwd: workDir,
-          stdout: 'pipe',
-          stderr: 'pipe',
+          stdio: ['ignore', 'pipe', 'pipe'],
           env: {
-            ...(process.env as Record<string, string>),
+            ...(process.env as NodeJS.ProcessEnv),
             PORT: String(target.config.port ?? 4000),
           },
+          detached: true,
         });
 
         proc.state = 'running';

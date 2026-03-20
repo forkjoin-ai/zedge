@@ -112,7 +112,7 @@ pub fn run_status(worktree: Option<&Worktree>) -> Result<SlashCommandOutput, Str
         }
         Err(e) => {
             parts.push(format!("**Companion offline**: {e}"));
-            parts.push("Start with: `bun open-source/zedge/companion/src/index.ts`".to_string());
+            parts.push("Start with: `pnpm gnode run open-source/zedge/companion/src/index.ts`".to_string());
         }
     }
 
@@ -244,7 +244,7 @@ pub fn run_logs() -> Result<SlashCommandOutput, String> {
         }
         Err(e) => {
             Ok(output_with_section(
-                format!("**Companion offline**: {e}\n\nStart with: `bun open-source/zedge/companion/src/index.ts`"),
+                format!("**Companion offline**: {e}\n\nStart with: `pnpm gnode run open-source/zedge/companion/src/index.ts`"),
                 "Inference Logs",
             ))
         }

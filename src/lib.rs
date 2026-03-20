@@ -160,8 +160,12 @@ impl zed::Extension for ZedgeExtension {
     ) -> Result<Command> {
         if language_server_id.as_ref() == "gnosis-lsp" {
             Ok(Command {
-                command: "bun".to_string(),
-                args: vec!["open-source/zedge/companion/src/gnosis-lsp.ts".to_string()],
+                command: "node".to_string(),
+                args: vec![
+                    "--import".to_string(),
+                    "tsx".to_string(),
+                    "open-source/zedge/companion/src/gnosis-lsp.ts".to_string(),
+                ],
                 env: Vec::new(),
             })
         } else {
@@ -176,8 +180,12 @@ impl zed::Extension for ZedgeExtension {
     ) -> Result<Command> {
         if context_server_id.as_ref() == "zedge-companion" {
             Ok(Command {
-                command: "bun".to_string(),
-                args: vec!["open-source/zedge/companion/src/mcp-stdio.ts".to_string()],
+                command: "node".to_string(),
+                args: vec![
+                    "--import".to_string(),
+                    "tsx".to_string(),
+                    "open-source/zedge/companion/src/mcp-stdio.ts".to_string(),
+                ],
                 env: Vec::new(),
             })
         } else {
@@ -192,7 +200,7 @@ impl zed::Extension for ZedgeExtension {
     ) -> Result<Option<ContextServerConfiguration>> {
         if context_server_id.as_ref() == "zedge-companion" {
             Ok(Some(ContextServerConfiguration {
-                installation_instructions: "Install Bun (https://bun.sh) and start the companion sidecar:\n\n```\nbun open-source/zedge/companion/src/index.ts\n```\n\nThe sidecar runs on localhost:7331. The MCP context server bridge connects to it automatically.".to_string(),
+                installation_instructions: "The companion sidecar starts automatically when the context server launches.\n\nTo start manually:\n\n```\npnpm gnode run open-source/zedge/companion/src/index.ts\n```\n\nThe sidecar runs on localhost:7331. The MCP context server bridge babysits it and restarts if needed.".to_string(),
                 settings_schema: serde_json::json!({
                     "type": "object",
                     "properties": {

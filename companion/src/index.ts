@@ -1,11 +1,11 @@
-#!/usr/bin/env bun
+#!/usr/bin/env node
 /**
  * Zedge Companion Sidecar v2.0
  *
  * Entry point — starts HTTP server, P2P mesh, latency probing, compute pool, and forge bridge.
  *
  * Usage:
- *   bun open-source/zedge/companion/src/index.ts
+ *   pnpm gnode run open-source/zedge/companion/src/index.ts
  */
 
 import {

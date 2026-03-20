@@ -1,4 +1,4 @@
-#!/usr/bin/env bun
+#!/usr/bin/env node
 /**
  * Zedge MCP Stdio Bridge
  *
@@ -6,9 +6,9 @@
  * Speaks JSON-RPC over stdin/stdout (MCP protocol) and proxies
  * requests to the companion HTTP sidecar at localhost:7331.
  *
- * The companion sidecar must be running separately (or gets started
- * by the main index.ts entry point). This bridge just translates
- * between MCP stdio and the companion's HTTP API.
+ * Auto-spawns the companion sidecar (index.ts) if it's not already
+ * running, and babysits it with a periodic health check loop --
+ * restarting it automatically if it crashes or becomes unreachable.
  */
 
 // Redirect console to stderr so stdout stays clean for MCP JSON-RPC
@@ -24,9 +24,75 @@ console.info = (...args: unknown[]) =>
 console.debug = (...args: unknown[]) =>
   process.stderr.write(`[zedge:mcp:debug] ${args.join(' ')}\n`);
 
+import { spawn, type ChildProcess } from 'child_process';
+import { resolve, dirname } from 'path';
+import { fileURLToPath } from 'url';
 import { getCompanionPort } from './config';
 
 const COMPANION_BASE = `http://localhost:${getCompanionPort()}`;
+
+// ---------- Companion babysitter ----------
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
+const COMPANION_ENTRY = resolve(__dirname, 'index.ts');
+const HEALTH_CHECK_INTERVAL_MS = 10_000;
+let companionProc: ChildProcess | null = null;
+let babysitterTimer: ReturnType<typeof setInterval> | null = null;
+
+/** Check if companion is reachable */
+async function isCompanionAlive(): Promise<boolean> {
+  try {
+    const resp = await fetch(`${COMPANION_BASE}/health`, {
+      signal: AbortSignal.timeout(3000),
+    });
+    return resp.ok;
+  } catch {
+    return false;
+  }
+}
+
+/** Spawn the companion sidecar as a child process via gnode */
+function spawnCompanion(): void {
+  if (companionProc && !companionProc.killed) {
+    try {
+      companionProc.kill();
+    } catch {
+      // already dead
+    }
+  }
+
+  console.log(`[zedge:babysitter] Spawning companion: node --import tsx ${COMPANION_ENTRY}`);
+  companionProc = spawn('node', ['--import', 'tsx', COMPANION_ENTRY], {
+    stdio: ['ignore', 'inherit', 'inherit'],
+    env: { ...process.env },
+  });
+
+  companionProc.on('exit', (code) => {
+    console.log(`[zedge:babysitter] Companion exited with code ${code}`);
+    companionProc = null;
+  });
+}
+
+/** Start the babysitter loop: check health, restart if dead */
+function startBabysitter(): void {
+  if (babysitterTimer) return;
+
+  babysitterTimer = setInterval(async () => {
+    const alive = await isCompanionAlive();
+    if (!alive) {
+      console.log('[zedge:babysitter] Companion unreachable, restarting...');
+      spawnCompanion();
+    }
+  }, HEALTH_CHECK_INTERVAL_MS);
+
+  // Clean up on exit
+  process.on('exit', () => {
+    if (babysitterTimer) clearInterval(babysitterTimer);
+    if (companionProc && !companionProc.killed) {
+      try { companionProc.kill('SIGTERM'); } catch {}
+    }
+  });
+}
 
 // ---------- MCP JSON-RPC types ----------
 
@@ -290,17 +356,27 @@ function send(response: JsonRpcResponse): void {
 async function main(): Promise<void> {
   console.log('Starting MCP stdio bridge...');
 
-  // Wait for companion sidecar
+  // Check if companion is already running; if not, spawn it
+  const alreadyRunning = await isCompanionAlive();
+  if (!alreadyRunning) {
+    console.log('Companion not running, spawning it...');
+    spawnCompanion();
+  }
+
+  // Wait for companion sidecar to become ready
   const alive = await waitForCompanion();
   if (!alive) {
     console.warn(
       'Companion sidecar not reachable at ' +
         COMPANION_BASE +
-        '. Tools will fail until it starts.'
+        ' after spawn. Tools will fail until it starts.'
     );
   } else {
     console.log('Companion sidecar is ready');
   }
+
+  // Start babysitter loop to keep companion alive
+  startBabysitter();
 
   // Read stdin line-by-line (MCP uses Content-Length headers)
   let buffer = '';

@@ -22,8 +22,8 @@ The quickest way to try Zedge is to run only the companion and point Zed's OpenA
 ### Start the companion
 
 ```bash
-bun install
-bun open-source/zedge/companion/src/index.ts
+pnpm install
+pnpm gnode run open-source/zedge/companion/src/index.ts
 ```
 
 ### Then point Zed at:

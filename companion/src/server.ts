@@ -4,6 +4,9 @@
  * localhost:7331 — OpenAI-compatible proxy + compute pool + mesh + superinference + ACP agent + forge
  */
 
+import { createServer, type IncomingMessage, type ServerResponse } from 'http';
+import { spawn as nodeSpawn } from 'child_process';
+
 import {
   infer,
   getModels,
@@ -109,6 +112,39 @@ import type { UcanCapability } from '@affectively/auth';
 import { AgentParticipant } from './agent-participant';
 import type { AgentEdit, AgentReplacement } from './agent-participant';
 import { getMarketStatus } from './compute-node';
+
+// --- Shell exec helper (replaces Bun.spawn) ---
+
+function execShell(
+  command: string,
+  options: { cwd?: string; timeout?: number } = {}
+): Promise<{ output: string; exitCode: number }> {
+  return new Promise((resolve) => {
+    const proc = nodeSpawn('bash', ['-c', command], {
+      cwd: options.cwd ?? process.cwd(),
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+    const chunks: Buffer[] = [];
+    proc.stdout?.on('data', (chunk: Buffer) => chunks.push(chunk));
+    proc.stderr?.on('data', (chunk: Buffer) => chunks.push(chunk));
+
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    if (options.timeout) {
+      timer = setTimeout(() => {
+        proc.kill('SIGTERM');
+      }, options.timeout);
+    }
+
+    proc.on('close', (code) => {
+      if (timer) clearTimeout(timer);
+      resolve({ output: Buffer.concat(chunks).toString('utf-8'), exitCode: code ?? 1 });
+    });
+    proc.on('error', (err) => {
+      if (timer) clearTimeout(timer);
+      resolve({ output: err.message, exitCode: 1 });
+    });
+  });
+}
 
 // --- Request body types ---
 
@@ -305,6 +341,49 @@ export function setUcanBridge(bridge: UcanBridge): void {
   ucanBridge = bridge;
 }
 
+/**
+ * Safely extract JSON from a Response, handling SSE responses that
+ * upstream coordinators return even when stream:false was requested.
+ */
+async function extractResponseData(
+  resp: Response,
+  fallbackModel = 'unknown'
+): Promise<Record<string, unknown>> {
+  const ct = resp.headers.get('content-type') ?? '';
+  if (ct.includes('text/event-stream') || ct.includes('text/plain')) {
+    const text = await resp.text();
+    let content = '';
+    let model = fallbackModel;
+    let id = `chatcmpl-${Date.now()}`;
+    for (const line of text.split('\n')) {
+      if (!line.startsWith('data: ')) continue;
+      const payload = line.slice(6).trim();
+      if (payload === '[DONE]') break;
+      try {
+        const chunk = JSON.parse(payload);
+        if (chunk.choices?.[0]?.delta?.content) {
+          content += chunk.choices[0].delta.content;
+        } else if (chunk.choices?.[0]?.message?.content) {
+          content += chunk.choices[0].message.content;
+        }
+        if (chunk.model) model = chunk.model;
+        if (chunk.id) id = chunk.id;
+      } catch {
+        // Skip non-JSON payloads like {"status":"ready"}
+      }
+    }
+    return {
+      id,
+      object: 'chat.completion',
+      created: Math.floor(Date.now() / 1000),
+      model,
+      choices: [{ index: 0, message: { role: 'assistant', content }, finish_reason: 'stop' }],
+      usage: { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 },
+    };
+  }
+  return await resp.json();
+}
+
 // --- Request Handler ---
 
 async function handleRequest(req: Request): Promise<Response> {
@@ -488,16 +567,10 @@ async function handleRequest(req: Request): Promise<Response> {
 
     const targetDir = body.targetDir || body.name;
     try {
-      const proc = Bun.spawn(
-        [
-          'bash',
-          '-c',
-          `bunx edgework-node deploy scaffold ${body.template} ${targetDir} --preset all --install 2>&1`,
-        ],
+      const { output, exitCode } = await execShell(
+        `pnpm exec edgework-node deploy scaffold ${body.template} ${targetDir} --preset all --install 2>&1`,
         { cwd: process.env.AEON_ROOT || process.cwd(), timeout: 60_000 }
       );
-      const output = await new Response(proc.stdout).text();
-      const exitCode = await proc.exited;
       return jsonResponse({
         template: body.template,
         name: body.name,
@@ -703,12 +776,10 @@ async function handleRequest(req: Request): Promise<Response> {
     }
 
     try {
-      const proc = Bun.spawn(['bash', '-c', `bunx ${cmd} --json 2>&1`], {
-        cwd: process.env.AEON_ROOT || process.cwd(),
-        timeout: 30_000,
-      });
-      const output = await new Response(proc.stdout).text();
-      const exitCode = await proc.exited;
+      const { output, exitCode } = await execShell(
+        `pnpm exec ${cmd} --json 2>&1`,
+        { cwd: process.env.AEON_ROOT || process.cwd(), timeout: 30_000 }
+      );
       return jsonResponse({ command: cmd, exitCode, output });
     } catch (err) {
       return jsonResponse(
@@ -822,12 +893,10 @@ async function handleRequest(req: Request): Promise<Response> {
     }
 
     try {
-      const proc = Bun.spawn(['bash', '-c', `bunx ${cmd} --json 2>&1`], {
-        cwd: process.env.AEON_ROOT || process.cwd(),
-        timeout: 30_000,
-      });
-      const output = await new Response(proc.stdout).text();
-      const exitCode = await proc.exited;
+      const { output, exitCode } = await execShell(
+        `pnpm exec ${cmd} --json 2>&1`,
+        { cwd: process.env.AEON_ROOT || process.cwd(), timeout: 30_000 }
+      );
       return jsonResponse({ command: cmd, exitCode, output });
     } catch (err) {
       return jsonResponse(
@@ -876,43 +945,20 @@ async function handleRequest(req: Request): Promise<Response> {
       top_p: body.top_p,
     };
 
-    const result = await infer(request);
-
-    // SSE streaming: wrap with heartbeat proxy or convert JSON to SSE
-    const contentType =
-      result.response.headers.get('content-type') ?? 'application/json';
-    const upstreamIsSSE = contentType.includes('text/event-stream');
+    // Always infer with stream:false so we get a JSON response we can
+    // reliably parse, then drip-feed as SSE if the client asked for streaming.
+    // Upstream SSE streams from Cloud Run often contain non-standard payloads
+    // (e.g. {"status":"ready"}) that break Zed's OpenAI parser.
+    const inferRequest = { ...request, stream: false };
+    const result = await infer(inferRequest);
 
     const attemptHeaders = buildAttemptHeaders(result.attempts);
 
-    if (upstreamIsSSE) {
-      // Upstream already SSE — proxy through with heartbeat
-      const proxyStream = createSSEProxyStream(
-        result.response.body,
-        result.tier,
-        { ...result.upstreamHeaders, ...attemptHeaders },
-        result.attempts,
-        request.model
-      );
-      return new Response(proxyStream, {
-        headers: {
-          'Content-Type': 'text/event-stream',
-          'Cache-Control': 'no-cache',
-          Connection: 'keep-alive',
-          'Access-Control-Allow-Origin': '*',
-          'X-Zedge-Tier': result.tier,
-          ...result.upstreamHeaders,
-          ...attemptHeaders,
-        },
-      });
-    }
-
     if (request.stream) {
-      // Upstream returned JSON (non-streaming) but client asked for streaming.
       // Drip-feed the response word-by-word to simulate token-by-token streaming.
       // This gives Zed a real streaming feel while coordinators return JSON.
-      const data = await result.response.json();
-      const content = data?.choices?.[0]?.message?.content ?? '';
+      const data = await extractResponseData(result.response, request.model);
+      const content = (data as any)?.choices?.[0]?.message?.content ?? '';
       const id = data.id ?? `chatcmpl-${Date.now()}`;
       const created = data.created ?? Math.floor(Date.now() / 1000);
       const model = data.model ?? request.model;
@@ -992,15 +1038,9 @@ async function handleRequest(req: Request): Promise<Response> {
       });
     }
 
-    const data = await result.response.json();
+    const data = await extractResponseData(result.response);
     return new Response(
-      JSON.stringify({
-        ...data,
-        _zedge_tier: result.tier,
-        _zedge_chain: attemptHeaders['X-Zedge-Chain'],
-        _zedge_attempts: result.attempts,
-        _zedge_debug: result.upstreamHeaders,
-      }),
+      JSON.stringify(data),
       {
         status: 200,
         headers: {
@@ -1055,15 +1095,9 @@ async function handleRequest(req: Request): Promise<Response> {
 
     const result = await infer(request);
     const completionAttemptHeaders = buildAttemptHeaders(result.attempts);
-    const data = await result.response.json();
+    const data = await extractResponseData(result.response);
     return new Response(
-      JSON.stringify({
-        ...data,
-        _zedge_tier: result.tier,
-        _zedge_chain: completionAttemptHeaders['X-Zedge-Chain'],
-        _zedge_attempts: result.attempts,
-        _zedge_debug: result.upstreamHeaders,
-      }),
+      JSON.stringify(data),
       {
         status: 200,
         headers: {
@@ -2473,23 +2507,72 @@ async function handleRequest(req: Request): Promise<Response> {
   return jsonResponse({ error: 'Not found' }, 404);
 }
 
+/** Convert Node IncomingMessage to web Request */
+function nodeToWebRequest(req: IncomingMessage): Promise<Request> {
+  return new Promise((resolve, reject) => {
+    const chunks: Buffer[] = [];
+    req.on('data', (chunk: Buffer) => chunks.push(chunk));
+    req.on('error', reject);
+    req.on('end', () => {
+      const body = Buffer.concat(chunks);
+      const url = `http://localhost:${getCompanionPort()}${req.url ?? '/'}`;
+      const headers = new Headers();
+      for (const [key, value] of Object.entries(req.headers)) {
+        if (value) headers.set(key, Array.isArray(value) ? value.join(', ') : value);
+      }
+      const init: RequestInit = { method: req.method ?? 'GET', headers };
+      if (req.method !== 'GET' && req.method !== 'HEAD' && body.length > 0) {
+        init.body = body;
+      }
+      resolve(new Request(url, init));
+    });
+  });
+}
+
+/** Pipe web Response back to Node ServerResponse */
+async function webToNodeResponse(webRes: Response, nodeRes: ServerResponse): Promise<void> {
+  nodeRes.writeHead(webRes.status, Object.fromEntries(webRes.headers.entries()));
+  if (!webRes.body) {
+    nodeRes.end();
+    return;
+  }
+  const reader = webRes.body.getReader();
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      nodeRes.write(value);
+    }
+  } finally {
+    nodeRes.end();
+  }
+}
+
 export function startServer(): void {
   const port = getCompanionPort();
 
-  Bun.serve({
-    port,
-    fetch: handleRequest,
+  const server = createServer(async (req, res) => {
+    try {
+      const webReq = await nodeToWebRequest(req);
+      const webRes = await handleRequest(webReq);
+      await webToNodeResponse(webRes, res);
+    } catch (err) {
+      res.writeHead(500, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: String(err) }));
+    }
   });
 
-  console.log(`[zedge] Companion sidecar v2.0 on http://localhost:${port}`);
-  console.log(`[zedge] OpenAI-compatible API: http://localhost:${port}/v1`);
-  console.log(
-    `[zedge] Superinference: POST http://localhost:${port}/v1/superinference`
-  );
-  console.log(`[zedge] Mesh: http://localhost:${port}/mesh/status`);
-  console.log(`[zedge] Agent: POST http://localhost:${port}/agent/session`);
-  console.log(`[zedge] Forge: http://localhost:${port}/forge/status`);
-  console.log(`[zedge] Health: http://localhost:${port}/health`);
-  console.log(`[zedge] Ghostwriter CRDT: http://localhost:${port}/crdt/status`);
-  console.log(`[zedge] Ghostwriter UCAN: http://localhost:${port}/ucan/status`);
+  server.listen(port, () => {
+    console.log(`[zedge] Companion sidecar v2.0 on http://localhost:${port}`);
+    console.log(`[zedge] OpenAI-compatible API: http://localhost:${port}/v1`);
+    console.log(
+      `[zedge] Superinference: POST http://localhost:${port}/v1/superinference`
+    );
+    console.log(`[zedge] Mesh: http://localhost:${port}/mesh/status`);
+    console.log(`[zedge] Agent: POST http://localhost:${port}/agent/session`);
+    console.log(`[zedge] Forge: http://localhost:${port}/forge/status`);
+    console.log(`[zedge] Health: http://localhost:${port}/health`);
+    console.log(`[zedge] Ghostwriter CRDT: http://localhost:${port}/crdt/status`);
+    console.log(`[zedge] Ghostwriter UCAN: http://localhost:${port}/ucan/status`);
+  });
 }

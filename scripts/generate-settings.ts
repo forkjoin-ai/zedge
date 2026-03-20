@@ -1,4 +1,4 @@
-#!/usr/bin/env bun
+#!/usr/bin/env node
 /**
  * Zedge Settings Generator
  *
@@ -6,8 +6,7 @@
  * Zero-build quick start — Zed users get AI assistant with Aeon inference in 60 seconds.
  *
  * Usage:
- *   bun open-source/zedge/scripts/generate-settings.ts
- *   bunx zedge setup
+ *   pnpm gnode run open-source/zedge/scripts/generate-settings.ts
  */
 
 import { homedir } from 'os';
@@ -132,7 +131,7 @@ function generateSettings(): void {
 
   // Also output companion config hint
   console.log('\n# For local inference bridge (optional):');
-  console.log('#   bun open-source/zedge/companion/src/index.ts');
+  console.log('#   pnpm gnode run open-source/zedge/companion/src/index.ts');
   console.log('#   Then change api_url to: http://localhost:7331/v1');
 }
 

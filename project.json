@@ -7,13 +7,13 @@
     "build": {
       "executor": "a0:run-commands",
       "options": {
-        "command": "echo 'zedge: Rust extension built via cargo, companion via bun'"
+        "command": "echo 'zedge: Rust extension built via cargo, companion via gnode'"
       }
     },
     "build:companion": {
       "executor": "a0:run-commands",
       "options": {
-        "command": "bun build companion/src/index.ts --outdir companion/dist --target bun --minify",
+        "command": "pnpm exec esbuild companion/src/index.ts --bundle --outdir=companion/dist --platform=node --format=esm --minify",
         "cwd": "open-source/zedge"
       }
     },
@@ -21,7 +21,7 @@
       "executor": "a0:run-commands",
       "outputs": ["{workspaceRoot}/coverage/{projectRoot}"],
       "options": {
-        "command": "bun test",
+        "command": "pnpm jest --config companion/jest.config.ts",
         "cwd": "{workspaceRoot}/open-source/zedge"
       }
     },
@@ -35,7 +35,7 @@
     "lint": {
       "executor": "a0:run-commands",
       "options": {
-        "command": "bunx eslint companion/src scripts --ext .ts",
+        "command": "pnpm exec eslint companion/src scripts --ext .ts",
         "cwd": "open-source/zedge"
       }
     }

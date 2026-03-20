@@ -13,11 +13,12 @@
 
 import { getApiBaseUrl, getAuthHeaders, getZedgeConfig } from './config';
 import { appendFileSync, mkdirSync } from 'fs';
-import { join } from 'path';
+import { join, dirname } from 'path';
+import { fileURLToPath } from 'url';
 
 // --- Inference log file + in-memory ring buffer ---
-// import.meta.dir = .../companion/src → go up twice to companion/
-const LOG_DIR = join(import.meta.dir, '..', '..', '.edgework');
+const __inference_dirname = dirname(fileURLToPath(import.meta.url));
+const LOG_DIR = join(__inference_dirname, '..', '..', '.edgework');
 try {
   mkdirSync(LOG_DIR, { recursive: true });
 } catch {}
@@ -773,7 +774,15 @@ export function createSSEProxyStream(
                   }
                 }
               }
-              enqueue(encoder.encode(line + '\n'));
+              // Only forward valid OpenAI SSE data lines (chunks with "choices" or [DONE])
+              // Filter out non-standard upstream payloads like {"status":"ready"}
+              if (payload === '[DONE]' || payload.includes('"choices"')) {
+                enqueue(encoder.encode(line + '\n'));
+              } else {
+                logInference(
+                  `[sse-proxy] tier=${tier} filtered non-OpenAI data: ${payload.slice(0, 100)}`
+                );
+              }
             } else if (line === '') {
               enqueue(encoder.encode('\n'));
             } else if (line.startsWith(':')) {
