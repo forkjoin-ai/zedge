@@ -37,6 +37,11 @@ import type {
 } from '../../../aeon-forge/src/deploy/types';
 import { discoverProjects } from '../../../aeon-forge/src/deploy/discovery';
 import { createLogger } from '../../../aeon-forge/src/deploy/logger';
+import type {
+  ForgeEventBus,
+  ExtendedForgoEvent,
+  EventHandler,
+} from '../../../aeon-forge/src/deploy/event-bus';
 
 const log = createLogger('zedge-forge');
 
@@ -77,9 +82,53 @@ export class ForgeBridge {
   private processes = new Map<string, ForgoProcess>();
   private logs = new Map<string, ForgeLogEntry[]>();
   private events: ForgoDeployEvent[] = [];
+  private eventBus: ForgeEventBus | null = null;
+  private eventHandlers = new Map<string, EventHandler[]>();
+  private unsubscribe: (() => void) | null = null;
 
   constructor(workspacePath: string) {
     this.workspacePath = workspacePath;
+  }
+
+  /**
+   * Connect to a forge event bus for bidirectional streaming.
+   */
+  connectEventBus(bus: ForgeEventBus): void {
+    this.eventBus = bus;
+    this.unsubscribe = bus.subscribe((event) => {
+      this.addEvent(event as ForgoDeployEvent);
+      const handlers = this.eventHandlers.get(event.type) ?? [];
+      for (const handler of handlers) {
+        try {
+          handler(event);
+        } catch {
+          // Handler errors should not break the bridge
+        }
+      }
+    });
+  }
+
+  /**
+   * Subscribe to specific event types from the forge event bus.
+   */
+  on(
+    eventType: ExtendedForgoEvent['type'],
+    handler: EventHandler
+  ): void {
+    const handlers = this.eventHandlers.get(eventType) ?? [];
+    handlers.push(handler);
+    this.eventHandlers.set(eventType, handlers);
+  }
+
+  /**
+   * Disconnect from the event bus.
+   */
+  disconnectEventBus(): void {
+    if (this.unsubscribe) {
+      this.unsubscribe();
+      this.unsubscribe = null;
+    }
+    this.eventBus = null;
   }
 
   /**

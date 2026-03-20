@@ -1004,3 +1004,132 @@ pub fn run_feedback() -> Result<SlashCommandOutput, String> {
     let text = "Feedback noted. Quality ratings help improve model routing.\n\nTo submit detailed feedback, POST to `http://localhost:7331/feedback` with:\n```json\n{\"model\": \"tinyllama-1.1b\", \"rating\": 4, \"comment\": \"Good response\"}\n```".to_string();
     Ok(output_with_section(text, "Zedge Feedback"))
 }
+
+/// /zedge-cera — CERA perturbation engine control
+///
+/// Subcommands:
+///   status     — CERA cycle status + void map stats
+///   mutations  — pending mutations with entropy scores
+///   accept <id> — accept mutation
+///   reject <id> — reject mutation
+///   history    — recent graduated mutations
+pub fn run_cera(args: &str) -> Result<SlashCommandOutput, String> {
+    let parts: Vec<&str> = args.trim().splitn(2, ' ').collect();
+    let subcommand = parts.first().unwrap_or(&"status");
+
+    match *subcommand {
+        "status" => {
+            let body = companion_get("/cera/status")?;
+            if let Ok(v) = serde_json::from_str::<serde_json::Value>(&body) {
+                let pending = v["pendingMutations"].as_u64().unwrap_or(0);
+                let graduated = v["totalGraduated"].as_u64().unwrap_or(0);
+                let rejected = v["totalRejected"].as_u64().unwrap_or(0);
+                let accepted = v["totalAccepted"].as_u64().unwrap_or(0);
+                let rounds = v["voidMapDensity"]["rounds"].as_u64().unwrap_or(0);
+                let entropy = v["voidMapDensity"]["entropy"].as_f64().unwrap_or(0.0);
+                let connected = v["connected"].as_bool().unwrap_or(false);
+
+                let text = format!(
+                    "## CERA Perturbation Engine\n\n\
+                     **Connected**: {}\n\
+                     **Pending mutations**: {}\n\
+                     **Graduated**: {} | **Accepted**: {} | **Rejected**: {}\n\n\
+                     ### Void Map\n\
+                     **Rounds**: {} | **Entropy**: {:.3}\n\
+                     **Complement weights**: {}",
+                    if connected { "Yes" } else { "No" },
+                    pending, graduated, accepted, rejected,
+                    rounds, entropy,
+                    v["voidMapDensity"]["complementWeights"]
+                );
+                Ok(output_with_section(text, "Zedge CERA"))
+            } else {
+                Ok(output_with_section(format!("```\n{body}\n```"), "Zedge CERA"))
+            }
+        }
+        "mutations" => {
+            let body = companion_get("/cera/mutations")?;
+            if let Ok(arr) = serde_json::from_str::<Vec<serde_json::Value>>(&body) {
+                if arr.is_empty() {
+                    return Ok(output_with_section(
+                        "No pending mutations.".to_string(),
+                        "Zedge CERA",
+                    ));
+                }
+                let mut text = "## Pending Mutations\n\n".to_string();
+                for m in &arr {
+                    let id = m["id"].as_str().unwrap_or("?");
+                    let desc = m["mutation"]["description"].as_str().unwrap_or("?");
+                    let delta = m["mutation"]["entropyDelta"].as_f64().unwrap_or(0.0);
+                    let strategy = m["mutation"]["strategy"].as_str().unwrap_or("?");
+                    text.push_str(&format!(
+                        "- **{}** ({}): {} [entropy delta: {:.1}]\n",
+                        id, strategy, desc, delta
+                    ));
+                }
+                text.push_str("\nUse `/zedge-cera accept <id>` or `/zedge-cera reject <id>`");
+                Ok(output_with_section(text, "Zedge CERA"))
+            } else {
+                Ok(output_with_section(format!("```\n{body}\n```"), "Zedge CERA"))
+            }
+        }
+        "accept" => {
+            let id = parts.get(1).unwrap_or(&"");
+            if id.is_empty() {
+                return Ok(output_with_section(
+                    "Usage: `/zedge-cera accept <mutation-id>`".to_string(),
+                    "Zedge CERA",
+                ));
+            }
+            let body = companion_post(&format!("/cera/accept/{id}"))?;
+            Ok(output_with_section(
+                format!("Mutation **{id}** accepted.\n\n```json\n{body}\n```"),
+                "Zedge CERA",
+            ))
+        }
+        "reject" => {
+            let id = parts.get(1).unwrap_or(&"");
+            if id.is_empty() {
+                return Ok(output_with_section(
+                    "Usage: `/zedge-cera reject <mutation-id>`".to_string(),
+                    "Zedge CERA",
+                ));
+            }
+            let body = companion_post(&format!("/cera/reject/{id}"))?;
+            Ok(output_with_section(
+                format!("Mutation **{id}** rejected (recorded in void map).\n\n```json\n{body}\n```"),
+                "Zedge CERA",
+            ))
+        }
+        "history" => {
+            let body = companion_get("/cera/history")?;
+            if let Ok(arr) = serde_json::from_str::<Vec<serde_json::Value>>(&body) {
+                if arr.is_empty() {
+                    return Ok(output_with_section(
+                        "No mutation history yet.".to_string(),
+                        "Zedge CERA",
+                    ));
+                }
+                let mut text = "## Mutation History\n\n".to_string();
+                for m in arr.iter().take(20) {
+                    let id = m["id"].as_str().unwrap_or("?");
+                    let status = m["status"].as_str().unwrap_or("?");
+                    let desc = m["mutation"]["description"].as_str().unwrap_or("?");
+                    let icon = match status {
+                        "accepted" => "V",
+                        "rejected" => "X",
+                        _ => "-",
+                    };
+                    text.push_str(&format!("- [{}] **{}**: {}\n", icon, id, desc));
+                }
+                Ok(output_with_section(text, "Zedge CERA"))
+            } else {
+                Ok(output_with_section(format!("```\n{body}\n```"), "Zedge CERA"))
+            }
+        }
+        _ => Ok(output_with_section(
+            "Unknown subcommand. Available: `status`, `mutations`, `accept <id>`, `reject <id>`, `history`".to_string(),
+            "Zedge CERA",
+        )),
+    }
+}

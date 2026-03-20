@@ -48,6 +48,7 @@ import {
 } from './binary-protocol';
 import type { ChatCompletionRequest } from './inference-bridge';
 import type { ForgeBridge } from './forge-bridge';
+import type { CeraBridge } from './cera-bridge';
 import {
   superinferWithPreset,
   getCompositionPreset,
@@ -305,6 +306,7 @@ function corsHeaders(): Response {
 // --- Bridges (set during server start) ---
 
 let forgeBridge: ForgeBridge | null = null;
+let ceraBridge: CeraBridge | null = null;
 let vfsBridge: VfsBridge | null = null;
 let collabBridge: CollabBridge | null = null;
 let kernelBridge: KernelBridge | null = null;
@@ -315,6 +317,10 @@ const agentParticipants = new Map<string, AgentParticipant>();
 
 export function setForgeBridge(bridge: ForgeBridge): void {
   forgeBridge = bridge;
+}
+
+export function setCeraBridge(bridge: CeraBridge): void {
+  ceraBridge = bridge;
 }
 
 export function setVfsBridge(bridge: VfsBridge): void {
@@ -389,6 +395,11 @@ async function extractResponseData(
 async function handleRequest(req: Request): Promise<Response> {
   const url = new URL(req.url);
   const path = url.pathname;
+
+  // Request logging
+  if (path !== '/health') {
+    console.log(`[zedge:http] ${req.method} ${path}`);
+  }
 
   // CORS preflight
   if (req.method === 'OPTIONS') {
@@ -1408,6 +1419,98 @@ async function handleRequest(req: Request): Promise<Response> {
     const processId = path.slice('/forge/stop/'.length);
     await forgeBridge.stop(processId);
     return jsonResponse({ stopped: true, processId });
+  }
+
+  // ==================== CERA (Perturbation Engine) ====================
+
+  if (path === '/cera/status' && req.method === 'GET') {
+    if (!ceraBridge) {
+      return jsonResponse({ error: 'CERA bridge not initialized' }, 503);
+    }
+    return jsonResponse(ceraBridge.getStatus());
+  }
+
+  if (path === '/cera/mutations' && req.method === 'GET') {
+    if (!ceraBridge) {
+      return jsonResponse({ error: 'CERA bridge not initialized' }, 503);
+    }
+    return jsonResponse(ceraBridge.getPending());
+  }
+
+  if (path === '/cera/history' && req.method === 'GET') {
+    if (!ceraBridge) {
+      return jsonResponse({ error: 'CERA bridge not initialized' }, 503);
+    }
+    return jsonResponse(ceraBridge.getHistory());
+  }
+
+  if (path.startsWith('/cera/accept/') && req.method === 'POST') {
+    if (!ceraBridge) {
+      return jsonResponse({ error: 'CERA bridge not initialized' }, 503);
+    }
+    const mutationId = path.slice('/cera/accept/'.length);
+    const result = ceraBridge.accept(mutationId);
+    if (!result) {
+      return jsonResponse({ error: `Mutation ${mutationId} not found` }, 404);
+    }
+    return jsonResponse({ accepted: true, mutation: result });
+  }
+
+  if (path.startsWith('/cera/reject/') && req.method === 'POST') {
+    if (!ceraBridge) {
+      return jsonResponse({ error: 'CERA bridge not initialized' }, 503);
+    }
+    const mutationId = path.slice('/cera/reject/'.length);
+    const result = ceraBridge.reject(mutationId);
+    if (!result) {
+      return jsonResponse({ error: `Mutation ${mutationId} not found` }, 404);
+    }
+    return jsonResponse({ rejected: true, mutation: result });
+  }
+
+  if (path === '/cera/events' && req.method === 'GET') {
+    if (!ceraBridge) {
+      return jsonResponse({ error: 'CERA bridge not initialized' }, 503);
+    }
+    const stream = ceraBridge.createSseStream();
+    return new Response(stream, {
+      headers: {
+        'Content-Type': 'text/event-stream',
+        'Cache-Control': 'no-cache',
+        Connection: 'keep-alive',
+        'Access-Control-Allow-Origin': '*',
+      },
+    });
+  }
+
+  if (path === '/forge/events' && req.method === 'GET') {
+    if (!forgeBridge) {
+      return jsonResponse({ error: 'Forge bridge not initialized' }, 503);
+    }
+    // SSE endpoint streaming forge events to Zed in real time
+    // Uses the same pattern as /gnosis/viz/events
+    const encoder = new TextEncoder();
+    const stream = new ReadableStream({
+      start(controller) {
+        controller.enqueue(encoder.encode('data: {"type":"connected"}\n\n'));
+        const interval = setInterval(() => {
+          try {
+            controller.enqueue(encoder.encode(': heartbeat\n\n'));
+          } catch {
+            clearInterval(interval);
+          }
+        }, 15_000);
+      },
+      cancel() {},
+    });
+    return new Response(stream, {
+      headers: {
+        'Content-Type': 'text/event-stream',
+        'Cache-Control': 'no-cache',
+        Connection: 'keep-alive',
+        'Access-Control-Allow-Origin': '*',
+      },
+    });
   }
 
   // ==================== VFS (Phase 2) ====================
