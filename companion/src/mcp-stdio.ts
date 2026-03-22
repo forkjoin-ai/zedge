@@ -11,23 +11,11 @@
  * restarting it automatically if it crashes or becomes unreachable.
  */
 
-// Redirect console to stderr so stdout stays clean for MCP JSON-RPC
-const _origLog = console.log;
-const _origWarn = console.warn;
-const _origInfo = console.info;
-const _origDebug = console.debug;
-console.log = (...args: unknown[]) => console.error('[zedge:mcp]', ...args);
-console.warn = (...args: unknown[]) =>
-  process.stderr.write(`[zedge:mcp:warn] ${args.join(' ')}\n`);
-console.info = (...args: unknown[]) =>
-  process.stderr.write(`[zedge:mcp:info] ${args.join(' ')}\n`);
-console.debug = (...args: unknown[]) =>
-  process.stderr.write(`[zedge:mcp:debug] ${args.join(' ')}\n`);
-
 import { spawn, type ChildProcess } from 'child_process';
 import { resolve, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import { getCompanionPort } from './config';
+import { callBabelfishMcpTool, getBabelfishMcpTools } from './babelfish-mcp';
 
 const COMPANION_BASE = `http://localhost:${getCompanionPort()}`;
 
@@ -38,6 +26,22 @@ const COMPANION_ENTRY = resolve(__dirname, 'index.ts');
 const HEALTH_CHECK_INTERVAL_MS = 10_000;
 let companionProc: ChildProcess | null = null;
 let babysitterTimer: ReturnType<typeof setInterval> | null = null;
+let stdioLoggingConfigured = false;
+
+function configureStdioLogging(): void {
+  if (stdioLoggingConfigured) {
+    return;
+  }
+
+  stdioLoggingConfigured = true;
+  console.log = (...args: unknown[]) => console.error('[zedge:mcp]', ...args);
+  console.warn = (...args: unknown[]) =>
+    process.stderr.write(`[zedge:mcp:warn] ${args.join(' ')}\n`);
+  console.info = (...args: unknown[]) =>
+    process.stderr.write(`[zedge:mcp:info] ${args.join(' ')}\n`);
+  console.debug = (...args: unknown[]) =>
+    process.stderr.write(`[zedge:mcp:debug] ${args.join(' ')}\n`);
+}
 
 /** Check if companion is reachable */
 async function isCompanionAlive(): Promise<boolean> {
@@ -96,14 +100,14 @@ function startBabysitter(): void {
 
 // ---------- MCP JSON-RPC types ----------
 
-interface JsonRpcRequest {
+export interface JsonRpcRequest {
   jsonrpc: '2.0';
   id?: string | number;
   method: string;
   params?: Record<string, unknown>;
 }
 
-interface JsonRpcResponse {
+export interface JsonRpcResponse {
   jsonrpc: '2.0';
   id: string | number | null;
   result?: unknown;
@@ -129,7 +133,7 @@ async function waitForCompanion(maxAttempts = 20): Promise<boolean> {
 
 // ---------- MCP message handlers ----------
 
-function handleInitialize(
+export function handleInitialize(
   params: Record<string, unknown>
 ): Record<string, unknown> {
   return {
@@ -145,7 +149,7 @@ function handleInitialize(
   };
 }
 
-async function handleToolsList(): Promise<Record<string, unknown>> {
+export async function handleToolsList(): Promise<Record<string, unknown>> {
   return {
     tools: [
       {
@@ -189,17 +193,25 @@ async function handleToolsList(): Promise<Record<string, unknown>> {
           'Get workspace file tree and git changes from the VFS bridge',
         inputSchema: { type: 'object', properties: {} },
       },
+      ...getBabelfishMcpTools(),
     ],
   };
 }
 
-async function handleToolCall(
+export async function handleToolCall(
   params: Record<string, unknown>
 ): Promise<Record<string, unknown>> {
   const name = params.name as string;
   const args = (params.arguments as Record<string, unknown>) ?? {};
 
   try {
+    if (name.startsWith('zedge_babelfish_')) {
+      const text = await callBabelfishMcpTool(COMPANION_BASE, name, args);
+      return {
+        content: [{ type: 'text', text }],
+      };
+    }
+
     switch (name) {
       case 'zedge_infer': {
         const messages: Array<{ role: string; content: string }> = [];
@@ -296,7 +308,9 @@ async function handleResourcesList(): Promise<Record<string, unknown>> {
 
 // ---------- MCP message dispatch ----------
 
-async function dispatch(msg: JsonRpcRequest): Promise<JsonRpcResponse | null> {
+export async function dispatch(
+  msg: JsonRpcRequest
+): Promise<JsonRpcResponse | null> {
   const { id, method, params } = msg;
 
   // Notifications (no id) — just acknowledge
@@ -354,6 +368,7 @@ function send(response: JsonRpcResponse): void {
 }
 
 async function main(): Promise<void> {
+  configureStdioLogging();
   console.log('Starting MCP stdio bridge...');
 
   // Check if companion is already running; if not, spawn it
@@ -433,7 +448,18 @@ async function main(): Promise<void> {
   });
 }
 
-main().catch((err) => {
-  console.error('Fatal error:', err);
-  process.exit(1);
-});
+function isExecutedDirectly(importMetaUrl: string): boolean {
+  const entryPath = process.argv[1];
+  if (!entryPath) {
+    return false;
+  }
+
+  return resolve(fileURLToPath(importMetaUrl)) === resolve(entryPath);
+}
+
+if (isExecutedDirectly(import.meta.url)) {
+  main().catch((err) => {
+    console.error('Fatal error:', err);
+    process.exit(1);
+  });
+}

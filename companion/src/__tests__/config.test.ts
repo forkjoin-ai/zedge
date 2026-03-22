@@ -32,10 +32,15 @@ describe('Zedge Config', () => {
     expect(config).toHaveProperty('computePool');
     expect(config).toHaveProperty('preferredModel');
     expect(config).toHaveProperty('cloudRunDirect');
+    expect(config).toHaveProperty('babelfish');
     expect(config.computePool).toHaveProperty('enabled');
     expect(config.computePool).toHaveProperty('maxCpuPercent');
     expect(config.computePool).toHaveProperty('maxMemoryMb');
     expect(config.computePool).toHaveProperty('allowedModels');
     expect(Array.isArray(config.computePool.allowedModels)).toBe(true);
+    expect(config.babelfish).toHaveProperty('enabled');
+    expect(config.babelfish).toHaveProperty('ambientSuggestions');
+    expect(config.babelfish).toHaveProperty('defaultHumanLanguage');
+    expect(config.babelfish).toHaveProperty('requirePreviewForInPlaceRewrite');
   });
 });

@@ -18,6 +18,7 @@ import {
 import type { TierAttempt } from './inference-bridge';
 import { joinPool, leavePool, getPoolStatus } from './compute-node';
 import { getCompanionPort, getZedgeConfig } from './config';
+import { handleBabelfishRequest } from './babelfish-routes';
 import {
   startMesh,
   stopMesh,
@@ -437,6 +438,13 @@ async function handleRequest(req: Request): Promise<Response> {
         cloudRunDirect: config.cloudRunDirect,
         wasmLocal: true,
       },
+      babelfish: {
+        enabled: config.babelfish.enabled,
+        ambientSuggestions: config.babelfish.ambientSuggestions,
+        defaultHumanLanguage: config.babelfish.defaultHumanLanguage,
+        requirePreviewForInPlaceRewrite:
+          config.babelfish.requirePreviewForInPlaceRewrite,
+      },
       ghostwriter: {
         crdt: crdtBridge?.getStatus() ?? null,
         ucan: ucanBridge?.getStatus() ?? null,
@@ -602,6 +610,11 @@ async function handleRequest(req: Request): Promise<Response> {
   }
 
   // ==================== Gnosis ====================
+
+  const babelfishResponse = await handleBabelfishRequest(req);
+  if (babelfishResponse) {
+    return babelfishResponse;
+  }
 
   if (path === '/gnosis/eval' && req.method === 'POST') {
     try {

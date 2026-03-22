@@ -15,7 +15,14 @@
  */
 
 import { DashRelay } from '@dashrelay/client';
-import { Doc, Map as YMap, Array as YArray, Text } from 'yjs';
+import {
+  Doc,
+  Map as YMap,
+  Array as YArray,
+  Text,
+  encodeStateAsUpdate,
+  encodeStateVector,
+} from 'yjs';
 
 // Aliases for QDoc migration compatibility
 const QDoc = Doc;
@@ -798,7 +805,7 @@ export class CrdtBridge {
   getSnapshot(path: string): Uint8Array | null {
     const handle = this.files.get(path);
     if (!handle) return null;
-    return handle.doc.encodeStateAsUpdate();
+    return encodeStateAsUpdate(handle.doc);
   }
 
   /**
@@ -807,7 +814,7 @@ export class CrdtBridge {
   getStateVector(path: string): Uint8Array | null {
     const handle = this.files.get(path);
     if (!handle) return null;
-    return handle.doc.encodeStateVector();
+    return encodeStateVector(handle.doc);
   }
 
   // -------------------------------------------------------------------------

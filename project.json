@@ -13,30 +13,25 @@
     "build:companion": {
       "executor": "a0:run-commands",
       "options": {
-        "command": "pnpm exec esbuild companion/src/index.ts --bundle --outdir=companion/dist --platform=node --format=esm --minify",
-        "cwd": "open-source/zedge"
+        "command": "pnpm exec esbuild open-source/zedge/companion/src/index.ts --bundle --outdir=open-source/zedge/companion/dist --platform=node --format=esm --minify"
       }
     },
     "test": {
       "executor": "a0:run-commands",
-      "outputs": ["{workspaceRoot}/coverage/{projectRoot}"],
       "options": {
-        "command": "pnpm jest --config companion/jest.config.ts",
-        "cwd": "{workspaceRoot}/open-source/zedge"
+        "command": "pnpm exec bun test open-source/zedge/companion/src/__tests__"
       }
     },
     "typecheck": {
       "executor": "a0:run-commands",
       "options": {
-        "command": "../../node_modules/.bin/tsc -p companion/tsconfig.json --noEmit",
-        "cwd": "open-source/zedge"
+        "command": "pnpm exec tsc -p open-source/zedge/companion/tsconfig.typecheck.json --noEmit"
       }
     },
     "lint": {
       "executor": "a0:run-commands",
       "options": {
-        "command": "pnpm exec eslint companion/src scripts --ext .ts",
-        "cwd": "open-source/zedge"
+        "command": "pnpm exec eslint open-source/zedge/companion/src open-source/zedge/scripts --ext .ts"
       }
     }
   }

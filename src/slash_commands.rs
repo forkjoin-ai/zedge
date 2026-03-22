@@ -34,6 +34,21 @@ fn companion_post(path: &str) -> Result<String, String> {
     String::from_utf8(response.body).map_err(|e| format!("Invalid UTF-8: {e}"))
 }
 
+/// Helper: POST JSON to companion and return body as string
+fn companion_post_json(path: &str, body: serde_json::Value) -> Result<String, String> {
+    let url = format!("{}{}", provider::COMPANION_URL, path);
+    let response = HttpRequest::builder()
+        .method(HttpMethod::Post)
+        .url(&url)
+        .header("Content-Type", "application/json")
+        .body(body.to_string().into_bytes())
+        .redirect_policy(RedirectPolicy::FollowAll)
+        .build()?
+        .fetch()
+        .map_err(|e| format!("Companion unavailable: {e}"))?;
+    String::from_utf8(response.body).map_err(|e| format!("Invalid UTF-8: {e}"))
+}
+
 /// Helper: DELETE to companion and return body as string
 fn companion_delete(path: &str) -> Result<String, String> {
     let url = format!("{}{}", provider::COMPANION_URL, path);
@@ -1003,6 +1018,169 @@ pub fn run_test(worktree: Option<&Worktree>) -> Result<SlashCommandOutput, Strin
 pub fn run_feedback() -> Result<SlashCommandOutput, String> {
     let text = "Feedback noted. Quality ratings help improve model routing.\n\nTo submit detailed feedback, POST to `http://localhost:7331/feedback` with:\n```json\n{\"model\": \"tinyllama-1.1b\", \"rating\": 4, \"comment\": \"Good response\"}\n```".to_string();
     Ok(output_with_section(text, "Zedge Feedback"))
+}
+
+pub fn run_babelfish(
+    args: &[String],
+    worktree: Option<&Worktree>,
+) -> Result<SlashCommandOutput, String> {
+    if args.is_empty() || args[0] == "capabilities" {
+        match companion_get("/babelfish/capabilities") {
+            Ok(body) => {
+                if let Ok(v) = serde_json::from_str::<serde_json::Value>(&body) {
+                    let mut parts = vec![
+                        "## Zedge Babelfish".to_string(),
+                        format!(
+                            "**Registry source**: `{}`",
+                            v["registrySource"].as_str().unwrap_or("unknown")
+                        ),
+                        "\n### Programming Languages".to_string(),
+                        "| Language | Analyze | Explain | Translate | Scaffold | Rewrite Preview |"
+                            .to_string(),
+                        "|:---|:---|:---|:---|:---|:---|".to_string(),
+                    ];
+
+                    if let Some(languages) = v["languages"].as_array() {
+                        for language in languages {
+                            let id = language["id"].as_str().unwrap_or("?");
+                            let ops = &language["operations"];
+                            parts.push(format!(
+                                "| `{}` | {} | {} | {} | {} | {} |",
+                                id,
+                                ops["analyze"].as_str().unwrap_or("?"),
+                                ops["explain"].as_str().unwrap_or("?"),
+                                ops["translate"].as_str().unwrap_or("?"),
+                                ops["scaffold"].as_str().unwrap_or("?"),
+                                ops["rewritePreview"].as_str().unwrap_or("?"),
+                            ));
+                        }
+                    }
+
+                    parts.push("\n### Human Languages".to_string());
+                    if let Some(human_languages) = v["humanLanguages"].as_array() {
+                        for language in human_languages {
+                            let code = language["code"].as_str().unwrap_or("?");
+                            let name = language["name"].as_str().unwrap_or("?");
+                            let status = language["status"].as_str().unwrap_or("?");
+                            parts.push(format!("- `{code}` — {name} ({status})"));
+                        }
+                    }
+
+                    return Ok(output_with_section(parts.join("\n"), "Babelfish"));
+                }
+                Ok(output_with_section(format!("```json\n{body}\n```"), "Babelfish"))
+            }
+            Err(e) => Ok(output_with_section(format!("**Companion offline**: {e}"), "Babelfish")),
+        }
+    } else {
+        let subcommand = args[0].as_str();
+        match subcommand {
+            "apply" => {
+                let preview_id = args.get(1).ok_or("Usage: `/zedge-babelfish apply <preview-id> [rewrite_in_place|generate_files]`")?;
+                let apply_mode = args.get(2).map(|s| s.as_str()).unwrap_or("rewrite_in_place");
+                let body = serde_json::json!({
+                    "previewId": preview_id,
+                    "applyMode": apply_mode,
+                });
+                let response = companion_post_json("/babelfish/code/apply", body)?;
+                return Ok(output_with_section(
+                    format!("## Babelfish Apply\n\n```json\n{response}\n```"),
+                    "Babelfish Apply",
+                ));
+            }
+            "translate-code" | "generate" | "rewrite-preview" => {
+                let target_language = args.get(1).ok_or(
+                    "Usage: `/zedge-babelfish <translate-code|generate|rewrite-preview> <target-language> <file-path>`",
+                )?;
+                let file_path = args.get(2).ok_or(
+                    "Usage: `/zedge-babelfish <translate-code|generate|rewrite-preview> <target-language> <file-path>`",
+                )?;
+                let wt = worktree.ok_or("No active workspace")?;
+                let source_text = wt
+                    .read_text_file(file_path)
+                    .map_err(|_| format!("Could not read `{file_path}` from the current workspace"))?;
+                let output_mode = if subcommand == "generate" {
+                    "generate_files"
+                } else if subcommand == "rewrite-preview" {
+                    "rewrite_in_place_requested"
+                } else {
+                    "preview"
+                };
+                let body = serde_json::json!({
+                    "scope": {
+                        "kind": "file",
+                        "filePath": file_path,
+                        "sourceText": source_text,
+                    },
+                    "targetLanguage": target_language,
+                    "mode": subcommand,
+                    "outputMode": output_mode,
+                });
+                let response = companion_post_json("/babelfish/code/preview", body)?;
+                return Ok(output_with_section(
+                    format!("## Babelfish {subcommand}\n\n```json\n{response}\n```"),
+                    "Babelfish Preview",
+                ));
+            }
+            "translate-text" => {
+                let target_language = args
+                    .get(1)
+                    .ok_or("Usage: `/zedge-babelfish translate-text <target-language> <file-path>`")?;
+                let file_path = args
+                    .get(2)
+                    .ok_or("Usage: `/zedge-babelfish translate-text <target-language> <file-path>`")?;
+                let wt = worktree.ok_or("No active workspace")?;
+                let source_text = wt
+                    .read_text_file(file_path)
+                    .map_err(|_| format!("Could not read `{file_path}` from the current workspace"))?;
+                let body = serde_json::json!({
+                    "scope": {
+                        "kind": "file",
+                        "filePath": file_path,
+                        "sourceText": source_text,
+                    },
+                    "targetHumanLanguage": target_language,
+                    "includeComments": true,
+                    "includeDiagnostics": true,
+                    "includeMarkdown": true,
+                });
+                let response = companion_post_json("/babelfish/text/translate", body)?;
+                return Ok(output_with_section(
+                    format!("## Babelfish Text Translation\n\n```json\n{response}\n```"),
+                    "Babelfish Text",
+                ));
+            }
+            "explain" => {
+                let file_path = args
+                    .get(1)
+                    .ok_or("Usage: `/zedge-babelfish explain <file-path> [audience-language]`")?;
+                let audience_language = args.get(2).map(|s| s.as_str()).unwrap_or("en");
+                let wt = worktree.ok_or("No active workspace")?;
+                let source_text = wt
+                    .read_text_file(file_path)
+                    .map_err(|_| format!("Could not read `{file_path}` from the current workspace"))?;
+                let body = serde_json::json!({
+                    "scope": {
+                        "kind": "file",
+                        "filePath": file_path,
+                        "sourceText": source_text,
+                    },
+                    "audienceLanguage": audience_language,
+                    "includeGg": true,
+                });
+                let response = companion_post_json("/babelfish/explain", body)?;
+                return Ok(output_with_section(
+                    format!("## Babelfish Explain\n\n```json\n{response}\n```"),
+                    "Babelfish Explain",
+                ));
+            }
+            _ => Ok(output_with_section(
+                "Usage:\n- `/zedge-babelfish capabilities`\n- `/zedge-babelfish explain <file-path> [audience-language]`\n- `/zedge-babelfish translate-code <target-language> <file-path>`\n- `/zedge-babelfish translate-text <target-language> <file-path>`\n- `/zedge-babelfish generate <target-language> <file-path>`\n- `/zedge-babelfish rewrite-preview <target-language> <file-path>`\n- `/zedge-babelfish apply <preview-id> [rewrite_in_place|generate_files]`"
+                    .to_string(),
+                "Babelfish",
+            )),
+        }
+    }
 }
 
 /// /zedge-cera — CERA perturbation engine control

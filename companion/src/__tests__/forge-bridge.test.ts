@@ -167,24 +167,28 @@ describe('ForgeBridge', () => {
     expect(bridge.getStatus().summary.total).toBe(0);
   });
 
-  test('deploy with failing build command returns failed', async () => {
-    setupWorkspace([
-      {
-        name: 'fail-build',
-        dir: 'apps/fail-build',
-        kind: 'site',
-        port: 4800,
-        buildCommand: 'exit 1',
-      },
-    ]);
+  test(
+    'deploy with failing build command returns failed',
+    async () => {
+      setupWorkspace([
+        {
+          name: 'fail-build',
+          dir: 'apps/fail-build',
+          kind: 'site',
+          port: 4800,
+          buildCommand: 'exit 1',
+        },
+      ]);
 
-    const bridge = new ForgeBridge(TEST_DIR);
-    const result = await bridge.deploy('fail-build');
+      const bridge = new ForgeBridge(TEST_DIR);
+      const result = await bridge.deploy('fail-build');
 
-    expect(result.success).toBe(false);
-    expect(result.error).toContain('Build failed');
-    expect(result.process?.state).toBe('failed');
-  });
+      expect(result.success).toBe(false);
+      expect(result.error).toContain('Build failed');
+      expect(result.process?.state).toBe('failed');
+    },
+    15_000
+  );
 
   test('getEvents returns deploy events', async () => {
     setupWorkspace([

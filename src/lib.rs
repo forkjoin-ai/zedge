@@ -6,6 +6,56 @@ use zed_extension_api::{self as zed, *};
 
 struct ZedgeExtension;
 
+fn fetch_babelfish_capabilities() -> Option<serde_json::Value> {
+    let url = format!("{}/babelfish/capabilities", provider::COMPANION_URL);
+    let response = HttpRequest::builder()
+        .method(HttpMethod::Get)
+        .url(&url)
+        .redirect_policy(RedirectPolicy::FollowAll)
+        .build()
+        .ok()?
+        .fetch()
+        .ok()?;
+    serde_json::from_slice::<serde_json::Value>(&response.body).ok()
+}
+
+fn babelfish_language_completions(
+    operation: &str,
+) -> Vec<SlashCommandArgumentCompletion> {
+    fetch_babelfish_capabilities()
+        .and_then(|value| value["languages"].as_array().cloned())
+        .unwrap_or_default()
+        .into_iter()
+        .filter(|language| language["operations"][operation].as_str().unwrap_or("unsupported") != "unsupported")
+        .map(|language| {
+            let id = language["id"].as_str().unwrap_or("?");
+            let display_name = language["displayName"].as_str().unwrap_or(id);
+            SlashCommandArgumentCompletion {
+                label: format!("{id} — {display_name}"),
+                new_text: id.to_string(),
+                run_command: false,
+            }
+        })
+        .collect()
+}
+
+fn babelfish_human_language_completions() -> Vec<SlashCommandArgumentCompletion> {
+    fetch_babelfish_capabilities()
+        .and_then(|value| value["humanLanguages"].as_array().cloned())
+        .unwrap_or_default()
+        .into_iter()
+        .map(|language| {
+            let code = language["code"].as_str().unwrap_or("?");
+            let name = language["name"].as_str().unwrap_or(code);
+            SlashCommandArgumentCompletion {
+                label: format!("{code} — {name}"),
+                new_text: code.to_string(),
+                run_command: false,
+            }
+        })
+        .collect()
+}
+
 impl zed::Extension for ZedgeExtension {
     fn new() -> Self {
         ZedgeExtension
@@ -36,6 +86,7 @@ impl zed::Extension for ZedgeExtension {
             "zedge-gnosis-viz" => slash_commands::run_gnosis_viz(worktree),
             "zedge-test" => slash_commands::run_test(worktree),
             "zedge-feedback" => slash_commands::run_feedback(),
+            "zedge-babelfish" => slash_commands::run_babelfish(&_args, worktree),
             _ => Err(format!("Unknown command: {}", command.name)),
         }
     }
@@ -43,7 +94,7 @@ impl zed::Extension for ZedgeExtension {
     fn complete_slash_command_argument(
         &self,
         command: SlashCommand,
-        _args: Vec<String>,
+        args: Vec<String>,
     ) -> Result<Vec<SlashCommandArgumentCompletion>, String> {
         match command.name.as_str() {
             "zedge-models" => Ok(provider::MODELS
@@ -149,6 +200,26 @@ impl zed::Extension for ZedgeExtension {
                     SlashCommandArgumentCompletion { label: "flight-log — Event flight log".into(), new_text: "flight-log".into(), run_command: true },
                 ])
             }
+            "zedge-babelfish" => {
+                if args.is_empty() {
+                    Ok(vec![
+                        SlashCommandArgumentCompletion { label: "capabilities — Show supported programming and human languages".into(), new_text: "capabilities".into(), run_command: true },
+                        SlashCommandArgumentCompletion { label: "explain — Explain a file via Babelfish".into(), new_text: "explain ".into(), run_command: false },
+                        SlashCommandArgumentCompletion { label: "translate-code — Preview source-to-source translation".into(), new_text: "translate-code ".into(), run_command: false },
+                        SlashCommandArgumentCompletion { label: "translate-text — Translate comments, docs, and diagnostics".into(), new_text: "translate-text ".into(), run_command: false },
+                        SlashCommandArgumentCompletion { label: "generate — Write generated target-language files".into(), new_text: "generate ".into(), run_command: false },
+                        SlashCommandArgumentCompletion { label: "rewrite-preview — Preview an in-place rewrite".into(), new_text: "rewrite-preview ".into(), run_command: false },
+                        SlashCommandArgumentCompletion { label: "apply — Apply a stored preview token".into(), new_text: "apply ".into(), run_command: false },
+                    ])
+                } else {
+                    match args[0].as_str() {
+                        "translate-code" | "generate" => Ok(babelfish_language_completions("translate")),
+                        "rewrite-preview" => Ok(babelfish_language_completions("rewritePreview")),
+                        "translate-text" => Ok(babelfish_human_language_completions()),
+                        _ => Ok(Vec::new()),
+                    }
+                }
+            }
             _ => Ok(Vec::new()),
         }
     }
@@ -206,13 +277,28 @@ impl zed::Extension for ZedgeExtension {
                     "properties": {
                         "port": { "type": "number", "default": 7331 },
                         "preferredModel": { "type": "string", "default": "tinyllama-1.1b" },
-                        "cloudRunDirect": { "type": "boolean", "default": true }
+                        "cloudRunDirect": { "type": "boolean", "default": true },
+                        "babelfish": {
+                            "type": "object",
+                            "properties": {
+                                "enabled": { "type": "boolean", "default": true },
+                                "ambientSuggestions": { "type": "boolean", "default": true },
+                                "defaultHumanLanguage": { "type": "string", "default": "en" },
+                                "requirePreviewForInPlaceRewrite": { "type": "boolean", "default": true }
+                            }
+                        }
                     }
                 }).to_string(),
                 default_settings: serde_json::json!({
                     "port": 7331,
                     "preferredModel": "tinyllama-1.1b",
-                    "cloudRunDirect": true
+                    "cloudRunDirect": true,
+                    "babelfish": {
+                        "enabled": true,
+                        "ambientSuggestions": true,
+                        "defaultHumanLanguage": "en",
+                        "requirePreviewForInPlaceRewrite": true
+                    }
                 }).to_string(),
             }))
         } else {

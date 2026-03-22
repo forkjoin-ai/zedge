@@ -105,7 +105,23 @@ const CLOUD_RUN_COORDINATORS: Record<string, string> = {
     'https://inference-lfm2-5-coordinator-6ptd7xm6fq-uc.a.run.app',
 };
 
+const REMOTE_EMBEDDING_MODELS = new Set(['text-embedding-3-small']);
+
 export type InferenceTier = 'mesh' | 'edge' | 'cloudrun' | 'wasm' | 'echo';
+
+function isExplicitLocalOnlyModel(model: string): boolean {
+  return (
+    model.startsWith('wasm-local') ||
+    model.startsWith('echo-local') ||
+    model.startsWith('local-only')
+  );
+}
+
+function shouldUseLocalEmbeddingFallback(model: string): boolean {
+  return (
+    isExplicitLocalOnlyModel(model) || !REMOTE_EMBEDDING_MODELS.has(model)
+  );
+}
 
 /**
  * Speculative warm-up: fire /health pings to ALL Cloud Run coordinators
@@ -267,9 +283,9 @@ async function tryCloudRunCoordinator(
     throw new Error(`No Cloud Run coordinator for model: ${request.model}`);
   }
 
-  const MAX_RETRIES = 8;
-  const INITIAL_BACKOFF_MS = 2_000;
-  const MAX_BACKOFF_MS = 15_000;
+  const MAX_RETRIES = 2;
+  const INITIAL_BACKOFF_MS = 1_000;
+  const MAX_BACKOFF_MS = 3_000;
 
   for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
     if (signal?.aborted)
@@ -958,6 +974,43 @@ export async function infer(
     } msgs=${request.messages.length} last="${msgPreview}"`
   );
 
+  if (isExplicitLocalOnlyModel(request.model)) {
+    attempts.push({
+      tier: 'mesh',
+      status: 'skipped',
+      ms: 0,
+      detail: `model ${request.model} requires local-only execution`,
+    });
+    attempts.push({
+      tier: 'edge',
+      status: 'skipped',
+      ms: 0,
+      detail: `model ${request.model} requires local-only execution`,
+    });
+    attempts.push({
+      tier: 'cloudrun',
+      status: 'skipped',
+      ms: 0,
+      detail: `model ${request.model} requires local-only execution`,
+    });
+
+    const wasmStart = Date.now();
+    const response = await tryWasmFallback(request);
+    attempts.push({
+      tier: 'wasm',
+      status: 'ok',
+      ms: Date.now() - wasmStart,
+      detail: 'local-only model short-circuit',
+    });
+
+    return {
+      tier: 'wasm',
+      response,
+      upstreamHeaders: {},
+      attempts,
+    };
+  }
+
   // Speculatively warm all other coordinators while this request is in flight
   speculativeWarmup(request.model);
 
@@ -1005,7 +1058,7 @@ export async function infer(
   // Large models can take minutes to cold-start and load weights from GCS FUSE.
   // The race between edge + cloudrun means whichever responds first wins —
   // the deadline is just a safety net before falling to WASM.
-  const RACE_DEADLINE_MS = 900_000; // 15 minutes
+  const RACE_DEADLINE_MS = 15_000; // 15 seconds
   const canCloudRun =
     config.cloudRunDirect && !!CLOUD_RUN_COORDINATORS[request.model];
   const preferCloudRunForStreaming = request.stream && canCloudRun;
@@ -1300,22 +1353,24 @@ export async function embed(
   input: string | string[],
   model = 'text-embedding-3-small'
 ): Promise<Response> {
-  const baseUrl = getApiBaseUrl();
+  if (!shouldUseLocalEmbeddingFallback(model)) {
+    const baseUrl = getApiBaseUrl();
 
-  // Try remote first
-  try {
-    const resp = await fetch(`${baseUrl}/v1/embeddings`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        ...getAuthHeaders(),
-      },
-      body: JSON.stringify({ input, model }),
-      signal: AbortSignal.timeout(10_000),
-    });
-    if (resp.ok) return resp;
-  } catch {
-    // Remote unavailable
+    // Try remote first for known edge-compatible embedding models.
+    try {
+      const resp = await fetch(`${baseUrl}/v1/embeddings`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...getAuthHeaders(),
+        },
+        body: JSON.stringify({ input, model }),
+        signal: AbortSignal.timeout(10_000),
+      });
+      if (resp.ok) return resp;
+    } catch {
+      // Remote unavailable
+    }
   }
 
   // Local fallback: character n-gram hash embedding

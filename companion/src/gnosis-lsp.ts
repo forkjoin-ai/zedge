@@ -12,6 +12,13 @@ import {
   type GraphAST,
 } from '../../../gnosis/src/betty/compiler';
 import { checkTypeScriptWithGnosis } from '../../../gnosis/src/ts-check';
+import { resolve } from 'path';
+import { fileURLToPath } from 'url';
+import { getZedgeConfig, type ZedgeConfig } from './config';
+import {
+  buildBabelfishCodeActions,
+  buildBabelfishHintDiagnostic,
+} from './lsp-babelfish';
 
 type JsonRpcId = string | number | null;
 
@@ -34,7 +41,7 @@ interface Range {
 
 interface LspDiagnostic {
   range: Range;
-  severity: 1 | 2 | 3;
+  severity: 1 | 2 | 3 | 4;
   message: string;
   source: string;
 }
@@ -65,6 +72,9 @@ const keywordSet = new Set([
 
 let transportBuffer = Buffer.alloc(0);
 let shutdownRequested = false;
+let configGetter: () => ZedgeConfig = getZedgeConfig;
+
+type SendHandler = (message: unknown) => void;
 
 function log(message: string): void {
   console.error(`[gnosis-lsp] ${message}`);
@@ -195,11 +205,37 @@ function toLspDiagnostic(
   };
 }
 
-function send(message: unknown): void {
+function defaultSend(message: unknown): void {
   const json = JSON.stringify(message);
   process.stdout.write(
     `Content-Length: ${Buffer.byteLength(json, 'utf8')}\r\n\r\n${json}`
   );
+}
+
+let sendHandler: SendHandler = defaultSend;
+
+export function setGnosisLspSendForTest(
+  handler: SendHandler | null
+): void {
+  sendHandler = handler ?? defaultSend;
+}
+
+export function setGnosisLspConfigGetterForTest(
+  handler: (() => ZedgeConfig) | null
+): void {
+  configGetter = handler ?? getZedgeConfig;
+}
+
+export function resetGnosisLspStateForTest(): void {
+  documents.clear();
+  transportBuffer = Buffer.alloc(0);
+  shutdownRequested = false;
+  sendHandler = defaultSend;
+  configGetter = getZedgeConfig;
+}
+
+function send(message: unknown): void {
+  sendHandler(message);
 }
 
 function sendResponse(id: JsonRpcId, result: unknown): void {
@@ -250,6 +286,13 @@ async function publishTypeScriptDiagnostics(
       message: `[${d.ruleId}] ${d.message}`,
       source: 'gnosis-ts',
     }));
+    const config = configGetter();
+    if (config.babelfish.enabled && config.babelfish.ambientSuggestions) {
+      const hint = buildBabelfishHintDiagnostic(uri);
+      if (hint) {
+        diagnostics.push(hint);
+      }
+    }
 
     send({
       jsonrpc: '2.0',
@@ -266,9 +309,9 @@ async function publishTypeScriptDiagnostics(
   }
 }
 
-function publishDiagnostics(uri: string, text: string): void {
+async function publishDiagnostics(uri: string, text: string): Promise<void> {
   if (isTypeScriptUri(uri)) {
-    void publishTypeScriptDiagnostics(uri, text);
+    await publishTypeScriptDiagnostics(uri, text);
     return;
   }
 
@@ -276,6 +319,13 @@ function publishDiagnostics(uri: string, text: string): void {
   const diagnostics = parseResult.diagnostics.map((diagnostic) =>
     toLspDiagnostic(diagnostic, text)
   );
+  const config = configGetter();
+  if (config.babelfish.enabled && config.babelfish.ambientSuggestions) {
+    const hint = buildBabelfishHintDiagnostic(uri);
+    if (hint) {
+      diagnostics.push(hint);
+    }
+  }
 
   send({
     jsonrpc: '2.0',
@@ -387,7 +437,7 @@ function isJsonRpcRequest(value: unknown): value is JsonRpcRequest {
   return object.jsonrpc === '2.0' && typeof object.method === 'string';
 }
 
-async function dispatchRequest(req: JsonRpcRequest): Promise<unknown> {
+export async function dispatchRequest(req: JsonRpcRequest): Promise<unknown> {
   switch (req.method) {
     case 'initialize':
       return {
@@ -398,6 +448,7 @@ async function dispatchRequest(req: JsonRpcRequest): Promise<unknown> {
           },
           hoverProvider: true,
           documentSymbolProvider: true,
+          codeActionProvider: true,
           completionProvider: {
             triggerCharacters: [':', '(', '['],
           },
@@ -415,7 +466,7 @@ async function dispatchRequest(req: JsonRpcRequest): Promise<unknown> {
       const opened = getDidOpenDocument(req.params);
       if (opened) {
         documents.set(opened.uri, opened.text);
-        publishDiagnostics(opened.uri, opened.text);
+        await publishDiagnostics(opened.uri, opened.text);
       }
       return null;
     }
@@ -424,7 +475,7 @@ async function dispatchRequest(req: JsonRpcRequest): Promise<unknown> {
       const changed = getDidChangeDocument(req.params);
       if (changed) {
         documents.set(changed.uri, changed.text);
-        publishDiagnostics(changed.uri, changed.text);
+        await publishDiagnostics(changed.uri, changed.text);
       }
       return null;
     }
@@ -450,7 +501,7 @@ async function dispatchRequest(req: JsonRpcRequest): Promise<unknown> {
       if (uri) {
         const text = documents.get(uri);
         if (text !== undefined) {
-          publishDiagnostics(uri, text);
+          await publishDiagnostics(uri, text);
         }
       }
       return null;
@@ -518,6 +569,23 @@ async function dispatchRequest(req: JsonRpcRequest): Promise<unknown> {
       };
     }
 
+    case 'textDocument/codeAction': {
+      const uri = getUriFromParams(req.params);
+      if (!uri) {
+        return [];
+      }
+
+      const config = configGetter();
+      if (!config.babelfish.enabled) {
+        return [];
+      }
+
+      return buildBabelfishCodeActions(
+        uri,
+        config.babelfish.defaultHumanLanguage
+      );
+    }
+
     case 'gnosis/getTopologyGraph': {
       const graphUri = getUriFromParams(req.params);
       if (!graphUri) {
@@ -561,7 +629,7 @@ async function dispatchRequest(req: JsonRpcRequest): Promise<unknown> {
   }
 }
 
-async function handleRequest(req: JsonRpcRequest): Promise<void> {
+export async function handleRequest(req: JsonRpcRequest): Promise<void> {
   try {
     const result = await dispatchRequest(req);
     if (req.id !== undefined) {
@@ -618,7 +686,22 @@ function processTransportBuffer(): void {
   }
 }
 
-process.stdin.on('data', (chunk: Buffer) => {
-  transportBuffer = Buffer.concat([transportBuffer, chunk]);
-  processTransportBuffer();
-});
+export function startGnosisLspStdioTransport(): void {
+  process.stdin.on('data', (chunk: Buffer) => {
+    transportBuffer = Buffer.concat([transportBuffer, chunk]);
+    processTransportBuffer();
+  });
+}
+
+function isExecutedDirectly(importMetaUrl: string): boolean {
+  const entryPath = process.argv[1];
+  if (!entryPath) {
+    return false;
+  }
+
+  return resolve(fileURLToPath(importMetaUrl)) === resolve(entryPath);
+}
+
+if (isExecutedDirectly(import.meta.url)) {
+  startGnosisLspStdioTransport();
+}

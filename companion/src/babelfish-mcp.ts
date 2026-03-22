@@ -1,0 +1,125 @@
+export interface McpToolDefinition {
+  name: string;
+  description: string;
+  inputSchema: Record<string, unknown>;
+}
+
+const JSON_HEADERS = { 'Content-Type': 'application/json' };
+
+export function getBabelfishMcpTools(): McpToolDefinition[] {
+  return [
+    {
+      name: 'zedge_babelfish_capabilities',
+      description:
+        'Get the Babelfish language capability matrix sourced from the Gnosis polyglot registry',
+      inputSchema: { type: 'object', properties: {} },
+    },
+    {
+      name: 'zedge_babelfish_code',
+      description:
+        'Preview Babelfish code translation, generation, or rewrite flows before applying changes',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          scope: { type: 'object' },
+          sourceLanguage: { type: 'string' },
+          targetLanguage: { type: 'string' },
+          mode: {
+            type: 'string',
+            enum: ['translate-code', 'generate', 'rewrite-preview'],
+          },
+          outputMode: {
+            type: 'string',
+            enum: ['preview', 'generate_files', 'rewrite_in_place_requested'],
+          },
+        },
+        required: ['scope', 'targetLanguage', 'mode', 'outputMode'],
+      },
+    },
+    {
+      name: 'zedge_babelfish_apply',
+      description:
+        'Apply a previously issued Babelfish preview token to write generated files or rewrite a file in place',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          previewId: { type: 'string' },
+          applyMode: {
+            type: 'string',
+            enum: ['generate_files', 'rewrite_in_place'],
+          },
+        },
+        required: ['previewId', 'applyMode'],
+      },
+    },
+    {
+      name: 'zedge_babelfish_text',
+      description:
+        'Translate comments, docs, and diagnostics while preserving fenced code blocks and inline code',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          scope: { type: 'object' },
+          targetHumanLanguage: { type: 'string' },
+          includeComments: { type: 'boolean' },
+          includeDiagnostics: { type: 'boolean' },
+          includeMarkdown: { type: 'boolean' },
+        },
+        required: ['scope', 'targetHumanLanguage'],
+      },
+    },
+    {
+      name: 'zedge_babelfish_explain',
+      description:
+        'Explain a code scope through Babelfish, optionally including GG IR and a translated audience language',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          scope: { type: 'object' },
+          audienceLanguage: { type: 'string' },
+          includeGg: { type: 'boolean' },
+        },
+        required: ['scope'],
+      },
+    },
+  ];
+}
+
+async function postJson(
+  companionBase: string,
+  path: string,
+  body: Record<string, unknown>
+): Promise<string> {
+  const response = await fetch(`${companionBase}${path}`, {
+    method: 'POST',
+    headers: JSON_HEADERS,
+    body: JSON.stringify(body),
+    signal: AbortSignal.timeout(30_000),
+  });
+  return JSON.stringify(await response.json(), null, 2);
+}
+
+export async function callBabelfishMcpTool(
+  companionBase: string,
+  name: string,
+  args: Record<string, unknown>
+): Promise<string> {
+  switch (name) {
+    case 'zedge_babelfish_capabilities': {
+      const response = await fetch(`${companionBase}/babelfish/capabilities`, {
+        signal: AbortSignal.timeout(10_000),
+      });
+      return JSON.stringify(await response.json(), null, 2);
+    }
+    case 'zedge_babelfish_code':
+      return postJson(companionBase, '/babelfish/code/preview', args);
+    case 'zedge_babelfish_apply':
+      return postJson(companionBase, '/babelfish/code/apply', args);
+    case 'zedge_babelfish_text':
+      return postJson(companionBase, '/babelfish/text/translate', args);
+    case 'zedge_babelfish_explain':
+      return postJson(companionBase, '/babelfish/explain', args);
+    default:
+      throw new Error(`Unknown Babelfish MCP tool: ${name}`);
+  }
+}

@@ -5,8 +5,14 @@
  * pending mutations, and exposes endpoints for accept/reject from Zed.
  */
 
-import type { ExtendedForgoEvent, ForgeEventBus } from '../../../aeon-forge/src/deploy/event-bus';
-import type { PerturbationEngine, PerturbationCycle } from '../../../../shared-utils/src/laminar/perturbation-engine';
+import type {
+  ExtendedForgoEvent,
+  ForgeEventBus,
+} from '../../../aeon-forge/src/deploy/event-bus';
+import type {
+  PerturbationEngine,
+  PerturbationCycle,
+} from '../../../../shared-utils/src/laminar/perturbation-engine';
 import type { CodeMutationOutput } from '../../../../shared-utils/src/laminar/code-laminar';
 
 // ── Types ────────────────────────────────────────────────────
@@ -126,7 +132,8 @@ export class CeraBridge {
     return {
       connected: this.eventBus !== null || this.engine !== null,
       pendingMutations: this.pendingMutations.size,
-      totalGraduated: this.acceptedMutations.length + this.pendingMutations.size,
+      totalGraduated:
+        this.acceptedMutations.length + this.pendingMutations.size,
       totalRejected: this.rejectedMutations.length,
       totalAccepted: this.acceptedMutations.length,
       voidMapDensity: this.engine?.getVoidMapDensity() ?? {
@@ -151,12 +158,11 @@ export class CeraBridge {
    * Create an SSE stream for CERA events.
    */
   createSseStream(): ReadableStream {
-    const bridge = this;
     const encoder = new TextEncoder();
 
     return new ReadableStream({
-      start(controller) {
-        bridge.sseClients.add(controller);
+      start: (controller) => {
+        this.sseClients.add(controller);
         controller.enqueue(encoder.encode('data: {"type":"connected"}\n\n'));
 
         const interval = setInterval(() => {
@@ -164,11 +170,11 @@ export class CeraBridge {
             controller.enqueue(encoder.encode(': heartbeat\n\n'));
           } catch {
             clearInterval(interval);
-            bridge.sseClients.delete(controller);
+            this.sseClients.delete(controller);
           }
         }, 15_000);
       },
-      cancel() {
+      cancel: () => {
         // Cleanup handled by error in enqueue
       },
     });

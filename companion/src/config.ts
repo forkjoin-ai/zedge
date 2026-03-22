@@ -32,6 +32,12 @@ export interface ZedgeConfig {
   };
   preferredModel: string;
   cloudRunDirect: boolean;
+  babelfish: {
+    enabled: boolean;
+    ambientSuggestions: boolean;
+    defaultHumanLanguage: string;
+    requirePreviewForInPlaceRewrite: boolean;
+  };
   /** DashRelay WebSocket URL for Ghostwriter CRDT sync */
   dashRelayUrl?: string;
   /** DashRelay API key (format: dr_<64-hex>) */
@@ -63,7 +69,28 @@ const DEFAULT_ZEDGE_CONFIG: ZedgeConfig = {
   },
   preferredModel: 'tinyllama-1.1b',
   cloudRunDirect: true,
+  babelfish: {
+    enabled: true,
+    ambientSuggestions: true,
+    defaultHumanLanguage: 'en',
+    requirePreviewForInPlaceRewrite: true,
+  },
 };
+
+function mergeZedgeConfig(config: Partial<ZedgeConfig> | undefined): ZedgeConfig {
+  return {
+    ...DEFAULT_ZEDGE_CONFIG,
+    ...config,
+    computePool: {
+      ...DEFAULT_ZEDGE_CONFIG.computePool,
+      ...(config?.computePool ?? {}),
+    },
+    babelfish: {
+      ...DEFAULT_ZEDGE_CONFIG.babelfish,
+      ...(config?.babelfish ?? {}),
+    },
+  };
+}
 
 function ensureConfigDir(): void {
   if (!existsSync(CONFIG_DIR)) {
@@ -90,19 +117,32 @@ export function getEdgeworkConfig(): EdgeworkConfig {
 }
 
 export function getZedgeConfig(): ZedgeConfig {
-  return readJsonFile(ZEDGE_CONFIG_FILE, DEFAULT_ZEDGE_CONFIG);
+  return mergeZedgeConfig(
+    readJsonFile<Partial<ZedgeConfig>>(ZEDGE_CONFIG_FILE, DEFAULT_ZEDGE_CONFIG)
+  );
 }
 
 export function saveZedgeConfig(config: Partial<ZedgeConfig>): ZedgeConfig {
   const current = getZedgeConfig();
-  const updated = { ...current, ...config };
+  const updated = mergeZedgeConfig({
+    ...current,
+    ...config,
+    computePool: {
+      ...current.computePool,
+      ...(config.computePool ?? {}),
+    },
+    babelfish: {
+      ...current.babelfish,
+      ...(config.babelfish ?? {}),
+    },
+  });
   writeJsonFile(ZEDGE_CONFIG_FILE, updated);
   return updated;
 }
 
 export function getApiKey(): string | null {
-  // Prefer env var (matches .env.local EDGEWORK_API_TOKEN)
-  const envKey = process.env.EDGEWORK_API_TOKEN;
+  // Prefer env var — check both EDGEWORK_API_TOKEN and ZEDGE_API_KEY
+  const envKey = process.env.EDGEWORK_API_TOKEN ?? process.env.ZEDGE_API_KEY;
   if (envKey) return envKey;
   try {
     if (!existsSync(API_KEY_FILE)) return null;

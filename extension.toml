@@ -78,6 +78,10 @@ requires_argument = false
 description = "Submit RLHF feedback on response quality"
 requires_argument = false
 
+[slash_commands.zedge-babelfish]
+description = "Babelfish over Gnosis: capabilities, explain, translate, generate, and preview/apply rewrites"
+requires_argument = true
+
 [context_servers.zedge-companion]
 
 [language_servers.gnosis-lsp]
