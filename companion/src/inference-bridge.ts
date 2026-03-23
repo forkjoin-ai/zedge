@@ -995,20 +995,42 @@ export async function infer(
     });
 
     const wasmStart = Date.now();
-    const response = await tryWasmFallback(request);
-    attempts.push({
-      tier: 'wasm',
-      status: 'ok',
-      ms: Date.now() - wasmStart,
-      detail: 'local-only model short-circuit',
-    });
+    try {
+      const response = await tryWasmFallback(request);
+      attempts.push({
+        tier: 'wasm',
+        status: 'ok',
+        ms: Date.now() - wasmStart,
+        detail: 'local-only model short-circuit',
+      });
 
-    return {
-      tier: 'wasm',
-      response,
-      upstreamHeaders: {},
-      attempts,
-    };
+      return {
+        tier: 'wasm',
+        response,
+        upstreamHeaders: {},
+        attempts,
+      };
+    } catch (err) {
+      attempts.push({
+        tier: 'wasm',
+        status: 'error',
+        ms: Date.now() - wasmStart,
+        detail: String(err),
+      });
+      attempts.push({
+        tier: 'echo',
+        status: 'ok',
+        ms: 0,
+        detail: 'local-only model fallback after WASM load failure',
+      });
+
+      return {
+        tier: 'echo',
+        response: echoFallback(request),
+        upstreamHeaders: {},
+        attempts,
+      };
+    }
   }
 
   // Speculatively warm all other coordinators while this request is in flight

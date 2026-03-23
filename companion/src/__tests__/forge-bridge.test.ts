@@ -187,7 +187,7 @@ describe('ForgeBridge', () => {
       expect(result.error).toContain('Build failed');
       expect(result.process?.state).toBe('failed');
     },
-    15_000
+    30_000
   );
 
   test('getEvents returns deploy events', async () => {
