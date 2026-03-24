@@ -98,7 +98,8 @@ bare `node` binary being on PATH.
 health polling behavior: it owns the raw `index.ts` child, waits through
 startup grace, requires repeated health failures before restarting,
 rate-limits restart storms, and restarts immediately when its owned child exits
-unexpectedly. `mcp-stdio.ts` uses the same restart policy when Zed launches the
+unexpectedly. The companion `/health` payload now includes the owned child PID,
+so live diagnostics can prove that a restart actually happened. `mcp-stdio.ts` uses the same restart policy when Zed launches the
 context server bridge.
 
 ## Why This README Exists

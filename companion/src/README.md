@@ -12,6 +12,7 @@ Runtime entrypoints, HTTP server surfaces, Babelfish routes, and the sidecar-onl
 
 - `index.ts` boots the local companion service, mesh, forge, VFS, collaboration, kernel, capacitor, CRDT, and UCAN bridges.
 - `companion-supervisor.ts` is the manual launcher that owns `index.ts`, polls `/health`, and applies the guarded restart policy outside the companion process itself.
+- `server.ts` now includes the local companion PID in `/health`, which gives operators and the end-to-end supervisor test a precise way to verify that an owned child actually restarted.
 - `config.ts` reads `~/.edgework/zedge.json` and honors `ZEDGE_COMPANION_PORT` plus `ZEDGE_LISTENER_MODE` overrides so tests and local launches can isolate the companion without mutating user config.
 - `config.ts` now defaults `preferredModel` to `wasm-local`, so unconfigured companion chat, selftest, and resilient streaming surfaces start local-first.
 - `companion-activity.ts` records when the owned Bun sidecar is intentionally busy with local WASM warmup or generation so the parent watchdogs can distinguish "busy" from "dead".

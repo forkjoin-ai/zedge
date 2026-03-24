@@ -9,6 +9,7 @@ Focused sidecar tests for MCP tooling, Babelfish behavior, runtime-command resol
 ## Highlights
 
 - `slash-command-e2e.test.ts` boots an isolated companion process on a temporary port and verifies that live `zedge-models` and `zedge-selftest wasm-local-only-test` slash-command calls succeed through the MCP `zedge_command` tool.
+- `companion-supervisor.e2e.test.ts` boots the `gnode`-managed supervisor on an isolated port, kills the owned companion child, and verifies that health returns on a fresh child PID.
 - `mcp-babysitter.test.ts` verifies the shared companion restart policy that both the manual supervisor and the MCP bridge use for startup grace, busy-child suppression, repeated health failures, forced child-exit restarts, and restart-storm throttling.
 - `companion-activity.test.ts` verifies the on-disk busy marker that lets the parent watchdogs distinguish the owned sidecar's long local WASM warmup/generation windows from an actual dead child.
 - `runtime-command.test.ts` verifies the Bun-first TypeScript entrypoint command builder and the explicit Node fallback shape.

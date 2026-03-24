@@ -498,6 +498,7 @@ export async function handleWebRequest(req: Request): Promise<Response> {
         cloudRunDirect: config.cloudRunDirect,
         wasmLocal: true,
         localRuntime: {
+          pid: process.pid,
           chatStatus: aetherLocalRuntime.chatStatus,
           chatModel: aetherLocalRuntime.modelId,
           embeddingModel: aetherLocalRuntime.localEmbeddingModelId,

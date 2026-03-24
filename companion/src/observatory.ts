@@ -170,7 +170,7 @@ export async function getObservatorySnapshot(): Promise<ObservatorySnapshot> {
   const emotionHeatmap = sampleEmotionHeatmap();
 
   // Agent sessions
-  let agentStats = { totalSessions: 0, completed: 0, failed: 0, avgDurationMs: 0 };
+  const agentStats = { totalSessions: 0, completed: 0, failed: 0, avgDurationMs: 0 };
   try {
     const { listSessions } = await import('./cloud-agent-session');
     const sessions = listSessions(100);

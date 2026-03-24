@@ -1,4 +1,6 @@
 import { describe, test, expect } from 'bun:test';
+import type { CrdtBridge } from '../crdt-bridge';
+import type { VoidMapEntry } from '../void-map-store';
 
 describe('Phase 3 Wiring', () => {
   // Task 1: Swarm agent execution
@@ -6,7 +8,7 @@ describe('Phase 3 Wiring', () => {
     const mod = await import('../agent-swarm');
     expect(mod.AgentSwarm).toBeDefined();
     // The executeAgentTask method exists (private but accessible in the class)
-    const swarm = new mod.AgentSwarm({} as any);
+    const swarm = new mod.AgentSwarm({} as unknown as CrdtBridge);
     expect(typeof swarm.start).toBe('function');
     expect(typeof swarm.collapse).toBe('function');
   });
@@ -57,7 +59,7 @@ describe('Phase 3 Wiring', () => {
     const { voidMapStore } = await import('../void-map-store');
 
     let callbackFired = false;
-    let callbackEntry: any = null;
+    let callbackEntry: VoidMapEntry | null = null;
 
     voidMapStore.onRecord((entry) => {
       callbackFired = true;
