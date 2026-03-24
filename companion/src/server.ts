@@ -1614,6 +1614,53 @@ export async function handleWebRequest(req: Request): Promise<Response> {
     return jsonResponse(result, result.failedCount > 0 && result.appliedCount === 0 ? 400 : 200);
   }
 
+  // ==================== Agent Swarm ====================
+
+  if (path === '/agent/swarm/start' && req.method === 'POST') {
+    const body = (await req.json()) as { task?: string; roles?: string[]; target_files?: string[] };
+    if (!body.task || !body.roles?.length) {
+      return jsonResponse({ error: 'task and roles[] are required' }, 400);
+    }
+    const { AgentSwarm } = await import('./agent-swarm');
+    const { CrdtBridge } = await import('./crdt-bridge');
+    // Create a lightweight swarm (no full CRDT init needed for status tracking)
+    const swarm = new AgentSwarm({} as InstanceType<typeof CrdtBridge>);
+    try {
+      const status = await swarm.start({
+        task: body.task,
+        roles: body.roles,
+        targetFiles: body.target_files,
+      });
+      return jsonResponse(status);
+    } catch (err) {
+      return jsonResponse({ error: err instanceof Error ? err.message : String(err) }, 400);
+    }
+  }
+
+  if (path === '/agent/swarm/roles' && req.method === 'GET') {
+    const { AgentSwarm } = await import('./agent-swarm');
+    const { AGENT_ROLES } = await import('./agent-roles');
+    return jsonResponse({
+      roles: AgentSwarm.listRoles(),
+      details: Object.values(AGENT_ROLES).map((r) => ({
+        id: r.id,
+        displayName: r.displayName,
+        mode: r.mode,
+        strategy: r.strategy,
+        color: r.color,
+        filePattern: r.filePattern,
+      })),
+    });
+  }
+
+  // ==================== Theme Engine ====================
+
+  if (path === '/theme/current' && req.method === 'GET') {
+    const { getThemePalette } = await import('./theme-engine');
+    const filePath = url.searchParams.get('file') ?? undefined;
+    return jsonResponse(getThemePalette(filePath));
+  }
+
   // ==================== Binary Protocol v2 ====================
 
   if (path === '/v1/binary/infer' && req.method === 'POST') {

@@ -90,6 +90,29 @@ requires_argument = true
 description = "Consensus code review — three models race on your diff, agreements and disagreements highlighted"
 requires_argument = false
 
+[slash_commands.zedge-void]
+description = "Void map — persistent rejection memory. Show density, top rejected categories, steering vectors, or export for training"
+requires_argument = false
+
+[slash_commands.zedge-swarm]
+description = "Launch an agent swarm — multiple specialized agents (reviewer, refactorer, tester, documenter, security-auditor) working simultaneously"
+requires_argument = true
+
+[slash_commands.zedge-engram]
+description = "Persistent agent memory — recall, remember, or forget patterns across sessions"
+requires_argument = false
+
+[slash_commands.zedge-emotion]
+description = "Analyze the emotional profile of the active file — frustration, anxiety, confidence, and routing decisions"
+requires_argument = false
+
+[slash_commands.zedge-agent]
+description = "GG agent management — list, trigger, monitor topology-driven agents deployed through Forge"
+requires_argument = true
+
+[themes]
+zedge-dark = "themes/zedge-dark.json"
+
 [grammars.gnosis]
 repository = "https://github.com/forkjoin-ai/tree-sitter-gnosis"
 commit = ""
