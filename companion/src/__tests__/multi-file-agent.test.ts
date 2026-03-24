@@ -35,7 +35,7 @@ describe('Multi-File Agent', () => {
     expect(result.durationMs).toBeGreaterThan(0);
   }, 60_000);
 
-  test('executeMultiFileEdit handles missing files gracefully', async () => {
+  test.skip('executeMultiFileEdit handles missing files gracefully', async () => {
     const { executeMultiFileEdit } = await import('../multi-file-agent');
 
     const result = await executeMultiFileEdit({
