@@ -19,6 +19,7 @@ import { infer } from './inference-bridge';
 import type { ChatCompletionRequest } from './inference-bridge';
 import { getZedgeConfig } from './config';
 import { voidMapStore } from './void-map-store';
+import { analyzeCodeEmotion, routeByEmotion } from './emotion-router';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -155,9 +156,19 @@ class DaydreamEngine {
     if (!this.currentFilePath) return;
     if (this.dreaming) return;
 
-    // Cooldown check -- don't dream on the same file too often
+    // Emotion-aware cooldown -- frustrated/anxious files dream more often
+    let cooldown = DREAM_COOLDOWN_MS;
+    try {
+      const content = readFileSync(this.currentFilePath, 'utf-8');
+      const emotion = analyzeCodeEmotion(content);
+      const route = routeByEmotion(emotion);
+      cooldown = Math.round(DREAM_COOLDOWN_MS / route.daydreamPriority);
+    } catch {
+      // File unreadable -- use default cooldown
+    }
+
     const lastDream = this.lastDreamPerFile.get(this.currentFilePath);
-    if (lastDream && Date.now() - lastDream < DREAM_COOLDOWN_MS) return;
+    if (lastDream && Date.now() - lastDream < cooldown) return;
 
     await this.dream(this.currentFilePath);
   }

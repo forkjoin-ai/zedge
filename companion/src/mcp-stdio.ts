@@ -25,6 +25,7 @@ import {
   RESTART_WINDOW_MS,
   decideCompanionRestart,
 } from './companion-restart-policy';
+import { getOwnedCompanionActivity } from './companion-activity';
 import { resolveTypeScriptEntrypointCommand } from './runtime-command';
 
 function getCompanionBase(): string {
@@ -185,8 +186,10 @@ async function restartCompanion(
   }
 
   restartInFlight = (async () => {
+    const busyActivity = getOwnedCompanionActivity(companionProc?.pid);
     const decision = decideCompanionRestart({
       now: Date.now(),
+      activityBusyUntil: busyActivity?.busyUntil ?? null,
       companionSpawnedAt,
       consecutiveFailures: consecutiveHealthFailures,
       restartTimestamps: recentRestartTimestamps,
@@ -195,7 +198,13 @@ async function restartCompanion(
     recentRestartTimestamps = decision.restartTimestamps;
 
     if (!decision.shouldRestart) {
-      if (decision.reason === 'startup_grace') {
+      if (decision.reason === 'busy' && busyActivity) {
+        console.debug(
+          `[zedge:babysitter] Companion busy with ${busyActivity.kind}; skipping restart until ${new Date(
+            busyActivity.busyUntil
+          ).toISOString()}`
+        );
+      } else if (decision.reason === 'startup_grace') {
         console.debug(
           '[zedge:babysitter] Skipping restart during companion startup grace window'
         );
@@ -241,10 +250,19 @@ function startBabysitter(): void {
     }
 
     babysitterCheckInFlight = true;
-    const alive = await isCompanionAlive();
     try {
+      const alive = await isCompanionAlive();
       if (alive) {
         consecutiveHealthFailures = 0;
+        return;
+      }
+
+      const busyActivity = getOwnedCompanionActivity(companionProc?.pid);
+      if (busyActivity) {
+        consecutiveHealthFailures = 0;
+        await restartCompanion(
+          `health check timed out while companion was busy with ${busyActivity.kind}`
+        );
         return;
       }
 
@@ -1263,6 +1281,95 @@ export async function handleToolsList(): Promise<Record<string, unknown>> {
           required: ['instruction'],
         },
       },
+      {
+        name: 'zedge_void_map',
+        description:
+          'Inspect the void map (persistent rejection memory). Shows what the developer consistently rejects, steering vectors, and can export rejection data for buleyean-rl training.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            action: {
+              type: 'string',
+              enum: ['status', 'query', 'steering', 'export', 'compact'],
+              description: 'Action to perform (default: status)',
+            },
+            file_path: {
+              type: 'string',
+              description: 'Filter by file path',
+            },
+            category: {
+              type: 'string',
+              description: 'Filter by category',
+            },
+          },
+        },
+      },
+      {
+        name: 'zedge_engram',
+        description:
+          'Persistent agent memory across sessions. Remember patterns, recall relevant context, or forget entries.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            action: {
+              type: 'string',
+              enum: ['status', 'recall', 'remember', 'forget'],
+              description: 'Action to perform (default: status)',
+            },
+            query: {
+              type: 'string',
+              description: 'Query for recall, or content for remember',
+            },
+            type: {
+              type: 'string',
+              enum: ['conversation-summary', 'code-pattern', 'user-preference', 'file-relationship'],
+              description: 'Engram type for remember action',
+            },
+            id: {
+              type: 'string',
+              description: 'Engram ID for forget action',
+            },
+          },
+        },
+      },
+      {
+        name: 'zedge_emotion',
+        description:
+          'Analyze the emotional profile of a file. Returns dominant emotion, valence, arousal, and routing decision.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            file_path: {
+              type: 'string',
+              description: 'File to analyze',
+            },
+          },
+          required: ['file_path'],
+        },
+      },
+      {
+        name: 'zedge_gg_agent',
+        description:
+          'Trigger, monitor, or list GG agents deployed through Aeon Forge. Agents are topology-driven reasoning packages.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            action: {
+              type: 'string',
+              enum: ['list', 'trigger', 'status', 'health'],
+              description: 'Action to perform (default: list)',
+            },
+            agent_name: {
+              type: 'string',
+              description: 'Agent name for trigger/status/health actions',
+            },
+            payload: {
+              type: 'object',
+              description: 'Payload for trigger action',
+            },
+          },
+        },
+      },
       ...getBabelfishMcpTools(),
     ],
   };
@@ -1466,6 +1573,130 @@ export async function handleToolCall(
             },
           ],
         };
+      }
+
+      case 'zedge_void_map': {
+        const action = String(args.action ?? 'status');
+        const base = getCompanionBase();
+        let voidResp: Response;
+        switch (action) {
+          case 'status':
+            voidResp = await fetch(`${base}/void-map/status`, { signal: AbortSignal.timeout(10_000) });
+            break;
+          case 'query': {
+            const params = new URLSearchParams();
+            if (args.file_path) params.set('file', String(args.file_path));
+            if (args.category) params.set('category', String(args.category));
+            voidResp = await fetch(`${base}/void-map/query?${params}`, { signal: AbortSignal.timeout(10_000) });
+            break;
+          }
+          case 'steering': {
+            const sp = new URLSearchParams();
+            if (args.file_path) sp.set('file', String(args.file_path));
+            voidResp = await fetch(`${base}/void-map/steering?${sp}`, { signal: AbortSignal.timeout(10_000) });
+            break;
+          }
+          case 'export': {
+            const { exportRecords } = await import('./void-map-export');
+            const records = exportRecords({
+              filePath: args.file_path ? String(args.file_path) : undefined,
+              category: args.category ? String(args.category) : undefined,
+            });
+            return {
+              content: [{ type: 'text', text: JSON.stringify({ records, count: records.length }, null, 2) }],
+            };
+          }
+          case 'compact':
+            voidResp = await fetch(`${base}/void-map/compact`, { method: 'POST', signal: AbortSignal.timeout(10_000) });
+            break;
+          default:
+            return { content: [{ type: 'text', text: `Unknown void map action: ${action}` }], isError: true };
+        }
+        return { content: [{ type: 'text', text: JSON.stringify(await voidResp.json(), null, 2) }] };
+      }
+
+      case 'zedge_engram': {
+        const action = String(args.action ?? 'status');
+        const { getEngramStore } = await import('./engram-store');
+        const store = getEngramStore();
+        switch (action) {
+          case 'status':
+            return { content: [{ type: 'text', text: JSON.stringify(store.getStatus(), null, 2) }] };
+          case 'recall': {
+            const query = String(args.query ?? '');
+            if (!query) return { content: [{ type: 'text', text: 'query is required for recall' }], isError: true };
+            const results = await store.recall(query, 5);
+            return { content: [{ type: 'text', text: JSON.stringify(results.map((r) => ({ score: r.score, type: r.engram.type, content: r.engram.content, createdAt: r.engram.createdAt })), null, 2) }] };
+          }
+          case 'remember': {
+            const content = String(args.query ?? '');
+            const type = String(args.type ?? 'code-pattern') as 'conversation-summary' | 'code-pattern' | 'user-preference' | 'file-relationship';
+            if (!content) return { content: [{ type: 'text', text: 'query (content) is required for remember' }], isError: true };
+            const engram = await store.remember({ type, content });
+            return { content: [{ type: 'text', text: JSON.stringify({ remembered: true, id: engram.id, type: engram.type }, null, 2) }] };
+          }
+          case 'forget': {
+            const id = String(args.id ?? '');
+            if (!id) return { content: [{ type: 'text', text: 'id is required for forget' }], isError: true };
+            const removed = store.forget(id);
+            return { content: [{ type: 'text', text: JSON.stringify({ forgotten: removed, id }, null, 2) }] };
+          }
+          default:
+            return { content: [{ type: 'text', text: `Unknown engram action: ${action}` }], isError: true };
+        }
+      }
+
+      case 'zedge_emotion': {
+        const filePath = String(args.file_path ?? '');
+        if (!filePath) return { content: [{ type: 'text', text: 'file_path is required' }], isError: true };
+        const { readFileSync } = await import('fs');
+        const { resolve } = await import('path');
+        const { analyzeCodeEmotion, routeByEmotion } = await import('./emotion-router');
+        try {
+          const fullPath = resolve(process.env.AEON_ROOT || process.cwd(), filePath);
+          const content = readFileSync(fullPath, 'utf-8');
+          const profile = analyzeCodeEmotion(content);
+          const route = routeByEmotion(profile);
+          return { content: [{ type: 'text', text: JSON.stringify({ profile, route }, null, 2) }] };
+        } catch (err) {
+          return { content: [{ type: 'text', text: `Failed to analyze: ${err instanceof Error ? err.message : String(err)}` }], isError: true };
+        }
+      }
+
+      case 'zedge_gg_agent': {
+        const action = String(args.action ?? 'list');
+        const base = getCompanionBase();
+        switch (action) {
+          case 'list': {
+            const resp = await fetch(`${base}/forge/projects`, { signal: AbortSignal.timeout(10_000) });
+            const data = await resp.json() as { projects?: Array<{ name: string; kind: string }> };
+            const agents = (data.projects ?? []).filter((p: { kind: string }) => p.kind === 'agent');
+            return { content: [{ type: 'text', text: JSON.stringify({ agents, count: agents.length }, null, 2) }] };
+          }
+          case 'trigger': {
+            const agentName = String(args.agent_name ?? '');
+            if (!agentName) return { content: [{ type: 'text', text: 'agent_name is required' }], isError: true };
+            const resp = await fetch(`${base}/forge/deploy`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ project: agentName, trigger: 'manual', payload: args.payload }),
+              signal: AbortSignal.timeout(120_000),
+            });
+            return { content: [{ type: 'text', text: JSON.stringify(await resp.json(), null, 2) }] };
+          }
+          case 'status': {
+            const resp = await fetch(`${base}/forge/status`, { signal: AbortSignal.timeout(10_000) });
+            return { content: [{ type: 'text', text: JSON.stringify(await resp.json(), null, 2) }] };
+          }
+          case 'health': {
+            const agentName = String(args.agent_name ?? '');
+            if (!agentName) return { content: [{ type: 'text', text: 'agent_name is required' }], isError: true };
+            const resp = await fetch(`${base}/forge/status?project=${encodeURIComponent(agentName)}`, { signal: AbortSignal.timeout(10_000) });
+            return { content: [{ type: 'text', text: JSON.stringify(await resp.json(), null, 2) }] };
+          }
+          default:
+            return { content: [{ type: 'text', text: `Unknown agent action: ${action}` }], isError: true };
+        }
       }
 
       case 'zedge_multi_file_edit': {

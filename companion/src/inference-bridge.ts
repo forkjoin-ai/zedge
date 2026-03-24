@@ -18,6 +18,7 @@ import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import { getCloudRunAuthHeaders } from './cloudrun-auth';
 import { aetherLocalRuntime } from './aether-local-runtime';
+import { runWithCompanionActivity } from './companion-activity';
 
 // --- Inference log file + in-memory ring buffer ---
 const __inference_dirname = dirname(fileURLToPath(import.meta.url));
@@ -152,6 +153,8 @@ export interface TierResult {
 }
 
 const LOCAL_WASM_TOTAL_TIMEOUT_MS = 45_000;
+const LOCAL_WASM_BUSY_BUFFER_MS = 15_000;
+const LOCAL_WASM_PREWARM_BUSY_MS = 5 * 60_000;
 
 function withTimeout<T>(
   promise: Promise<T>,
@@ -460,60 +463,103 @@ async function raceForFirst<T>(
 async function tryWasmFallback(
   request: ChatCompletionRequest
 ): Promise<Response> {
-  const temperature = request.temperature ?? 0.7;
-  const maxTokens = request.max_tokens ?? 128;
-  const deadline = Date.now() + LOCAL_WASM_TOTAL_TIMEOUT_MS;
-  const remainingWarmupMs = Math.max(1, deadline - Date.now());
-  const ready = await withTimeout(
-    aetherLocalRuntime.ensureChatReady(),
-    remainingWarmupMs,
-    'Local model warm-up'
+  return await runWithCompanionActivity(
+    'wasm-chat',
+    LOCAL_WASM_TOTAL_TIMEOUT_MS + LOCAL_WASM_BUSY_BUFFER_MS,
+    async () => {
+      const temperature = request.temperature ?? 0.7;
+      const maxTokens = request.max_tokens ?? 128;
+      const deadline = Date.now() + LOCAL_WASM_TOTAL_TIMEOUT_MS;
+      const remainingWarmupMs = Math.max(1, deadline - Date.now());
+      const ready = await withTimeout(
+        aetherLocalRuntime.ensureChatReady(),
+        remainingWarmupMs,
+        'Local model warm-up'
+      );
+      if (!ready) {
+        throw new Error('Local model failed to load');
+      }
+
+      const t0 = Date.now();
+      const remainingGenerateMs = Math.max(1, deadline - Date.now());
+      const content = await withTimeout(
+        aetherLocalRuntime.generate(request.messages, maxTokens, temperature),
+        remainingGenerateMs,
+        'Local model generation'
+      );
+      const inferenceMs = Date.now() - t0;
+
+      const promptTokens = request.messages.reduce(
+        (acc, m) => acc + Math.ceil(m.content.length / 4),
+        0
+      );
+      const completionTokens = Math.ceil(content.length / 4);
+
+      logInference(
+        `[wasm] generated ${completionTokens} tokens in ${inferenceMs}ms (${aetherLocalRuntime.modelId})`
+      );
+
+      const response: ChatCompletionResponse = {
+        id: `chatcmpl-wasm-${Date.now()}`,
+        object: 'chat.completion',
+        created: Math.floor(Date.now() / 1000),
+        model: aetherLocalRuntime.modelId,
+        choices: [
+          {
+            index: 0,
+            message: { role: 'assistant', content },
+            finish_reason: 'stop',
+          },
+        ],
+        usage: {
+          prompt_tokens: promptTokens,
+          completion_tokens: completionTokens,
+          total_tokens: promptTokens + completionTokens,
+        },
+      };
+
+      return new Response(JSON.stringify(response), {
+        headers: { 'Content-Type': 'application/json' },
+      });
+    },
+    request.model
   );
-  if (!ready) {
-    throw new Error('Local model failed to load');
+}
+
+let localWasmWarmupPromise: Promise<boolean> | null = null;
+
+export function startLocalWasmWarmup(): Promise<boolean> {
+  if (localWasmWarmupPromise) {
+    return localWasmWarmupPromise;
   }
 
-  const t0 = Date.now();
-  const remainingGenerateMs = Math.max(1, deadline - Date.now());
-  const content = await withTimeout(
-    aetherLocalRuntime.generate(request.messages, maxTokens, temperature),
-    remainingGenerateMs,
-    'Local model generation'
-  );
-  const inferenceMs = Date.now() - t0;
-
-  const promptTokens = request.messages.reduce(
-    (acc, m) => acc + Math.ceil(m.content.length / 4),
-    0
-  );
-  const completionTokens = Math.ceil(content.length / 4);
-
-  logInference(
-    `[wasm] generated ${completionTokens} tokens in ${inferenceMs}ms (${aetherLocalRuntime.modelId})`
-  );
-
-  const response: ChatCompletionResponse = {
-    id: `chatcmpl-wasm-${Date.now()}`,
-    object: 'chat.completion',
-    created: Math.floor(Date.now() / 1000),
-    model: aetherLocalRuntime.modelId,
-    choices: [
-      {
-        index: 0,
-        message: { role: 'assistant', content },
-        finish_reason: 'stop',
-      },
-    ],
-    usage: {
-      prompt_tokens: promptTokens,
-      completion_tokens: completionTokens,
-      total_tokens: promptTokens + completionTokens,
+  localWasmWarmupPromise = runWithCompanionActivity(
+    'wasm-prewarm',
+    LOCAL_WASM_PREWARM_BUSY_MS,
+    async () => {
+      const t0 = Date.now();
+      try {
+        const ready = await aetherLocalRuntime.ensureChatReady();
+        const elapsed = Date.now() - t0;
+        if (ready) {
+          logInference(
+            `[wasm] prewarmed chat model in ${elapsed}ms (${aetherLocalRuntime.modelId})`
+          );
+        } else {
+          logInference('[wasm] prewarm failed to load local chat model');
+        }
+        return ready;
+      } catch (err) {
+        logInference(`[wasm] prewarm error: ${String(err)}`);
+        return false;
+      }
     },
-  };
-
-  return new Response(JSON.stringify(response), {
-    headers: { 'Content-Type': 'application/json' },
+    'startup'
+  ).finally(() => {
+    localWasmWarmupPromise = null;
   });
+
+  return localWasmWarmupPromise;
 }
 
 /**
@@ -1014,15 +1060,37 @@ export async function inferFim(
   const wasmPromise = (async (): Promise<{ completion: string; tier: InferenceTier } | null> => {
     const wt0 = Date.now();
     try {
-      const ready = await aetherLocalRuntime.ensureChatReady();
-      if (!ready) return null;
-      const content = await aetherLocalRuntime.generate(
-        [
-          { role: 'system', content: 'Complete the code. Output ONLY the completion, no explanation.' },
-          { role: 'user', content: fimPrompt },
-        ],
-        Math.min(maxTokens, 256),
-        temperature
+      const content = await runWithCompanionActivity(
+        'wasm-fim',
+        LOCAL_WASM_TOTAL_TIMEOUT_MS + LOCAL_WASM_BUSY_BUFFER_MS,
+        async () => {
+          const ready = await withTimeout(
+            aetherLocalRuntime.ensureChatReady(),
+            LOCAL_WASM_TOTAL_TIMEOUT_MS,
+            'Local FIM model warm-up'
+          );
+          if (!ready) {
+            throw new Error('Local FIM model failed to load');
+          }
+
+          return await withTimeout(
+            aetherLocalRuntime.generate(
+              [
+                {
+                  role: 'system',
+                  content:
+                    'Complete the code. Output ONLY the completion, no explanation.',
+                },
+                { role: 'user', content: fimPrompt },
+              ],
+              Math.min(maxTokens, 256),
+              temperature
+            ),
+            LOCAL_WASM_TOTAL_TIMEOUT_MS,
+            'Local FIM generation'
+          );
+        },
+        model
       );
       attempts.push({ tier: 'wasm', status: 'ok', ms: Date.now() - wt0 });
       logInference(`[fim:wasm] ${content.length}c in ${Date.now() - wt0}ms`);
@@ -1132,6 +1200,35 @@ export async function inferFim(
 export async function infer(
   request: ChatCompletionRequest
 ): Promise<TierResult> {
+  // --- Engram Store: inject relevant memories into context ---
+  try {
+    const { getEngramStore } = await import('./engram-store');
+    const store = getEngramStore();
+    if (store.size > 0) {
+      const lastUserMsg = [...request.messages].reverse().find((m) => m.role === 'user');
+      if (lastUserMsg && lastUserMsg.content.length > 10) {
+        const recalled = await store.recall(lastUserMsg.content, 3);
+        const memoryBlocks = recalled
+          .filter((r) => r.score > 0.3)
+          .map((r) => `[${r.engram.type}] ${r.engram.content}`)
+          .join('\n');
+        if (memoryBlocks.length > 0) {
+          const messages = [...request.messages];
+          const sysIdx = messages.findIndex((m) => m.role === 'system');
+          const memoryContext = `\n\n<agent_memory>\n${memoryBlocks}\n</agent_memory>`;
+          if (sysIdx >= 0) {
+            messages[sysIdx] = { ...messages[sysIdx], content: messages[sysIdx].content + memoryContext };
+          } else {
+            messages.unshift({ role: 'system', content: `You have persistent memory from previous sessions.${memoryContext}` });
+          }
+          request = { ...request, messages };
+        }
+      }
+    }
+  } catch {
+    // Engram store not initialized -- proceed without memory
+  }
+
   const config = getZedgeConfig();
   const attempts: TierAttempt[] = [];
   const lastMsg = request.messages[request.messages.length - 1];

@@ -27,6 +27,8 @@ import {
   clearLogs,
 } from './inference-bridge';
 import type { TierAttempt } from './inference-bridge';
+import { aetherLocalRuntime } from './aether-local-runtime';
+import { getOwnedCompanionActivity } from './companion-activity';
 import { fimCache, fimCacheKey, speculativePrefetch } from './fim-cache';
 import { joinPool, leavePool, getPoolStatus } from './compute-node';
 import { getRecentFeedback, recordFeedback } from './feedback-log';
@@ -495,6 +497,12 @@ export async function handleWebRequest(req: Request): Promise<Response> {
         edgeAvailable: true,
         cloudRunDirect: config.cloudRunDirect,
         wasmLocal: true,
+        localRuntime: {
+          chatStatus: aetherLocalRuntime.chatStatus,
+          chatModel: aetherLocalRuntime.modelId,
+          embeddingModel: aetherLocalRuntime.localEmbeddingModelId,
+          activity: getOwnedCompanionActivity(process.pid),
+        },
       },
       babelfish: {
         enabled: config.babelfish.enabled,
@@ -1928,6 +1936,76 @@ export async function handleWebRequest(req: Request): Promise<Response> {
     const { voidMapStore } = await import('./void-map-store');
     const removed = voidMapStore.compact();
     return jsonResponse({ compacted: true, removedEntries: removed });
+  }
+
+  if (path === '/void-map/export' && req.method === 'POST') {
+    const { exportForTraining } = await import('./void-map-export');
+    const body = (await req.json()) as { file_path?: string; category?: string };
+    const result = exportForTraining({
+      filePath: body.file_path,
+      category: body.category,
+    });
+    return jsonResponse(result);
+  }
+
+  if (path === '/void-map/export/records' && req.method === 'GET') {
+    const { exportRecords } = await import('./void-map-export');
+    const fileParam = url.searchParams.get('file') ?? undefined;
+    const categoryParam = url.searchParams.get('category') ?? undefined;
+    const records = exportRecords({ filePath: fileParam, category: categoryParam });
+    return jsonResponse({ records, count: records.length });
+  }
+
+  // Emotion profile endpoint
+  if (path.startsWith('/emotion/profile') && req.method === 'GET') {
+    const filePath = url.searchParams.get('file');
+    if (!filePath) return jsonResponse({ error: 'file query param required' }, 400);
+    const { analyzeCodeEmotion, routeByEmotion } = await import('./emotion-router');
+    try {
+      const { readFileSync } = await import('fs');
+      const { resolve } = await import('path');
+      const fullPath = resolve(process.env.AEON_ROOT || process.cwd(), filePath);
+      const content = readFileSync(fullPath, 'utf-8');
+      const profile = analyzeCodeEmotion(content);
+      const route = routeByEmotion(profile);
+      return jsonResponse({ profile, route });
+    } catch (err) {
+      return jsonResponse({ error: String(err) }, 500);
+    }
+  }
+
+  // Engram store endpoints
+  if (path === '/engram/status' && req.method === 'GET') {
+    const { getEngramStore } = await import('./engram-store');
+    return jsonResponse(getEngramStore().getStatus());
+  }
+
+  if (path === '/engram/recall' && req.method === 'POST') {
+    const { getEngramStore } = await import('./engram-store');
+    const body = (await req.json()) as { query?: string; top_k?: number };
+    if (!body.query) return jsonResponse({ error: 'query is required' }, 400);
+    const results = await getEngramStore().recall(body.query, body.top_k ?? 5);
+    return jsonResponse({ results: results.map((r) => ({ score: r.score, ...r.engram })) });
+  }
+
+  if (path === '/engram/remember' && req.method === 'POST') {
+    const { getEngramStore } = await import('./engram-store');
+    const body = (await req.json()) as { type?: string; content?: string; file_path?: string };
+    if (!body.content) return jsonResponse({ error: 'content is required' }, 400);
+    const engram = await getEngramStore().remember({
+      type: (body.type ?? 'code-pattern') as 'conversation-summary' | 'code-pattern' | 'user-preference' | 'file-relationship',
+      content: body.content,
+      filePath: body.file_path,
+    });
+    return jsonResponse({ remembered: true, engram });
+  }
+
+  if (path === '/engram/forget' && req.method === 'DELETE') {
+    const { getEngramStore } = await import('./engram-store');
+    const id = url.searchParams.get('id');
+    if (!id) return jsonResponse({ error: 'id query param required' }, 400);
+    const removed = getEngramStore().forget(id);
+    return jsonResponse({ forgotten: removed, id });
   }
 
   if (path === '/forge/events' && req.method === 'GET') {
