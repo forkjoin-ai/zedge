@@ -1825,6 +1825,40 @@ export async function handleWebRequest(req: Request): Promise<Response> {
     return jsonResponse({ handshakes: federatedVoidSync.getHandshakes() });
   }
 
+  // Void sync transport (DashRelay room + line-scoped deficits)
+  if (path === '/void-sync/connect' && req.method === 'POST') {
+    const body = (await req.json()) as { workspace_id?: string };
+    if (!body.workspace_id) return jsonResponse({ error: 'workspace_id required' }, 400);
+    const { connectVoidSyncRoom } = await import('./void-sync-transport');
+    const room = await connectVoidSyncRoom(body.workspace_id);
+    return jsonResponse(room);
+  }
+
+  if (path === '/void-sync/disconnect' && req.method === 'POST') {
+    const { disconnectVoidSyncRoom } = await import('./void-sync-transport');
+    disconnectVoidSyncRoom();
+    return jsonResponse({ disconnected: true });
+  }
+
+  if (path === '/void-sync/room' && req.method === 'GET') {
+    const { getRoomStatus } = await import('./void-sync-transport');
+    return jsonResponse(getRoomStatus());
+  }
+
+  if (path === '/void-sync/line-deficit' && req.method === 'GET') {
+    const filePath = url.searchParams.get('file');
+    const startLine = url.searchParams.get('start');
+    const endLine = url.searchParams.get('end');
+    if (!filePath) return jsonResponse({ error: 'file query param required' }, 400);
+    const { computeLineScopedDeficit, getFileDeficitMap } = await import('./void-sync-transport');
+    if (startLine && endLine) {
+      const deficit = computeLineScopedDeficit(filePath, [parseInt(startLine, 10), parseInt(endLine, 10)]);
+      return jsonResponse(deficit);
+    }
+    const deficits = getFileDeficitMap(filePath);
+    return jsonResponse({ deficits, count: deficits.length });
+  }
+
   // ==================== Agent Breeding ====================
 
   if (path === '/breeding/status' && req.method === 'GET') {

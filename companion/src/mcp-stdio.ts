@@ -2163,7 +2163,28 @@ export async function handleToolCall(
 }
 
 async function handleResourcesList(): Promise<Record<string, unknown>> {
-  return { resources: [] };
+  return {
+    resources: [
+      {
+        uri: 'zedge://observatory',
+        name: 'Inference Quality Observatory',
+        description: 'Real-time dashboard of the self-improving loop: void map, engrams, emotions, agents, breeding',
+        mimeType: 'application/json',
+      },
+      {
+        uri: 'zedge://void-sync',
+        name: 'Federated Void Sync Status',
+        description: 'Team-wide rejection learning via UCAN mutual delegation',
+        mimeType: 'application/json',
+      },
+      {
+        uri: 'zedge://breeding',
+        name: 'Agent Breeding Status',
+        description: 'METACOG c0-c3 agent evolution loop',
+        mimeType: 'application/json',
+      },
+    ],
+  };
 }
 
 // ---------- MCP message dispatch ----------
@@ -2201,6 +2222,22 @@ export async function dispatch(
       case 'resources/list':
         result = await handleResourcesList();
         break;
+      case 'resources/read': {
+        const uri = (params as Record<string, unknown>)?.uri as string;
+        if (uri === 'zedge://observatory') {
+          const { getObservatorySnapshot } = await import('./observatory');
+          result = { contents: [{ uri, mimeType: 'application/json', text: JSON.stringify(await getObservatorySnapshot(), null, 2) }] };
+        } else if (uri === 'zedge://void-sync') {
+          const { federatedVoidSync } = await import('./federated-void-sync');
+          result = { contents: [{ uri, mimeType: 'application/json', text: JSON.stringify(federatedVoidSync.getStatus(), null, 2) }] };
+        } else if (uri === 'zedge://breeding') {
+          const { agentBreeding } = await import('./agent-breeding');
+          result = { contents: [{ uri, mimeType: 'application/json', text: JSON.stringify(agentBreeding.getStatus(), null, 2) }] };
+        } else {
+          result = { contents: [] };
+        }
+        break;
+      }
       case 'ping':
         result = {};
         break;
