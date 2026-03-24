@@ -5,8 +5,8 @@ import {
   expect,
   test,
 } from 'bun:test';
-import { mkdtempSync, mkdirSync } from 'fs';
-import { spawn, type ChildProcess } from 'child_process';
+import { mkdtempSync, mkdirSync, readFileSync } from 'fs';
+import { spawn, spawnSync, type ChildProcess } from 'child_process';
 import { get } from 'http';
 import { createServer } from 'net';
 import { tmpdir } from 'os';
@@ -243,30 +243,59 @@ async function runMcpToolInSubprocess(
   };
   const runtimeCommand = resolveTypeScriptEntrypointCommand(MCP_STDIO_ENTRY);
   const payload = JSON.stringify(request);
-  const child = spawn(runtimeCommand.command, [...runtimeCommand.args], {
-    cwd: testWorkspace || REPO_ROOT,
-    env: {
-      ...process.env,
-      HOME: testHome,
-      AEON_ROOT: REPO_ROOT,
-      ZEDGE_COMPANION_PORT: String(companionPort),
-    },
-    stdio: ['pipe', 'pipe', 'pipe'],
-  });
-  let stdout = '';
-  let stderr = '';
-  child.stdout?.on('data', (chunk) => {
-    stdout += chunk.toString();
-  });
-  child.stderr?.on('data', (chunk) => {
-    stderr += chunk.toString();
-  });
-  child.stdin?.end(
-    `Content-Length: ${Buffer.byteLength(payload)}\r\n\r\n${payload}`
+  const framedPayload = `Content-Length: ${Buffer.byteLength(payload)}\r\n\r\n${payload}`;
+  const runnerOutputPath = join(
+    testWorkspace || REPO_ROOT,
+    `.zedge-mcp-${command}.runner.json`
   );
-  const exitCode = await new Promise<number | null>((resolveExit) => {
-    child.once('close', resolveExit);
+  const nodeRunner = [
+    "const { writeFileSync } = require('node:fs');",
+    "const { spawnSync } = require('node:child_process');",
+    'const [command, argsJson, cwd, homeDir, repoRoot, port, framedPayload, outputPath] = process.argv.slice(1);',
+    'const result = spawnSync(command, JSON.parse(argsJson), {',
+    '  cwd,',
+    '  env: { ...process.env, HOME: homeDir, AEON_ROOT: repoRoot, ZEDGE_COMPANION_PORT: port },',
+    '  input: framedPayload,',
+    "  encoding: 'utf8',",
+    '  timeout: 15000,',
+    '});',
+    'writeFileSync(outputPath, JSON.stringify({',
+    '  status: result.status,',
+    '  stdout: result.stdout ?? "",',
+    '  stderr: result.stderr ?? "",',
+    '  error: result.error ? { message: result.error.message } : null,',
+    '}), "utf8");',
+  ].join('\n');
+  const result = spawnSync('node', [
+    '-e',
+    nodeRunner,
+    runtimeCommand.command,
+    JSON.stringify(runtimeCommand.args),
+    testWorkspace || REPO_ROOT,
+    testHome,
+    REPO_ROOT,
+    String(companionPort),
+    framedPayload,
+    runnerOutputPath,
+  ], {
+    encoding: 'utf8',
+    timeout: 15_000,
   });
+  if (result.status !== 0) {
+    throw new Error(
+      `Node runner failed for ${command} with code ${result.status}\nstdout=${result.stdout ?? ''}\nstderr=${result.stderr ?? ''}\n${getLogTail()}`
+    );
+  }
+
+  const runnerResult = JSON.parse(readFileSync(runnerOutputPath, 'utf8')) as {
+    status: number | null;
+    stdout: string;
+    stderr: string;
+    error: { message: string } | null;
+  };
+  const stdout = runnerResult.stdout;
+  const stderr = runnerResult.stderr;
+  const exitCode = runnerResult.status;
   if (exitCode !== 0) {
     throw new Error(
       `MCP subprocess failed for ${command} with code ${exitCode}\nstdout=${stdout}\nstderr=${stderr}\n${getLogTail()}`

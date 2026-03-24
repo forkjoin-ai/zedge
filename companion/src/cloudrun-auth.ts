@@ -1,3 +1,6 @@
+import { existsSync, readFileSync } from 'node:fs';
+import { homedir } from 'node:os';
+import { join } from 'node:path';
 import {
   getCloudRunHeaders,
   resolveCloudRunServiceAccountKey,
@@ -14,7 +17,11 @@ export function buildCloudRunHealthUrls(baseUrl: string): string[] {
 let _resolvedSAKey: string | null | undefined;
 
 function resolveSAKey(): string | null {
-  if (_resolvedSAKey !== undefined) return _resolvedSAKey;
+  if (_resolvedSAKey !== undefined) {
+    if (!_resolvedSAKey) console.warn('[cloudrun-auth] SA key previously resolved as null (cached)');
+    return _resolvedSAKey;
+  }
+  console.log('[cloudrun-auth] First SA key resolution attempt...');
 
   // 1. Check env vars
   const envResult = resolveCloudRunServiceAccountKey(
@@ -27,25 +34,25 @@ function resolveSAKey(): string | null {
 
   // 2. Check ~/.edgework/cloudrun-sa-key.json (raw JSON → base64)
   try {
-    const { readFileSync, existsSync } = require('fs');
-    const { join } = require('path');
-    const { homedir } = require('os');
-
     const b64Path = join(homedir(), '.edgework', 'cloudrun-sa-key.b64');
     if (existsSync(b64Path)) {
-      _resolvedSAKey = readFileSync(b64Path, 'utf-8').trim();
+      const cachedKey = readFileSync(b64Path, 'utf-8').trim();
+      _resolvedSAKey = cachedKey;
       console.log(`[cloudrun-auth] SA key from ${b64Path}`);
-      return _resolvedSAKey;
+      return cachedKey;
     }
 
     const jsonPath = join(homedir(), '.edgework', 'cloudrun-sa-key.json');
     if (existsSync(jsonPath)) {
       const raw = readFileSync(jsonPath, 'utf-8').trim();
-      _resolvedSAKey = Buffer.from(raw).toString('base64');
+      const cachedKey = Buffer.from(raw).toString('base64');
+      _resolvedSAKey = cachedKey;
       console.log(`[cloudrun-auth] SA key from ${jsonPath}`);
-      return _resolvedSAKey;
+      return cachedKey;
     }
-  } catch {}
+  } catch (err) {
+    console.warn(`[cloudrun-auth] File-based SA key resolution failed:`, err);
+  }
 
   _resolvedSAKey = null;
   return null;
