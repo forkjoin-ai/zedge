@@ -14,6 +14,7 @@ import type {
   PerturbationCycle,
 } from '../../../../shared-utils/src/laminar/perturbation-engine';
 import type { CodeMutationOutput } from '../../../../shared-utils/src/laminar/code-laminar';
+import { voidMapStore } from './void-map-store';
 
 // ── Types ────────────────────────────────────────────────────
 
@@ -108,6 +109,15 @@ export class CeraBridge {
     pending.status = 'rejected';
     this.rejectedMutations.push(pending);
     this.pendingMutations.delete(mutationId);
+
+    // Persist rejection in void map store
+    const mutationFilePath = pending.mutation.files?.[0]?.path ?? 'unknown';
+    voidMapStore.record({
+      filePath: mutationFilePath,
+      category: 'cera-mutation',
+      rejectedContent: pending.mutation.description ?? JSON.stringify(pending.mutation).slice(0, 200),
+      source: 'cera',
+    });
 
     this.broadcastSse({
       type: 'mutation-rejected',

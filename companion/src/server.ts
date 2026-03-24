@@ -74,7 +74,6 @@ import {
 // scanning the entire workspace directory on import would prevent Bun.serve
 // from ever processing HTTP requests.
 let _gnosisWatcher: any = null;
-let _gnosisIncrementalChecker: any = null;
 let _gnosisModules: {
   BettyCompiler: any;
   checkTypeScriptWithGnosis: any;
@@ -96,15 +95,6 @@ async function ensureGnosisModules() {
     generateAutofixSuggestions: tsAutofix.generateAutofixSuggestions,
   };
   return _gnosisModules;
-}
-
-function getGnosisIncrementalChecker() {
-  if (!_gnosisIncrementalChecker) {
-    // Lazy-create on first use
-    const { GnosisIncrementalChecker } = require('../../../gnosis/src/ts-check-incremental');
-    _gnosisIncrementalChecker = new GnosisIncrementalChecker();
-  }
-  return _gnosisIncrementalChecker;
 }
 
 /** Start gnosis file watcher -- called after server is listening. */
@@ -948,7 +938,7 @@ export async function handleWebRequest(req: Request): Promise<Response> {
   if (path === '/gnosis/watcher/stats' && req.method === 'GET') {
     return jsonResponse({
       watcher: _gnosisWatcher?.getStats?.() ?? { status: 'not-initialized' },
-      checker: _gnosisIncrementalChecker?.getStats?.() ?? { status: 'not-initialized' },
+      checker: { status: 'not-initialized' },
       sseClients: gnosisSseClients.size,
     });
   }
@@ -1907,6 +1897,37 @@ export async function handleWebRequest(req: Request): Promise<Response> {
     const body = (await req.json()) as { file_path?: string };
     daydreamEngine.notifyActivity(body.file_path);
     return jsonResponse({ notified: true });
+  }
+
+  // Void Map endpoints -- persistent rejection memory
+  if (path === '/void-map/status' && req.method === 'GET') {
+    const { voidMapStore } = await import('./void-map-store');
+    return jsonResponse(voidMapStore.getStatus());
+  }
+
+  if (path === '/void-map/query' && req.method === 'GET') {
+    const { voidMapStore } = await import('./void-map-store');
+    const fileParam = url.searchParams.get('file') ?? undefined;
+    const categoryParam = url.searchParams.get('category') ?? undefined;
+    const limitParam = url.searchParams.get('limit');
+    const entries = voidMapStore.query({
+      filePath: fileParam,
+      category: categoryParam,
+      limit: limitParam ? parseInt(limitParam, 10) : undefined,
+    });
+    return jsonResponse({ entries, count: entries.length });
+  }
+
+  if (path === '/void-map/steering' && req.method === 'GET') {
+    const { voidMapStore } = await import('./void-map-store');
+    const fileParam = url.searchParams.get('file') ?? undefined;
+    return jsonResponse(voidMapStore.getSteeringVector(fileParam));
+  }
+
+  if (path === '/void-map/compact' && req.method === 'POST') {
+    const { voidMapStore } = await import('./void-map-store');
+    const removed = voidMapStore.compact();
+    return jsonResponse({ compacted: true, removedEntries: removed });
   }
 
   if (path === '/forge/events' && req.method === 'GET') {

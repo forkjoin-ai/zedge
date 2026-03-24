@@ -18,6 +18,7 @@ import { readFileSync, existsSync } from 'node:fs';
 import { infer } from './inference-bridge';
 import type { ChatCompletionRequest } from './inference-bridge';
 import { getZedgeConfig } from './config';
+import { voidMapStore } from './void-map-store';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -75,7 +76,6 @@ class DaydreamEngine {
   private lastActivity = Date.now();
   private currentFilePath: string | null = null;
   private lastDreamPerFile = new Map<string, number>();
-  private voidMap: string[] = []; // Rejected suggestions for training signal
   private nextId = 0;
 
   /** Notify the engine of developer activity (keystroke, cursor move, etc.) */
@@ -109,12 +109,21 @@ class DaydreamEngine {
     return candidate;
   }
 
-  /** Reject a candidate -- record in void map for future training */
+  /** Reject a candidate -- record in persistent void map for future steering */
   rejectCandidate(id: string): DaydreamCandidate | null {
     const candidate = this.candidates.get(id);
     if (!candidate) return null;
     this.candidates.delete(id);
-    this.voidMap.push(`${candidate.filePath}:${candidate.line}:${candidate.category}:${candidate.suggestion.slice(0, 100)}`);
+
+    // Persist rejection in void map store
+    voidMapStore.record({
+      filePath: candidate.filePath,
+      line: candidate.line,
+      category: candidate.category,
+      rejectedContent: candidate.suggestion,
+      source: 'daydream',
+    });
+
     this.cacheMisses++;
     return candidate;
   }
@@ -127,7 +136,7 @@ class DaydreamEngine {
       cacheHits: this.cacheHits,
       cacheMisses: this.cacheMisses,
       lastDream: this.lastDream,
-      voidMapEntropy: this.voidMap.length,
+      voidMapEntropy: voidMapStore.size,
       idleSinceMs: Date.now() - this.lastActivity,
     };
   }
@@ -166,6 +175,12 @@ class DaydreamEngine {
       const truncated = content.slice(0, 4000);
       const config = getZedgeConfig();
 
+      // Get void map steering vector to avoid repeating rejected patterns
+      const steering = voidMapStore.getSteeringVector(filePath);
+      const steeringBlock = steering.negativePrompt
+        ? `\n\n${steering.negativePrompt}`
+        : '';
+
       const request: ChatCompletionRequest = {
         model: config.preferredModel,
         messages: [
@@ -175,7 +190,7 @@ class DaydreamEngine {
 
 [LINE:number] [CATEGORY:refactor|bug-fix|performance|readability|security] suggestion text
 
-Only suggest changes you are confident about. Be specific about the line number. Keep suggestions under 100 characters.`,
+Only suggest changes you are confident about. Be specific about the line number. Keep suggestions under 100 characters.${steeringBlock}`,
           },
           {
             role: 'user',

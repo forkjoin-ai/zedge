@@ -90,6 +90,11 @@ requires_argument = true
 description = "Consensus code review — three models race on your diff, agreements and disagreements highlighted"
 requires_argument = false
 
+[grammars.gnosis]
+repository = "https://github.com/forkjoin-ai/tree-sitter-gnosis"
+commit = ""
+path = "grammars/gnosis"
+
 [context_servers.zedge-companion]
 
 [language_servers.gnosis-lsp]

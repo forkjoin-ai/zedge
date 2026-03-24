@@ -28,6 +28,8 @@ export interface SuperinferenceRequest {
   strategy: CollapseStrategy;
   /** Max wall-clock time for all models */
   timeoutMs?: number;
+  /** Void map steering overrides -- injected into system prompt */
+  steeringOverrides?: string;
 }
 
 export interface SuperinferenceResult {
@@ -275,6 +277,24 @@ export async function superinfer(
   const models = req.models ?? DEFAULT_MODELS;
   const timeoutMs = req.timeoutMs ?? DEFAULT_TIMEOUT_MS;
   const startTime = Date.now();
+
+  // Inject void map steering into system prompt if provided
+  if (req.steeringOverrides) {
+    const messages = [...req.request.messages];
+    const systemIdx = messages.findIndex((m) => m.role === 'system');
+    if (systemIdx >= 0) {
+      messages[systemIdx] = {
+        ...messages[systemIdx],
+        content: messages[systemIdx].content + '\n\n' + req.steeringOverrides,
+      };
+    } else {
+      messages.unshift({
+        role: 'system',
+        content: req.steeringOverrides,
+      });
+    }
+    req = { ...req, request: { ...req.request, messages } };
+  }
 
   if (models.length === 0) {
     throw new Error('At least one model required for superinference');
