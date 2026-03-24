@@ -127,6 +127,18 @@ setTimeout(async () => {
         .catch(() => {});
     }, 1_000);
 
+    // Wire Phase 3 integrations (void map → trainer, engram embeddings)
+    setTimeout(() => {
+      import('./wire-phase3')
+        .then(({ wirePhase3 }) => wirePhase3())
+        .then((status) => {
+          console.log(
+            `[zedge] Phase 3 wired: trainer=${status.buleyeanTrainerActive}, engrams=${status.totalEngramsStored}`
+          );
+        })
+        .catch(() => {});
+    }, 2_000);
+
     console.log(`[zedge] Ready. Mesh peers: ${getMeshStatus().peers.length}`);
   } catch (err) {
     console.error('[zedge] Init error:', err);

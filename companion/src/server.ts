@@ -1963,6 +1963,18 @@ export async function handleWebRequest(req: Request): Promise<Response> {
     return jsonResponse({ notified: true });
   }
 
+  // Phase 3 wiring status
+  if (path === '/phase3/status' && req.method === 'GET') {
+    const { getPhase3Status } = await import('./wire-phase3');
+    return jsonResponse(getPhase3Status());
+  }
+
+  if (path === '/phase3/wire' && req.method === 'POST') {
+    const { wirePhase3 } = await import('./wire-phase3');
+    const status = await wirePhase3();
+    return jsonResponse(status);
+  }
+
   // Void Map endpoints -- persistent rejection memory
   if (path === '/void-map/status' && req.method === 'GET') {
     const { voidMapStore } = await import('./void-map-store');
