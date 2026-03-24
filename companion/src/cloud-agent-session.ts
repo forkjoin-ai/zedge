@@ -249,8 +249,8 @@ async function tryForgeAgentTick(
     const workspacePath = process.env.AEON_ROOT || process.cwd();
     const projects = await discoverProjects(workspacePath);
     const agentProject = projects.find(
-      (p: { name: string; kind: string }) =>
-        p.name === config.agentName && p.kind === 'agent'
+      (p: { name: string; config: { kind: string } }) =>
+        p.name === config.agentName && p.config.kind === 'agent'
     );
 
     if (!agentProject) return null;
@@ -272,7 +272,7 @@ async function tryForgeAgentTick(
     };
 
     // POST to the agent's /tick endpoint
-    const port = agentProject.port ?? 4800;
+    const port = agentProject.config.port ?? 4800;
     const resp = await fetch(`http://127.0.0.1:${port}/tick`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
