@@ -17,6 +17,13 @@ import { resolve, dirname, relative, sep } from 'path';
 import { fileURLToPath } from 'url';
 import { getCompanionPort } from './config';
 import { callBabelfishMcpTool, getBabelfishMcpTools } from './babelfish-mcp';
+import {
+  COMPANION_STOP_TIMEOUT_MS,
+  CONSECUTIVE_FAILURES_BEFORE_RESTART,
+  HEALTH_CHECK_INTERVAL_MS,
+  HEALTH_CHECK_TIMEOUT_MS,
+  decideCompanionRestart,
+} from './companion-restart-policy';
 import { resolveTypeScriptEntrypointCommand } from './runtime-command';
 
 function getCompanionBase(): string {
@@ -30,13 +37,6 @@ const WORKSPACE_ROOT = resolve(
   process.env.AEON_ROOT ?? resolve(__dirname, '../../../..')
 );
 const COMPANION_ENTRY = resolve(__dirname, 'index.ts');
-const HEALTH_CHECK_INTERVAL_MS = 5_000;
-const HEALTH_CHECK_TIMEOUT_MS = 3_000;
-const STARTUP_GRACE_MS = 20_000;
-const CONSECUTIVE_FAILURES_BEFORE_RESTART = 3;
-const RESTART_WINDOW_MS = 60_000;
-const MAX_RESTARTS_PER_WINDOW = 4;
-const COMPANION_STOP_TIMEOUT_MS = 5_000;
 let companionProc: ChildProcess | null = null;
 let babysitterTimer: ReturnType<typeof setInterval> | null = null;
 let stdioLoggingConfigured = false;
@@ -48,70 +48,8 @@ let restartInFlight: Promise<boolean> | null = null;
 let suppressExitRestart = false;
 let shuttingDown = false;
 
-type CompanionRestartSkipReason =
-  | 'below_failure_threshold'
-  | 'startup_grace'
-  | 'rate_limited';
-
-export interface CompanionRestartDecisionInput {
-  now: number;
-  companionSpawnedAt: number;
-  consecutiveFailures: number;
-  restartTimestamps: number[];
-  force?: boolean;
-}
-
-export interface CompanionRestartDecision {
-  shouldRestart: boolean;
-  reason: 'restart' | CompanionRestartSkipReason;
-  restartTimestamps: number[];
-}
-
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
-export function decideCompanionRestart(
-  input: CompanionRestartDecisionInput
-): CompanionRestartDecision {
-  const restartTimestamps = input.restartTimestamps.filter(
-    (timestamp) => input.now - timestamp <= RESTART_WINDOW_MS
-  );
-
-  if (restartTimestamps.length >= MAX_RESTARTS_PER_WINDOW) {
-    return {
-      shouldRestart: false,
-      reason: 'rate_limited',
-      restartTimestamps,
-    };
-  }
-
-  if (!input.force) {
-    if (
-      input.companionSpawnedAt > 0 &&
-      input.now - input.companionSpawnedAt < STARTUP_GRACE_MS
-    ) {
-      return {
-        shouldRestart: false,
-        reason: 'startup_grace',
-        restartTimestamps,
-      };
-    }
-
-    if (input.consecutiveFailures < CONSECUTIVE_FAILURES_BEFORE_RESTART) {
-      return {
-        shouldRestart: false,
-        reason: 'below_failure_threshold',
-        restartTimestamps,
-      };
-    }
-  }
-
-  return {
-    shouldRestart: true,
-    reason: 'restart',
-    restartTimestamps: [...restartTimestamps, input.now],
-  };
 }
 
 function configureStdioLogging(): void {
@@ -1300,6 +1238,30 @@ export async function handleToolsList(): Promise<Record<string, unknown>> {
           },
         },
       },
+      {
+        name: 'zedge_multi_file_edit',
+        description:
+          'Apply a high-level code change across one or more files using the multi-file agent. Describe what you want changed in natural language.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            instruction: {
+              type: 'string',
+              description: 'Natural language description of the change to make',
+            },
+            target_files: {
+              type: 'array',
+              items: { type: 'string' },
+              description: 'Optional list of file paths to limit the edit to',
+            },
+            model: {
+              type: 'string',
+              description: 'Optional model override',
+            },
+          },
+          required: ['instruction'],
+        },
+      },
       ...getBabelfishMcpTools(),
     ],
   };
@@ -1505,6 +1467,30 @@ export async function handleToolCall(
         };
       }
 
+      case 'zedge_multi_file_edit': {
+        const instruction = String(args.instruction ?? '');
+        if (!instruction) {
+          return {
+            content: [{ type: 'text', text: 'instruction is required' }],
+            isError: true,
+          };
+        }
+        const resp = await fetch(`${getCompanionBase()}/agent/multi-file`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            instruction,
+            target_files: args.target_files,
+            model: args.model,
+          }),
+          signal: AbortSignal.timeout(120_000),
+        });
+        const data = await resp.json();
+        return {
+          content: [{ type: 'text', text: JSON.stringify(data, null, 2) }],
+        };
+      }
+
       case 'zedge_daydream': {
         const action = String(args.action ?? 'candidates');
         const resp = await (async () => {
@@ -1528,8 +1514,8 @@ export async function handleToolCall(
               return fetch(`${getCompanionBase()}/cera/daydream/accept`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ id: args.id }),
-                signal: AbortSignal.timeout(10_000),
+                body: JSON.stringify({ id: args.id, apply: true }),
+                signal: AbortSignal.timeout(120_000),
               });
             case 'reject':
               return fetch(`${getCompanionBase()}/cera/daydream/reject`, {

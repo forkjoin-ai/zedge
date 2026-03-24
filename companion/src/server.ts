@@ -69,49 +69,90 @@ import {
   getCompositionPreset,
   COMPOSITION_PRESETS,
 } from './superinference';
-import { BettyCompiler } from '../../../gnosis/src/betty/compiler';
-import { checkTypeScriptWithGnosis } from '../../../gnosis/src/ts-check';
-import {
-  GnosisFileWatcher,
-  type WatcherEvent,
-} from '../../../gnosis/src/ts-check-watcher';
-import { GnosisIncrementalChecker } from '../../../gnosis/src/ts-check-incremental';
-import { generateAutofixSuggestions } from '../../../gnosis/src/ts-check-autofix';
-
-// Global file watcher for live topology updates
-const gnosisWatcher = new GnosisFileWatcher({
-  debounceMs: 500,
-  enableAutofix: true,
-});
-const gnosisIncrementalChecker = new GnosisIncrementalChecker();
+// Gnosis modules -- lazy-loaded to avoid blocking the event loop at startup.
+// The file watcher, incremental checker, and betty compiler are CPU-heavy and
+// scanning the entire workspace directory on import would prevent Bun.serve
+// from ever processing HTTP requests.
+let _gnosisWatcher: any = null;
+let _gnosisIncrementalChecker: any = null;
+let _gnosisModules: {
+  BettyCompiler: any;
+  checkTypeScriptWithGnosis: any;
+  generateAutofixSuggestions: any;
+} | null = null;
 const gnosisSseClients = new Set<ReadableStreamDefaultController>();
+let _gnosisInitStarted = false;
 
-gnosisWatcher.addListener((event: WatcherEvent) => {
-  if (event.type === 'check-complete' && event.result) {
-    const payload = JSON.stringify({
-      type: 'topology-update',
-      filePath: event.filePath,
-      timestamp: event.timestamp,
-      nodes: event.result.topology.nodes,
-      edges: event.result.topology.edges,
-      metrics: event.result.metrics,
-      diagnostics: event.result.diagnostics,
-      autofixes: event.autofixes ?? [],
-    });
-    const encoder = new TextEncoder();
-    for (const controller of gnosisSseClients) {
-      try {
-        controller.enqueue(encoder.encode(`data: ${payload}\n\n`));
-      } catch {
-        gnosisSseClients.delete(controller);
-      }
-    }
+async function ensureGnosisModules() {
+  if (_gnosisModules) return _gnosisModules;
+  const [betty, tsCheck, tsAutofix] = await Promise.all([
+    import('../../../gnosis/src/betty/compiler'),
+    import('../../../gnosis/src/ts-check'),
+    import('../../../gnosis/src/ts-check-autofix'),
+  ]);
+  _gnosisModules = {
+    BettyCompiler: betty.BettyCompiler,
+    checkTypeScriptWithGnosis: tsCheck.checkTypeScriptWithGnosis,
+    generateAutofixSuggestions: tsAutofix.generateAutofixSuggestions,
+  };
+  return _gnosisModules;
+}
+
+function getGnosisIncrementalChecker() {
+  if (!_gnosisIncrementalChecker) {
+    // Lazy-create on first use
+    const { GnosisIncrementalChecker } = require('../../../gnosis/src/ts-check-incremental');
+    _gnosisIncrementalChecker = new GnosisIncrementalChecker();
   }
-});
+  return _gnosisIncrementalChecker;
+}
 
-// Start watching the workspace
-const workspaceRoot = process.env.AEON_ROOT || process.cwd();
-void gnosisWatcher.watchDirectory(workspaceRoot);
+/** Start gnosis file watcher -- called after server is listening. */
+export function startGnosisWatcher(): void {
+  if (_gnosisInitStarted) return;
+  _gnosisInitStarted = true;
+
+  import('../../../gnosis/src/ts-check-watcher').then(({ GnosisFileWatcher }) => {
+    _gnosisWatcher = new GnosisFileWatcher({
+      debounceMs: 500,
+      enableAutofix: true,
+    });
+    _gnosisWatcher.addListener((event: any) => {
+      if (event.type === 'check-complete' && event.result) {
+        const payload = JSON.stringify({
+          type: 'topology-update',
+          filePath: event.filePath,
+          timestamp: event.timestamp,
+          nodes: event.result.topology.nodes,
+          edges: event.result.topology.edges,
+          metrics: event.result.metrics,
+          diagnostics: event.result.diagnostics,
+          autofixes: event.autofixes ?? [],
+        });
+        const encoder = new TextEncoder();
+        for (const controller of gnosisSseClients) {
+          try {
+            controller.enqueue(encoder.encode(`data: ${payload}\n\n`));
+          } catch {
+            gnosisSseClients.delete(controller);
+          }
+        }
+
+        // Auto-refresh code index on file change
+        if (event.filePath) {
+          import('./code-index').then(({ codeIndex }) => {
+            void codeIndex.reindexFile(event.filePath);
+          }).catch(() => {});
+        }
+      }
+    });
+    const workspaceRoot = process.env.AEON_ROOT || process.cwd();
+    void _gnosisWatcher.watchDirectory(workspaceRoot);
+    console.log(`[zedge] Gnosis file watcher started for ${workspaceRoot}`);
+  }).catch((err) => {
+    console.warn(`[zedge] Gnosis file watcher failed to start: ${err}`);
+  });
+}
 import type { VfsBridge } from './vfs-bridge';
 import type { CollabBridge, CollabPresenceUpdate } from './collab-bridge';
 import type { KernelBridge } from './kernel-bridge';
@@ -742,6 +783,7 @@ async function handleWebRequest(req: Request): Promise<Response> {
       const body = (await req.json()) as { code?: string };
       if (!body.code) return jsonResponse({ error: 'code is required' }, 400);
 
+      const { BettyCompiler } = await ensureGnosisModules();
       const compiler = new BettyCompiler();
       const result = compiler.parse(body.code);
 
@@ -777,6 +819,7 @@ async function handleWebRequest(req: Request): Promise<Response> {
       if (!body.sourceText)
         return jsonResponse({ error: 'sourceText is required' }, 400);
       const filePath = body.filePath ?? 'inline.ts';
+      const { checkTypeScriptWithGnosis } = await ensureGnosisModules();
       const result = await checkTypeScriptWithGnosis(
         body.sourceText,
         filePath,
@@ -809,10 +852,11 @@ async function handleWebRequest(req: Request): Promise<Response> {
       };
       if (!body.sourceText)
         return jsonResponse({ error: 'sourceText is required' }, 400);
-      const filePath = body.filePath ?? 'inline.ts';
-      const result = await checkTypeScriptWithGnosis(
+      const filePath2 = body.filePath ?? 'inline.ts';
+      const gnosis2 = await ensureGnosisModules();
+      const result = await gnosis2.checkTypeScriptWithGnosis(
         body.sourceText,
-        filePath,
+        filePath2,
         {
           exportName: body.exportName,
         }
@@ -843,9 +887,10 @@ async function handleWebRequest(req: Request): Promise<Response> {
       };
       if (!body.sourceText)
         return jsonResponse({ error: 'sourceText is required' }, 400);
-      const filePath = body.filePath ?? 'inline.ts';
-      const result = await checkTypeScriptWithGnosis(body.sourceText, filePath);
-      const suggestions = generateAutofixSuggestions(result, body.sourceText);
+      const filePath3 = body.filePath ?? 'inline.ts';
+      const gnosis3 = await ensureGnosisModules();
+      const result = await gnosis3.checkTypeScriptWithGnosis(body.sourceText, filePath3);
+      const suggestions = gnosis3.generateAutofixSuggestions(result, body.sourceText);
       return jsonResponse({
         diagnostics: result.diagnostics,
         suggestions,
@@ -902,8 +947,8 @@ async function handleWebRequest(req: Request): Promise<Response> {
 
   if (path === '/gnosis/watcher/stats' && req.method === 'GET') {
     return jsonResponse({
-      watcher: gnosisWatcher.getStats(),
-      checker: gnosisIncrementalChecker.getStats(),
+      watcher: _gnosisWatcher?.getStats?.() ?? { status: 'not-initialized' },
+      checker: _gnosisIncrementalChecker?.getStats?.() ?? { status: 'not-initialized' },
       sseClients: gnosisSseClients.size,
     });
   }
@@ -1825,11 +1870,27 @@ async function handleWebRequest(req: Request): Promise<Response> {
 
   if (path === '/cera/daydream/accept' && req.method === 'POST') {
     const { daydreamEngine } = await import('./daydream');
-    const body = (await req.json()) as { id?: string };
+    const body = (await req.json()) as { id?: string; apply?: boolean };
     if (!body.id) return jsonResponse({ error: 'id is required' }, 400);
     const candidate = daydreamEngine.acceptCandidate(body.id);
     if (!candidate) return jsonResponse({ error: 'Candidate not found' }, 404);
-    return jsonResponse({ accepted: true, candidate });
+
+    // If apply=true, bridge the accepted candidate into multi-file-agent
+    let editResult = null;
+    if (body.apply !== false) {
+      try {
+        const { executeMultiFileEdit } = await import('./multi-file-agent');
+        editResult = await executeMultiFileEdit({
+          instruction: candidate.suggestion,
+          workspacePath: process.env.AEON_ROOT || process.cwd(),
+          targetFiles: [candidate.filePath],
+        });
+      } catch {
+        // Edit application is best-effort
+      }
+    }
+
+    return jsonResponse({ accepted: true, candidate, editResult });
   }
 
   if (path === '/cera/daydream/reject' && req.method === 'POST') {

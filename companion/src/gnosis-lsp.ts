@@ -452,10 +452,12 @@ export async function dispatchRequest(req: JsonRpcRequest): Promise<unknown> {
           completionProvider: {
             triggerCharacters: [':', '(', '['],
           },
+          definitionProvider: true,
+          referencesProvider: true,
         },
         serverInfo: {
           name: 'gnosis-lsp',
-          version: '1.1.0',
+          version: '1.2.0',
         },
       };
 
@@ -567,6 +569,93 @@ export async function dispatchRequest(req: JsonRpcRequest): Promise<unknown> {
           value: help,
         },
       };
+    }
+
+    case 'textDocument/definition': {
+      const uri = getUriFromParams(req.params);
+      const position = getPosition(req.params);
+      if (!uri || !position) return null;
+
+      const text = documents.get(uri) ?? '';
+      const sourceLine = text.split('\n')[position.line] ?? '';
+      const token = tokenAt(sourceLine, position.character);
+      if (!token) return null;
+
+      // Search all open documents for the node declaration
+      for (const [docUri, docText] of documents) {
+        const lines = docText.split('\n');
+        for (let i = 0; i < lines.length; i++) {
+          const nodeRegex = /\(([^:)\s|{}]+)/g;
+          let match: RegExpExecArray | null = nodeRegex.exec(lines[i]);
+          while (match) {
+            if (match[1] === token) {
+              const startChar = match.index + 1;
+              return {
+                uri: docUri,
+                range: {
+                  start: { line: i, character: startChar },
+                  end: { line: i, character: startChar + token.length },
+                },
+              };
+            }
+            match = nodeRegex.exec(lines[i]);
+          }
+        }
+      }
+
+      // Also check for edge type keywords -- jump to first usage
+      if (keywordSet.has(token.toUpperCase())) {
+        const lines = text.split('\n');
+        for (let i = 0; i < lines.length; i++) {
+          const idx = lines[i].indexOf(token.toUpperCase());
+          if (idx >= 0) {
+            return {
+              uri,
+              range: {
+                start: { line: i, character: idx },
+                end: { line: i, character: idx + token.length },
+              },
+            };
+          }
+        }
+      }
+
+      return null;
+    }
+
+    case 'textDocument/references': {
+      const uri = getUriFromParams(req.params);
+      const position = getPosition(req.params);
+      if (!uri || !position) return [];
+
+      const text = documents.get(uri) ?? '';
+      const sourceLine = text.split('\n')[position.line] ?? '';
+      const token = tokenAt(sourceLine, position.character);
+      if (!token) return [];
+
+      const references: Array<{ uri: string; range: Range }> = [];
+
+      // Search all open documents for references to this token
+      for (const [docUri, docText] of documents) {
+        const lines = docText.split('\n');
+        for (let i = 0; i < lines.length; i++) {
+          // Match as node reference in edge declarations or node declarations
+          const tokenRegex = new RegExp(`\\b${token}\\b`, 'g');
+          let match: RegExpExecArray | null = tokenRegex.exec(lines[i]);
+          while (match) {
+            references.push({
+              uri: docUri,
+              range: {
+                start: { line: i, character: match.index },
+                end: { line: i, character: match.index + token.length },
+              },
+            });
+            match = tokenRegex.exec(lines[i]);
+          }
+        }
+      }
+
+      return references;
     }
 
     case 'textDocument/codeAction': {
