@@ -10,7 +10,7 @@ import { spawn, type ChildProcess } from 'child_process';
 import { get } from 'http';
 import { createServer } from 'net';
 import { tmpdir } from 'os';
-import { join, resolve } from 'path';
+import { dirname, join, resolve } from 'path';
 import { fileURLToPath } from 'url';
 import { resolveTypeScriptEntrypointCommand } from '../runtime-command';
 
@@ -48,7 +48,8 @@ function isCompanionHealthPayload(value: unknown): value is CompanionHealthPaylo
   );
 }
 
-const REPO_ROOT = resolve(process.cwd(), '../../..');
+const __dirname = dirname(fileURLToPath(import.meta.url));
+const REPO_ROOT = resolve(__dirname, '../../../../../');
 const SUPERVISOR_ENTRY = fileURLToPath(
   new URL('../companion-supervisor.ts', import.meta.url)
 );

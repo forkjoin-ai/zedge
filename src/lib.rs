@@ -317,7 +317,7 @@ impl zed::Extension for ZedgeExtension {
     ) -> Result<Option<ContextServerConfiguration>> {
         if context_server_id.as_ref() == "zedge-companion" {
             Ok(Some(ContextServerConfiguration {
-                installation_instructions: "The companion sidecar starts automatically through the checked-in Bun launcher when the context server launches.\n\nTo start manually with the same guarded restart policy:\n\n```\nbun run open-source/zedge/companion/src/companion-supervisor.ts\n```\n\nThe sidecar runs on localhost:7331. The MCP context server bridge and the manual supervisor both poll health and restart their owned child when needed.".to_string(),
+                installation_instructions: "The companion sidecar starts automatically through the checked-in gnode launcher when the context server launches.\n\nTo start manually with the same guarded restart policy:\n\n```\npnpm run gnode -- run open-source/zedge/companion/src/companion-supervisor.ts --export main\n```\n\nThe sidecar runs on localhost:7331. The MCP context server bridge and the manual supervisor both poll health and restart their owned child when needed.".to_string(),
                 settings_schema: serde_json::json!({
                     "type": "object",
                     "properties": {

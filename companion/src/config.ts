@@ -80,7 +80,7 @@ const DEFAULT_ZEDGE_CONFIG: ZedgeConfig = {
     allowedModels: ['tinyllama-1.1b', 'gemma3-1b-it'],
   },
   preferredModel: 'wasm-local',
-  cloudRunDirect: false,
+  cloudRunDirect: true,
   babelfish: {
     enabled: true,
     ambientSuggestions: true,

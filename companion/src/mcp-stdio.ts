@@ -2273,33 +2273,45 @@ function send(response: JsonRpcResponse): void {
 export async function main(): Promise<void> {
   configureStdioLogging();
   console.log('Starting MCP stdio bridge...');
+  const companionStartup = (async () => {
+    const alreadyRunning = await isCompanionAlive();
+    if (!alreadyRunning) {
+      console.log('Companion not running, spawning it...');
+      spawnCompanion();
+    }
 
-  // Check if companion is already running; if not, spawn it
-  const alreadyRunning = await isCompanionAlive();
-  if (!alreadyRunning) {
-    console.log('Companion not running, spawning it...');
-    spawnCompanion();
-  }
+    const alive = await waitForCompanion();
+    if (!alive) {
+      console.warn(
+        'Companion sidecar not reachable at ' +
+          getCompanionBase() +
+          ' after spawn. Tools will fail until it starts.'
+      );
+    } else {
+      console.log('Companion sidecar is ready');
+    }
 
-  // Wait for companion sidecar to become ready
-  const alive = await waitForCompanion();
-  if (!alive) {
-    console.warn(
-      'Companion sidecar not reachable at ' +
-        getCompanionBase() +
-        ' after spawn. Tools will fail until it starts.'
-    );
-  } else {
-    console.log('Companion sidecar is ready');
-  }
-
-  // Start babysitter loop to keep companion alive
-  startBabysitter();
+    startBabysitter();
+  })();
 
   // Read stdin line-by-line (MCP uses Content-Length headers)
   let buffer = '';
+  let stdinClosed = false;
+  let pendingMessages = 0;
+
+  function exitIfIdle(): void {
+    if (!stdinClosed || pendingMessages > 0) {
+      return;
+    }
+
+    console.log('stdin closed, exiting');
+    process.exit(0);
+  }
 
   process.stdin.setEncoding('utf-8');
+  // Pipe-backed launches need stdin resumed explicitly or Node can exit before
+  // the first MCP request arrives.
+  process.stdin.resume();
   process.stdin.on('data', async (chunk: string) => {
     buffer += chunk;
 
@@ -2329,9 +2341,16 @@ export async function main(): Promise<void> {
 
       try {
         const msg = JSON.parse(body) as JsonRpcRequest;
-        const response = await dispatch(msg);
-        if (response) {
-          send(response);
+        pendingMessages += 1;
+        try {
+          await companionStartup;
+          const response = await dispatch(msg);
+          if (response) {
+            send(response);
+          }
+        } finally {
+          pendingMessages -= 1;
+          exitIfIdle();
         }
       } catch (err) {
         console.warn('Failed to parse MCP message:', err);
@@ -2346,8 +2365,8 @@ export async function main(): Promise<void> {
   });
 
   process.stdin.on('end', () => {
-    console.log('stdin closed, exiting');
-    process.exit(0);
+    stdinClosed = true;
+    exitIfIdle();
   });
 }
 

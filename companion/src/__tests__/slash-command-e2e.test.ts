@@ -10,7 +10,7 @@ import { spawn, type ChildProcess } from 'child_process';
 import { get } from 'http';
 import { createServer } from 'net';
 import { tmpdir } from 'os';
-import { join, resolve } from 'path';
+import { dirname, join, resolve } from 'path';
 import { fileURLToPath } from 'url';
 import { resolveTypeScriptEntrypointCommand } from '../runtime-command';
 
@@ -47,7 +47,8 @@ interface CompanionHealthPayload {
   };
 }
 
-const REPO_ROOT = resolve(process.cwd(), '../../..');
+const __dirname = dirname(fileURLToPath(import.meta.url));
+const REPO_ROOT = resolve(__dirname, '../../../../../');
 const COMPANION_ENTRY = fileURLToPath(new URL('../index.ts', import.meta.url));
 const MCP_STDIO_ENTRY = fileURLToPath(new URL('../mcp-stdio.ts', import.meta.url));
 
@@ -241,6 +242,7 @@ async function runMcpToolInSubprocess(
     },
   };
   const runtimeCommand = resolveTypeScriptEntrypointCommand(MCP_STDIO_ENTRY);
+  const payload = JSON.stringify(request);
   const child = spawn(runtimeCommand.command, [...runtimeCommand.args], {
     cwd: testWorkspace || REPO_ROOT,
     env: {
@@ -259,17 +261,15 @@ async function runMcpToolInSubprocess(
   child.stderr?.on('data', (chunk) => {
     stderr += chunk.toString();
   });
-  const payload = JSON.stringify(request);
   child.stdin?.end(
     `Content-Length: ${Buffer.byteLength(payload)}\r\n\r\n${payload}`
   );
-
   const exitCode = await new Promise<number | null>((resolveExit) => {
-    child.once('exit', resolveExit);
+    child.once('close', resolveExit);
   });
   if (exitCode !== 0) {
     throw new Error(
-      `MCP subprocess failed for ${command} with code ${exitCode}\n${stderr}`
+      `MCP subprocess failed for ${command} with code ${exitCode}\nstdout=${stdout}\nstderr=${stderr}\n${getLogTail()}`
     );
   }
 
@@ -287,9 +287,12 @@ async function runMcpToolInSubprocess(
     );
   }
   const contentLength = Number.parseInt(lengthMatch[1], 10);
-  const body = stdout.slice(headerEnd + 4, headerEnd + 4 + contentLength);
+  const responseBody = stdout.slice(
+    headerEnd + 4,
+    headerEnd + 4 + contentLength
+  );
 
-  const response = JSON.parse(body) as {
+  const response = JSON.parse(responseBody) as {
     result?: ToolCallResult;
     error?: { message?: string };
   };
