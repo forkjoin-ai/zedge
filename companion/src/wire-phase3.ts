@@ -13,6 +13,7 @@
 import { voidMapStore, type VoidMapEntry } from './void-map-store';
 import { convertToRejectionRecords } from './void-map-export';
 import { getEngramStore } from './engram-store';
+import { neuralBridge } from './neural-bridge';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -21,10 +22,13 @@ import { getEngramStore } from './engram-store';
 export interface Phase3Status {
   wired: boolean;
   buleyeanTrainerActive: boolean;
+  neuralBridgeActive: boolean;
   voidMapCallbackRegistered: boolean;
   engramStoreInitialized: boolean;
   totalRejectionsProcessed: number;
   totalEngramsStored: number;
+  neuralMeanDeficit: number;
+  neuralConverged: boolean;
   wiredAt: string | null;
 }
 
@@ -85,21 +89,27 @@ export async function wirePhase3(): Promise<Phase3Status> {
     await trainer.initialize();
     trainerAvailable = true;
 
-    // Register void map callback → trainer
+    // Register void map callback → trainer + neural bridge
     voidMapStore.onRecord((entry: VoidMapEntry) => {
+      // Feed BuleyeanTrainer (edgework-sdk)
       const records = convertToRejectionRecords([entry]);
       for (const record of records) {
         trainer.ingestRejectionRecord(record, simpleTokenizer).catch(() => {});
       }
+      // Feed neural bridge (God Formula complement distribution)
+      neuralBridge.feedRejection(entry);
       rejectionsProcessed++;
     });
   } catch {
-    // BuleyeanTrainer not available (edgework-sdk not in path)
-    // Register a no-op callback that still counts rejections
-    voidMapStore.onRecord(() => {
+    // BuleyeanTrainer not available -- still feed neural bridge
+    voidMapStore.onRecord((entry: VoidMapEntry) => {
+      neuralBridge.feedRejection(entry);
       rejectionsProcessed++;
     });
   }
+
+  // 1b. Initialize neural bridge (try real @a0n/neural engine)
+  await neuralBridge.initialize();
 
   // 2. Wire engram store embedding function
   try {
@@ -125,13 +135,17 @@ export async function wirePhase3(): Promise<Phase3Status> {
  */
 export function getPhase3Status(): Phase3Status {
   const store = getEngramStore();
+  const neuralStatus = neuralBridge.getStatus();
   return {
     wired,
     buleyeanTrainerActive: trainerAvailable,
+    neuralBridgeActive: neuralStatus.engineAvailable || neuralStatus.totalRejectionsFed > 0,
     voidMapCallbackRegistered: true,
     engramStoreInitialized: store.size >= 0,
     totalRejectionsProcessed: rejectionsProcessed,
     totalEngramsStored: store.size,
+    neuralMeanDeficit: neuralStatus.meanDeficit,
+    neuralConverged: neuralStatus.converged,
     wiredAt,
   };
 }

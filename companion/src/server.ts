@@ -72,9 +72,9 @@ import {
   COMPOSITION_PRESETS,
 } from './superinference';
 // Gnosis modules -- lazy-loaded to avoid blocking the event loop at startup.
-// The file watcher, incremental checker, and betty compiler are CPU-heavy and
-// scanning the entire workspace directory on import would prevent Bun.serve
-// from ever processing HTTP requests.
+// The file watcher, incremental checker, and betty compiler are CPU-heavy, and
+// scanning the entire workspace directory on import would delay the companion
+// listener from becoming responsive.
 let _gnosisWatcher: any = null;
 let _gnosisModules: {
   BettyCompiler: any;
@@ -333,6 +333,16 @@ function deprecatedJsonResponse(data: unknown, status = 200): Response {
   });
 }
 
+function detectHostRuntime(): 'gnode' | 'bun' | 'node' {
+  if (process.argv.some((arg) => arg.endsWith('/gnode.js') || arg === 'gnode')) {
+    return 'gnode';
+  }
+  if (typeof Bun !== 'undefined') {
+    return 'bun';
+  }
+  return 'node';
+}
+
 /**
  * Build diagnostic headers from tier attempts.
  * X-Zedge-Chain: mesh:skipped(2ms);edge:timeout(15003ms);cloudrun:ok(1200ms)
@@ -478,6 +488,10 @@ export async function handleWebRequest(req: Request): Promise<Response> {
       version: '2.0.0',
       port: config.port,
       preferredModel: config.preferredModel,
+      runtime: {
+        hostRuntime: detectHostRuntime(),
+        processId: process.pid,
+      },
       computePool: {
         joined: pool.joined,
         tokensEarned: pool.tokensEarned,
@@ -1974,6 +1988,26 @@ export async function handleWebRequest(req: Request): Promise<Response> {
       url.searchParams.get('model') ??
       getZedgeConfig().preferredModel;
     return jsonResponse(await runInferenceSelfTest(model));
+  }
+
+  // ==================== Neural Bridge ====================
+
+  if (path === '/neural/status' && req.method === 'GET') {
+    const { neuralBridge } = await import('./neural-bridge');
+    return jsonResponse(neuralBridge.getStatus());
+  }
+
+  if (path === '/neural/steering' && req.method === 'GET') {
+    const { neuralBridge } = await import('./neural-bridge');
+    return jsonResponse({
+      steering: neuralBridge.getLearnedSteering(),
+      prompt: neuralBridge.getLearnedSteeringPrompt(),
+    });
+  }
+
+  if (path === '/neural/categories' && req.method === 'GET') {
+    const { neuralBridge } = await import('./neural-bridge');
+    return jsonResponse({ categories: neuralBridge.getLearnedSteering() });
   }
 
   // ==================== Resilient Streaming ====================
