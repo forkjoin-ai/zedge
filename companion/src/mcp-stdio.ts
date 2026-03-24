@@ -1085,18 +1085,19 @@ async function executeZedgeCommandTool(
       }
       case 'zedge-gnosis-run': {
         const requestedFilePath = optionalString(args.filePath) ?? argsText;
-        const source = requestedFilePath
-          ? {
-              filePath: requestedFilePath,
-              sourceText: readWorkspaceFile(requestedFilePath),
-            }
-          : readFirstWorkspaceFile(['main.gg', 'example.gg']);
-        const result = await postCompanionJson(
-          '/gnosis/eval',
-          { code: source.sourceText },
-          30_000
+        const filePath = requestedFilePath || 'main.gg';
+        const resp = await fetch(`${getCompanionBase()}/gnosis/run`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ file_path: filePath }),
+          signal: AbortSignal.timeout(60_000),
+        });
+        const result = await resp.json() as Record<string, unknown>;
+        const success = result.success ? 'OK' : 'FAILED';
+        const metrics = result.metrics as Record<string, unknown> ?? {};
+        return createToolResult(
+          `## Topology Run: ${filePath} [${success}]\n\nbeta1: ${metrics.beta1 ?? '?'} | nodes: ${metrics.nodeCount ?? '?'} | edges: ${metrics.edgeCount ?? '?'}\n\n${result.logs ?? ''}\n\n${result.error ? `Error: ${result.error}` : ''}`
         );
-        return createToolResult(`Ran ${source.filePath}\n\n${result}`);
       }
       case 'zedge-gnosis-viz': {
         const filePath = optionalString(args.filePath) ?? argsText;
@@ -1581,6 +1582,62 @@ export async function handleToolsList(): Promise<Record<string, unknown>> {
           },
         },
       },
+      {
+        name: 'zedge_cloud_agent',
+        description:
+          'Start a cloud CERA agent that operates on your codebase through the VFS. The agent runs a GG topology in the cloud and streams results back.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            action: {
+              type: 'string',
+              enum: ['start', 'sessions', 'status', 'cancel'],
+              description: 'Action to perform (default: sessions)',
+            },
+            agent_name: {
+              type: 'string',
+              description: 'Agent name for start action (e.g. cera-agent, polyglot-scanner-agent)',
+            },
+            task: {
+              type: 'string',
+              description: 'Task description for start action',
+            },
+            target_files: {
+              type: 'array',
+              items: { type: 'string' },
+              description: 'Files for the agent to operate on',
+            },
+            session_id: {
+              type: 'string',
+              description: 'Session ID for status/cancel actions',
+            },
+          },
+        },
+      },
+      {
+        name: 'zedge_topology_run',
+        description:
+          'Execute a Gnosis .gg topology file and return execution results including beta1 metrics, node/edge counts, and diagnostics.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            file_path: {
+              type: 'string',
+              description: 'Path to the .gg file to execute',
+            },
+            input: {
+              type: 'object',
+              description: 'Optional input payload for the topology',
+            },
+            strategy: {
+              type: 'string',
+              enum: ['cannon', 'linear'],
+              description: 'Execution strategy (default: cannon)',
+            },
+          },
+          required: ['file_path'],
+        },
+      },
       ...getBabelfishMcpTools(),
     ],
   };
@@ -1953,6 +2010,67 @@ export async function handleToolCall(
         return {
           content: [{ type: 'text', text: JSON.stringify(await resp.json(), null, 2) }],
           isError: !resp.ok,
+        };
+      }
+
+      case 'zedge_cloud_agent': {
+        const action = String(args.action ?? 'sessions');
+        const base = getCompanionBase();
+        switch (action) {
+          case 'start': {
+            const agentName = String(args.agent_name ?? '');
+            const task = String(args.task ?? '');
+            if (!agentName || !task) {
+              return { content: [{ type: 'text', text: 'agent_name and task are required for start' }], isError: true };
+            }
+            const targetFiles = Array.isArray(args.target_files)
+              ? args.target_files.filter((v): v is string => typeof v === 'string')
+              : undefined;
+            const resp = await fetch(`${base}/cloud-agent/start`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ agent_name: agentName, task, target_files: targetFiles }),
+              signal: AbortSignal.timeout(120_000),
+            });
+            return { content: [{ type: 'text', text: JSON.stringify(await resp.json(), null, 2) }] };
+          }
+          case 'sessions': {
+            const resp = await fetch(`${base}/cloud-agent/sessions`, { signal: AbortSignal.timeout(10_000) });
+            return { content: [{ type: 'text', text: JSON.stringify(await resp.json(), null, 2) }] };
+          }
+          case 'status': {
+            const sessionId = String(args.session_id ?? '');
+            if (!sessionId) return { content: [{ type: 'text', text: 'session_id required' }], isError: true };
+            const resp = await fetch(`${base}/cloud-agent/session/${sessionId}`, { signal: AbortSignal.timeout(10_000) });
+            return { content: [{ type: 'text', text: JSON.stringify(await resp.json(), null, 2) }] };
+          }
+          case 'cancel': {
+            const sid = String(args.session_id ?? '');
+            if (!sid) return { content: [{ type: 'text', text: 'session_id required' }], isError: true };
+            const resp = await fetch(`${base}/cloud-agent/cancel/${sid}`, { method: 'POST', signal: AbortSignal.timeout(10_000) });
+            return { content: [{ type: 'text', text: JSON.stringify(await resp.json(), null, 2) }] };
+          }
+          default:
+            return { content: [{ type: 'text', text: `Unknown cloud agent action: ${action}` }], isError: true };
+        }
+      }
+
+      case 'zedge_topology_run': {
+        const filePath = String(args.file_path ?? '');
+        if (!filePath) return { content: [{ type: 'text', text: 'file_path is required' }], isError: true };
+        const resp = await fetch(`${getCompanionBase()}/gnosis/run`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ file_path: filePath, input: args.input, strategy: args.strategy }),
+          signal: AbortSignal.timeout(60_000),
+        });
+        const result = await resp.json() as Record<string, unknown>;
+        const metrics = result.metrics as Record<string, unknown> ?? {};
+        return {
+          content: [{
+            type: 'text',
+            text: `## Topology: ${filePath} [${result.success ? 'OK' : 'FAILED'}]\n\nbeta1: ${metrics.beta1 ?? '?'} | nodes: ${metrics.nodeCount ?? '?'} | edges: ${metrics.edgeCount ?? '?'}\n\n${result.logs ?? ''}\n\n${result.error ? `Error: ${result.error}` : ''}`,
+          }],
         };
       }
 

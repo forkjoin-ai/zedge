@@ -1670,6 +1670,93 @@ export async function handleWebRequest(req: Request): Promise<Response> {
     return jsonResponse(getThemePalette(filePath));
   }
 
+  // ==================== Cloud CERA Agent Sessions ====================
+
+  if (path === '/cloud-agent/start' && req.method === 'POST') {
+    const body = (await req.json()) as {
+      agent_name?: string;
+      task?: string;
+      target_files?: string[];
+      model?: string;
+    };
+    if (!body.agent_name || !body.task) {
+      return jsonResponse({ error: 'agent_name and task are required' }, 400);
+    }
+    const { startCloudAgent } = await import('./cloud-agent-session');
+    const session = await startCloudAgent({
+      agentName: body.agent_name,
+      task: body.task,
+      targetFiles: body.target_files,
+      model: body.model,
+    });
+    return jsonResponse(session);
+  }
+
+  if (path === '/cloud-agent/sessions' && req.method === 'GET') {
+    const { listSessions } = await import('./cloud-agent-session');
+    return jsonResponse({ sessions: listSessions() });
+  }
+
+  if (path.startsWith('/cloud-agent/session/') && req.method === 'GET') {
+    const sessionId = path.split('/').pop();
+    if (!sessionId) return jsonResponse({ error: 'session ID required' }, 400);
+    const { getSession } = await import('./cloud-agent-session');
+    const session = getSession(sessionId);
+    if (!session) return jsonResponse({ error: 'Session not found' }, 404);
+    return jsonResponse(session);
+  }
+
+  if (path.startsWith('/cloud-agent/stream/') && req.method === 'GET') {
+    const sessionId = path.split('/').pop();
+    if (!sessionId) return jsonResponse({ error: 'session ID required' }, 400);
+    const { createSessionStream } = await import('./cloud-agent-session');
+    return new Response(createSessionStream(sessionId), {
+      headers: {
+        'Content-Type': 'text/event-stream',
+        'Cache-Control': 'no-cache',
+        Connection: 'keep-alive',
+        'Access-Control-Allow-Origin': '*',
+      },
+    });
+  }
+
+  if (path.startsWith('/cloud-agent/cancel/') && req.method === 'POST') {
+    const sessionId = path.split('/').pop();
+    if (!sessionId) return jsonResponse({ error: 'session ID required' }, 400);
+    const { cancelSession } = await import('./cloud-agent-session');
+    return jsonResponse({ cancelled: cancelSession(sessionId) });
+  }
+
+  // ==================== Topology Runner ====================
+
+  if (path === '/gnosis/run' && req.method === 'POST') {
+    const body = (await req.json()) as {
+      file_path?: string;
+      input?: unknown;
+      strategy?: 'cannon' | 'linear';
+    };
+    if (!body.file_path) return jsonResponse({ error: 'file_path is required' }, 400);
+    const { runTopology } = await import('./topology-runner');
+    const result = await runTopology({
+      filePath: body.file_path,
+      input: body.input,
+      strategy: body.strategy,
+    });
+    return jsonResponse(result, result.success ? 200 : 400);
+  }
+
+  if (path === '/gnosis/run/stream' && req.method === 'GET') {
+    const { createRunStream } = await import('./topology-runner');
+    return new Response(createRunStream(), {
+      headers: {
+        'Content-Type': 'text/event-stream',
+        'Cache-Control': 'no-cache',
+        Connection: 'keep-alive',
+        'Access-Control-Allow-Origin': '*',
+      },
+    });
+  }
+
   // ==================== Binary Protocol v2 ====================
 
   if (path === '/v1/binary/infer' && req.method === 'POST') {
