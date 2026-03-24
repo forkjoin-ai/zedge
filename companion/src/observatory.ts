@@ -18,6 +18,7 @@ import { getPhase3Status } from './wire-phase3';
 import { analyzeCodeEmotion } from './emotion-router';
 import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { join, extname, relative } from 'node:path';
+import { recordSnapshot as persistSnapshot } from './observatory-history';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -194,7 +195,8 @@ export async function getObservatorySnapshot(): Promise<ObservatorySnapshot> {
     peersConnected = getMeshStatus().peers.length;
   } catch { /* mesh may not be running */ }
 
-  return {
+  // Auto-persist snapshot to history for trend analysis
+  const snapshot = {
     timestamp: now.toISOString(),
     voidMap: {
       totalRejections: voidStatus.totalEntries,
@@ -218,9 +220,17 @@ export async function getObservatorySnapshot(): Promise<ObservatorySnapshot> {
     health: {
       companionUptime: Date.now() - startTime,
       peersConnected,
-      mcpToolCount: 27,
+      mcpToolCount: 30,
     },
   };
+
+  try {
+    persistSnapshot(snapshot);
+  } catch {
+    // History persistence is best-effort
+  }
+
+  return snapshot;
 }
 
 // ---------------------------------------------------------------------------

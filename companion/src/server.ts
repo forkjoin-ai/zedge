@@ -1776,6 +1776,23 @@ export async function handleWebRequest(req: Request): Promise<Response> {
     });
   }
 
+  if (path === '/observatory/trends' && req.method === 'GET') {
+    const { computeTrends } = await import('./observatory-history');
+    return jsonResponse({ trends: computeTrends() });
+  }
+
+  if (path === '/observatory/void-boundary' && req.method === 'GET') {
+    const { computeSystemVoidBoundary } = await import('./observatory-history');
+    return jsonResponse(computeSystemVoidBoundary());
+  }
+
+  if (path === '/observatory/history' && req.method === 'GET') {
+    const limitParam = url.searchParams.get('limit');
+    const { getHistory, getHistorySize } = await import('./observatory-history');
+    const limit = limitParam ? parseInt(limitParam, 10) : 50;
+    return jsonResponse({ entries: getHistory(limit), total: getHistorySize() });
+  }
+
   // ==================== Federated Void Sync ====================
 
   if (path === '/void-sync/status' && req.method === 'GET') {

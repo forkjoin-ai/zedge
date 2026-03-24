@@ -17,6 +17,7 @@
  */
 
 import { voidMapStore } from './void-map-store';
+import { computeSystemVoidBoundary, type SystemVoidBoundary } from './observatory-history';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -64,6 +65,8 @@ export interface BreedingCycle {
   candidates: BreedingCandidate[];
   /** Winner selected (c3) */
   winner: BreedingCandidate | null;
+  /** System void boundary that guided this cycle */
+  systemVoidBoundary?: SystemVoidBoundary;
   /** Duration */
   durationMs: number;
   /** Timestamp */
@@ -152,8 +155,18 @@ class AgentBreedingEngine {
     };
 
     try {
-      // c0: Observe -- gather fitness data from agent sessions
-      broadcastBreedingEvent({ type: 'phase', phase: 'c0-observe', cycleId: cycle.id });
+      // Read the system void boundary -- the meta-rejection-surface
+      // that guides which agents need evolution
+      cycle.systemVoidBoundary = computeSystemVoidBoundary();
+
+      // c0: Observe -- gather fitness data from agent sessions + system health
+      broadcastBreedingEvent({
+        type: 'phase',
+        phase: 'c0-observe',
+        cycleId: cycle.id,
+        systemHealth: cycle.systemVoidBoundary.healthScore,
+        weakPoints: cycle.systemVoidBoundary.weakPoints.length,
+      });
       cycle.agentsAssessed = await this.observe();
       cycle.phase = 'c1-assess';
 
@@ -282,7 +295,8 @@ class AgentBreedingEngine {
   }
 
   /**
-   * c2: Mutate -- generate topology mutation candidates.
+   * c2: Mutate -- generate REAL topology mutation candidates.
+   * Produces actual .gg source, compiles with Betty, checks beta1.
    */
   private async mutate(underperformers: AgentFitnessData[]): Promise<BreedingCandidate[]> {
     const candidates: BreedingCandidate[] = [];
@@ -290,20 +304,49 @@ class AgentBreedingEngine {
 
     for (const agent of underperformers) {
       for (const strategy of strategies) {
-        // Constitutional check: cannot mutate safety-critical agents
         if (this.isConstitutionallyProtected(agent.agentName)) {
           this.constitutionalBlocks++;
           continue;
         }
+
+        const topologySource = this.generateTopologyMutation(agent, strategy);
+
+        // Compile with Betty to verify the mutation is valid
+        let compiled = false;
+        let beta1 = 0;
+        try {
+          const { BettyCompiler } = await import(
+            '../../../gnosis/src/betty/compiler'
+          );
+          const compiler = new BettyCompiler();
+          const result = compiler.parse(topologySource);
+          compiled = !!result.ast && (result.diagnostics ?? []).filter(
+            (d: { severity: string }) => d.severity === 'error'
+          ).length === 0;
+          if (result.ast) {
+            beta1 = result.ast.nodes?.size ?? 0;
+          }
+        } catch {
+          // Betty not available -- mark as uncompiled
+          compiled = false;
+        }
+
+        broadcastBreedingEvent({
+          type: 'candidate-compiled',
+          candidateId: `candidate-${this.nextId}`,
+          strategy,
+          compiled,
+          beta1,
+        });
 
         candidates.push({
           id: `candidate-${this.nextId++}`,
           parentAgent: agent.agentName,
           strategy,
           description: this.describeMutation(agent, strategy),
-          compiled: true, // Assume compilable for now
-          predictedFitness: this.predictFitness(agent, strategy),
-          topologySource: `// Mutated ${agent.agentName} via ${strategy}`,
+          compiled,
+          predictedFitness: compiled ? this.predictFitness(agent, strategy) : 0,
+          topologySource,
           createdAt: Date.now(),
         });
       }
@@ -313,12 +356,73 @@ class AgentBreedingEngine {
   }
 
   /**
-   * c3: Select -- choose the best candidate.
+   * Generate actual .gg topology source for a mutation.
+   */
+  private generateTopologyMutation(agent: AgentFitnessData, strategy: 'tune' | 'restructure' | 'rewrite'): string {
+    const name = agent.agentName.replace(/[^a-zA-Z0-9_]/g, '_');
+
+    switch (strategy) {
+      case 'tune':
+        // Tune: adjust temperature and thresholds
+        return `// Tuned topology for ${agent.agentName}
+// Success rate: ${(agent.successRate * 100).toFixed(1)}% -> target: ${((agent.successRate + 0.1) * 100).toFixed(1)}%
+(input:Source { type: 'task' })
+(analyze:Process { temperature: ${Math.max(0.1, 0.3 - agent.rejectionRate * 0.2).toFixed(2)} })
+(validate:Process { threshold: ${(0.6 + agent.successRate * 0.2).toFixed(2)} })
+(output:Sink { type: 'result' })
+
+(input) -[:FORK]-> (analyze)
+(analyze) -[:PROCESS]-> (validate)
+(validate) -[:FOLD]-> (output)
+`;
+
+      case 'restructure':
+        // Restructure: add parallel branches for speed
+        return `// Restructured topology for ${agent.agentName}
+// Adding parallel analysis to reduce avg ${Math.round(agent.avgDurationMs)}ms
+(input:Source { type: 'task' })
+(fast_path:Process { model: 'tinyllama-1.1b', timeout: 5000 })
+(quality_path:Process { model: 'qwen-2.5-coder-7b', timeout: 30000 })
+(merge:Process { strategy: 'constructive' })
+(output:Sink { type: 'result' })
+
+(input) -[:FORK]-> (fast_path | quality_path)
+(fast_path | quality_path) -[:RACE]-> (merge)
+(merge) -[:FOLD]-> (output)
+`;
+
+      case 'rewrite':
+        // Rewrite: full topology from scratch with fork/race/fold
+        return `// Rewritten topology for ${agent.agentName}
+// Built from rejection patterns: ${agent.rejectionRate > 0.3 ? 'high rejection' : 'moderate'}
+(input:Source { type: 'task' })
+(scanner:Process { depth: 'deep' })
+(fixer_a:Process { strategy: 'conservative' })
+(fixer_b:Process { strategy: 'aggressive' })
+(fixer_c:Process { strategy: 'creative' })
+(validator:Process { safety: 'membrane' })
+(output:Sink { type: 'result' })
+(void:Vent { target: 'void_map' })
+
+(input) -[:PROCESS]-> (scanner)
+(scanner) -[:FORK]-> (fixer_a | fixer_b | fixer_c)
+(fixer_a | fixer_b | fixer_c) -[:RACE]-> (validator)
+(validator) -[:FOLD]-> (output)
+(validator) -[:VENT]-> (void)
+`;
+
+      default:
+        return `// ${strategy} mutation for ${agent.agentName}\n(input) -[:PROCESS]-> (output)\n`;
+    }
+  }
+
+  /**
+   * c3: Select -- compile-validate, check beta1, rank, choose winner.
    */
   private select(candidates: BreedingCandidate[]): BreedingCandidate | null {
     if (candidates.length === 0) return null;
 
-    // Filter to compiled candidates, sort by predicted fitness
+    // Only compiled candidates are viable
     const viable = candidates
       .filter((c) => c.compiled)
       .sort((a, b) => b.predictedFitness - a.predictedFitness);
