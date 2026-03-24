@@ -4,11 +4,22 @@
  * localhost:7331 — OpenAI-compatible proxy + compute pool + mesh + superinference + ACP agent + forge
  */
 
-import { createServer, type IncomingMessage, type ServerResponse } from 'http';
 import { spawn as nodeSpawn } from 'child_process';
+import { existsSync, readFileSync } from 'fs';
+import { join as pathJoin, dirname as pathDirname } from 'path';
+import { fileURLToPath } from 'url';
+import {
+  XGnosisServer,
+  resolveGnosisUringCommand,
+  type RequestPayload,
+  type ResponsePayload,
+  type XGnosisControlSurface,
+} from '@a0n/x-gnosis';
 
 import {
   infer,
+  inferFim,
+  buildFimPrompt,
   getModels,
   embed,
   createSSEProxyStream,
@@ -16,7 +27,9 @@ import {
   clearLogs,
 } from './inference-bridge';
 import type { TierAttempt } from './inference-bridge';
+import { fimCache, fimCacheKey, speculativePrefetch } from './fim-cache';
 import { joinPool, leavePool, getPoolStatus } from './compute-node';
+import { getRecentFeedback, recordFeedback } from './feedback-log';
 import { getCompanionPort, getZedgeConfig } from './config';
 import { handleBabelfishRequest } from './babelfish-routes';
 import {
@@ -31,6 +44,7 @@ import {
   getProbeResults,
   getFastestTier,
 } from './latency-probe';
+import { runInferenceSelfTest } from './selftest';
 import { createResilientStream, getActiveSessions } from './stream-reconnect';
 import { superinfer, recursiveSuperinfer } from './superinference';
 import type { CollapseStrategy, RecursiveRequest } from './superinference';
@@ -117,10 +131,25 @@ import { getMarketStatus } from './compute-node';
 
 // --- Shell exec helper (replaces Bun.spawn) ---
 
+/** Characters that could escape a shell argument and cause injection */
+const SHELL_METACHAR_RE = /[;&|`$(){}[\]!#~<>\\'"]/;
+
 function execShell(
   command: string,
   options: { cwd?: string; timeout?: number } = {}
 ): Promise<{ output: string; exitCode: number }> {
+  // Reject commands containing shell metacharacters beyond the allowed prefix.
+  // The caller is responsible for verifying the prefix (e.g. "edgework " or "aeon ").
+  // This is a defense-in-depth measure against injection via the argument portion.
+  const spaceIdx = command.indexOf(' ');
+  const argsPortion = spaceIdx >= 0 ? command.slice(spaceIdx + 1) : '';
+  if (SHELL_METACHAR_RE.test(argsPortion)) {
+    return Promise.resolve({
+      output: 'Rejected: command arguments contain disallowed shell metacharacters',
+      exitCode: 1,
+    });
+  }
+
   return new Promise((resolve) => {
     const proc = nodeSpawn('bash', ['-c', command], {
       cwd: options.cwd ?? process.cwd(),
@@ -214,22 +243,20 @@ const SYSTEM_PROMPT_THRESHOLD = 2000; // chars — CLAUDE.md is ~15K+
 
 let _edgeworkPrompt: string | null = null;
 
+const _serverDirname = pathDirname(fileURLToPath(import.meta.url));
+
 function getEdgeworkPrompt(): string {
   if (_edgeworkPrompt !== null) return _edgeworkPrompt;
   try {
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const fs = require('fs');
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const path = require('path');
     // Walk up from companion/src to find EDGEWORK.md at repo root
-    let dir = __dirname;
+    let dir = _serverDirname;
     for (let i = 0; i < 10; i++) {
-      const candidate = path.join(dir, 'EDGEWORK.md');
-      if (fs.existsSync(candidate)) {
-        _edgeworkPrompt = fs.readFileSync(candidate, 'utf-8');
+      const candidate = pathJoin(dir, 'EDGEWORK.md');
+      if (existsSync(candidate)) {
+        _edgeworkPrompt = readFileSync(candidate, 'utf-8');
         return _edgeworkPrompt!;
       }
-      dir = path.dirname(dir);
+      dir = pathDirname(dir);
     }
   } catch {
     // Fall through to default
@@ -393,7 +420,7 @@ async function extractResponseData(
 
 // --- Request Handler ---
 
-async function handleRequest(req: Request): Promise<Response> {
+async function handleWebRequest(req: Request): Promise<Response> {
   const url = new URL(req.url);
   const path = url.pathname;
 
@@ -455,7 +482,6 @@ async function handleRequest(req: Request): Promise<Response> {
   // ==================== Logs & Lifecycle ====================
 
   if (path === '/logs' && req.method === 'GET') {
-    const url = new URL(req.url);
     const count = parseInt(url.searchParams.get('n') ?? '100', 10);
     const lines = getRecentLogs(count);
     return jsonResponse({ lines, count: lines.length });
@@ -464,6 +490,58 @@ async function handleRequest(req: Request): Promise<Response> {
   if (path === '/logs' && req.method === 'DELETE') {
     clearLogs();
     return jsonResponse({ status: 'cleared' });
+  }
+
+  if (path === '/fim/stats' && req.method === 'GET') {
+    return jsonResponse(fimCache.getStats());
+  }
+
+  if (path === '/feedback' && req.method === 'GET') {
+    const count = parseInt(url.searchParams.get('n') ?? '20', 10);
+    const entries = getRecentFeedback(count);
+    return jsonResponse({ entries, count: entries.length });
+  }
+
+  if (path === '/feedback' && req.method === 'POST') {
+    const body = (await req.json()) as {
+      rating?: number;
+      model?: string;
+      comment?: string;
+      source?: string;
+    };
+    const rating = body.rating;
+
+    if (typeof rating !== 'number' || !Number.isInteger(rating) || rating < 1 || rating > 5) {
+      return jsonResponse(
+        { error: 'rating must be an integer between 1 and 5' },
+        400
+      );
+    }
+
+    if (
+      body.comment !== undefined &&
+      (typeof body.comment !== 'string' || body.comment.trim().length === 0)
+    ) {
+      return jsonResponse({ error: 'comment must be a non-empty string' }, 400);
+    }
+
+    const entry = recordFeedback({
+      rating,
+      model:
+        typeof body.model === 'string' && body.model.trim().length > 0
+          ? body.model.trim()
+          : undefined,
+      comment:
+        typeof body.comment === 'string' && body.comment.trim().length > 0
+          ? body.comment.trim()
+          : undefined,
+      source:
+        typeof body.source === 'string' && body.source.trim().length > 0
+          ? body.source.trim()
+          : 'zedge-companion',
+    });
+
+    return jsonResponse({ status: 'recorded', entry });
   }
 
   if (path === '/restart' && req.method === 'POST') {
@@ -609,6 +687,49 @@ async function handleRequest(req: Request): Promise<Response> {
     }
   }
 
+  // ==================== Code Index ====================
+
+  if (path === '/code-index/search' && req.method === 'POST') {
+    const { codeIndex } = await import('./code-index');
+    const body = (await req.json()) as { query?: string; topK?: number };
+    if (!body.query) return jsonResponse({ error: 'query is required' }, 400);
+    const results = await codeIndex.search(body.query, body.topK ?? 5);
+    return jsonResponse({
+      results: results.map((r) => ({
+        filePath: r.block.relativePath,
+        startLine: r.block.startLine,
+        endLine: r.block.endLine,
+        content: r.block.content,
+        language: r.block.language,
+        kind: r.block.kind,
+        score: r.score,
+      })),
+    });
+  }
+
+  if (path === '/code-index/related' && req.method === 'GET') {
+    const { codeIndex } = await import('./code-index');
+    const filePath = url.searchParams.get('file');
+    if (!filePath) return jsonResponse({ error: 'file query param is required' }, 400);
+    const results = await codeIndex.getRelatedContext(filePath, 5);
+    return jsonResponse({
+      results: results.map((r) => ({
+        filePath: r.block.relativePath,
+        startLine: r.block.startLine,
+        endLine: r.block.endLine,
+        content: r.block.content,
+        language: r.block.language,
+        kind: r.block.kind,
+        score: r.score,
+      })),
+    });
+  }
+
+  if (path === '/code-index/stats' && req.method === 'GET') {
+    const { codeIndex } = await import('./code-index');
+    return jsonResponse(codeIndex.getStats());
+  }
+
   // ==================== Gnosis ====================
 
   const babelfishResponse = await handleBabelfishRequest(req);
@@ -670,7 +791,7 @@ async function handleRequest(req: Request): Promise<Response> {
       return jsonResponse(
         {
           error: err instanceof Error ? err.message : 'TS check failed',
-          ok: true,
+          ok: false,
           diagnostics: [],
           skipped: true,
         },
@@ -748,23 +869,25 @@ async function handleRequest(req: Request): Promise<Response> {
 
   if (path === '/gnosis/viz/events' && req.method === 'GET') {
     // SSE endpoint for live topology updates via file watcher
+    let heartbeatInterval: ReturnType<typeof setInterval> | null = null;
     const stream = new ReadableStream({
       start(controller) {
         const encoder = new TextEncoder();
         controller.enqueue(encoder.encode('data: {"type":"connected"}\n\n'));
         gnosisSseClients.add(controller);
 
-        const interval = setInterval(() => {
+        heartbeatInterval = setInterval(() => {
           try {
             controller.enqueue(encoder.encode(': heartbeat\n\n'));
           } catch {
-            clearInterval(interval);
+            if (heartbeatInterval) clearInterval(heartbeatInterval);
             gnosisSseClients.delete(controller);
           }
         }, 15_000);
       },
-      cancel() {
-        // Client disconnected -- cleanup handled by error in enqueue
+      cancel(controller) {
+        if (heartbeatInterval) clearInterval(heartbeatInterval);
+        gnosisSseClients.delete(controller as unknown as ReadableStreamDefaultController);
       },
     });
     return new Response(stream, {
@@ -960,6 +1083,49 @@ async function handleRequest(req: Request): Promise<Response> {
     const messages = compactSystemPrompts(
       normalizedMessages
     ) as ChatCompletionRequest['messages'];
+
+    // --- Auto-attach codebase context ---
+    // Extract the last user message, search the semantic code index, and
+    // inject the top relevant blocks as additional context. This makes every
+    // chat message codebase-aware without requiring explicit @-references.
+    try {
+      const lastUserMsg = [...messages].reverse().find((m) => m.role === 'user');
+      if (lastUserMsg && lastUserMsg.content.length > 10) {
+        const { codeIndex } = await import('./code-index');
+        const stats = codeIndex.getStats();
+        if (stats.indexedBlocks > 0) {
+          const results = await codeIndex.search(lastUserMsg.content, 5);
+          if (results.length > 0) {
+            const contextBlocks = results
+              .filter((r) => r.score > 0.3)
+              .map(
+                (r) =>
+                  `--- ${r.block.relativePath}:${r.block.startLine}-${r.block.endLine} (${r.block.kind}) ---\n${r.block.content}`
+              )
+              .join('\n\n');
+            if (contextBlocks.length > 0) {
+              // Append context to the system message, or create one
+              const systemIdx = messages.findIndex((m) => m.role === 'system');
+              const contextSuffix = `\n\n<codebase_context>\n${contextBlocks}\n</codebase_context>`;
+              if (systemIdx >= 0) {
+                messages[systemIdx] = {
+                  ...messages[systemIdx],
+                  content: messages[systemIdx].content + contextSuffix,
+                };
+              } else {
+                messages.unshift({
+                  role: 'system',
+                  content: `You are a coding assistant with access to the user's codebase.${contextSuffix}`,
+                });
+              }
+            }
+          }
+        }
+      }
+    } catch {
+      // Code index may not be initialized yet -- proceed without context
+    }
+
     const request: ChatCompletionRequest = {
       model: body.model ?? getZedgeConfig().preferredModel,
       messages,
@@ -969,20 +1135,37 @@ async function handleRequest(req: Request): Promise<Response> {
       top_p: body.top_p,
     };
 
-    // Always infer with stream:false so we get a JSON response we can
-    // reliably parse, then drip-feed as SSE if the client asked for streaming.
-    // Upstream SSE streams from Cloud Run often contain non-standard payloads
-    // (e.g. {"status":"ready"}) that break Zed's OpenAI parser.
-    const inferRequest = { ...request, stream: false };
-    const result = await infer(inferRequest);
-
-    const attemptHeaders = buildAttemptHeaders(result.attempts);
-
     if (request.stream) {
-      // Drip-feed the response word-by-word to simulate token-by-token streaming.
-      // This gives Zed a real streaming feel while coordinators return JSON.
+      const result = await infer(request);
+      const attemptHeaders = buildAttemptHeaders(result.attempts);
+      const contentType = result.response.headers.get('content-type') ?? '';
+
+      if (contentType.includes('text/event-stream') && result.response.body) {
+        const sseStream = createSSEProxyStream(
+          result.response.body,
+          result.tier,
+          result.upstreamHeaders,
+          result.attempts,
+          request.model
+        );
+
+        return new Response(sseStream, {
+          headers: {
+            'Content-Type': 'text/event-stream',
+            'Cache-Control': 'no-cache',
+            Connection: 'keep-alive',
+            'Access-Control-Allow-Origin': '*',
+            'X-Zedge-Tier': result.tier,
+            ...result.upstreamHeaders,
+            ...attemptHeaders,
+          },
+        });
+      }
+
+      // Fallback: when the winning tier returned JSON instead of SSE, convert
+      // the completed response into OpenAI-style SSE chunks for Zed.
       const data = await extractResponseData(result.response, request.model);
-      const content = (data as any)?.choices?.[0]?.message?.content ?? '';
+      const content = (data as Record<string, unknown> & { choices?: Array<{ message?: { content?: string } }> })?.choices?.[0]?.message?.content ?? '';
       const id = data.id ?? `chatcmpl-${Date.now()}`;
       const created = data.created ?? Math.floor(Date.now() / 1000);
       const model = data.model ?? request.model;
@@ -1062,6 +1245,9 @@ async function handleRequest(req: Request): Promise<Response> {
       });
     }
 
+    const inferRequest = { ...request, stream: false };
+    const result = await infer(inferRequest);
+    const attemptHeaders = buildAttemptHeaders(result.attempts);
     const data = await extractResponseData(result.response);
     return new Response(
       JSON.stringify(data),
@@ -1082,39 +1268,127 @@ async function handleRequest(req: Request): Promise<Response> {
   if (path === '/v1/completions' && req.method === 'POST') {
     const body = (await req.json()) as CompletionRequestBody;
     const prompt = body.prompt ?? '';
+    const model = body.model ?? 'qwen-2.5-coder-7b';
+    const maxTokens = body.max_tokens ?? 128;
+    const temperature = body.temperature ?? 0.2;
 
-    // Detect if prompt has FIM markers
+    // Detect FIM markers — route to optimized fast path
     const hasFimMarkers =
-      prompt.includes('<|fim_prefix|>') || prompt.includes('<PRE>');
+      prompt.includes('<|fim_prefix|>') ||
+      prompt.includes('<fim_prefix>') ||
+      prompt.includes('<PRE>') ||
+      prompt.includes('<｜fim▁begin｜>');
 
-    let messages: ChatCompletionRequest['messages'];
     if (hasFimMarkers) {
-      // Pass FIM prompt directly — Qwen Coder and StarCoder understand these
-      messages = [
+      // --- FIM Fast Path: cache check → race Cloud Run + WASM ---
+
+      // Extract prefix/suffix from FIM-formatted prompt
+      let prefix = prompt;
+      let suffix = '';
+      for (const [, tokens] of Object.entries({
+        qwen: { p: '<|fim_prefix|>', s: '<|fim_suffix|>', m: '<|fim_middle|>' },
+        star: { p: '<fim_prefix>', s: '<fim_suffix>', m: '<fim_middle>' },
+        code: { p: '<PRE>', s: '<SUF>', m: '<MID>' },
+        deep: { p: '<｜fim▁begin｜>', s: '<｜fim▁hole｜>', m: '<｜fim▁end｜>' },
+      })) {
+        if (prompt.includes(tokens.p)) {
+          const afterPrefix = prompt.split(tokens.p)[1] ?? '';
+          const parts = afterPrefix.split(tokens.s);
+          prefix = parts[0] ?? '';
+          suffix = (parts[1] ?? '').split(tokens.m)[0] ?? '';
+          break;
+        }
+      }
+
+      // Cache check (sub-1ms on hit)
+      const filePath = url.searchParams.get('file') ?? 'unknown';
+      const cursorLine = parseInt(url.searchParams.get('line') ?? '0', 10);
+      const cacheKey = fimCacheKey(filePath, cursorLine, prefix);
+      const cached = fimCache.get(cacheKey);
+
+      if (cached) {
+        return new Response(
+          JSON.stringify({
+            id: `cmpl-cache-${Date.now()}`,
+            object: 'text_completion',
+            created: Math.floor(Date.now() / 1000),
+            model: cached.model,
+            choices: [{ text: cached.completion, index: 0, finish_reason: 'stop' }],
+            usage: { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 },
+          }),
+          {
+            headers: {
+              'Content-Type': 'application/json',
+              'Access-Control-Allow-Origin': '*',
+              'X-Zedge-Tier': cached.tier,
+              'X-Zedge-Cache': 'hit',
+            },
+          }
+        );
+      }
+
+      // Cache miss — race Cloud Run + WASM
+      const fimResult = await inferFim(prefix, suffix, model, maxTokens, temperature);
+
+      // Populate cache
+      fimCache.set(cacheKey, {
+        completion: fimResult.completion,
+        model: fimResult.model,
+        tier: fimResult.tier,
+        createdAt: Date.now(),
+      });
+
+      // Speculative pre-fetch for next line
+      speculativePrefetch(
+        filePath,
+        cursorLine + 1,
+        prefix + fimResult.completion,
+        suffix,
+        model,
+        async (p, s, m) => {
+          const r = await inferFim(p, s, m, maxTokens, temperature);
+          return r.completion ? { completion: r.completion, tier: r.tier } : null;
+        }
+      );
+
+      const attemptHeaders = buildAttemptHeaders(fimResult.attempts);
+      return new Response(
+        JSON.stringify({
+          id: `cmpl-fim-${Date.now()}`,
+          object: 'text_completion',
+          created: Math.floor(Date.now() / 1000),
+          model: fimResult.model,
+          choices: [{ text: fimResult.completion, index: 0, finish_reason: 'stop' }],
+          usage: { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 },
+        }),
         {
-          role: 'system',
-          content:
-            'You are a code completion engine. Output ONLY the code that fills the gap. No explanation, no markdown fences.',
-        },
-        { role: 'user', content: prompt },
-      ];
-    } else {
-      // Standard completion: treat as code continuation
-      messages = [
-        {
-          role: 'system',
-          content:
-            'You are a code completion assistant. Complete the code that follows. Output ONLY the completion, no explanation, no markdown fences.',
-        },
-        { role: 'user', content: prompt },
-      ];
+          headers: {
+            'Content-Type': 'application/json',
+            'Access-Control-Allow-Origin': '*',
+            'X-Zedge-Tier': fimResult.tier,
+            'X-Zedge-Cache': 'miss',
+            'X-Zedge-FIM-Ms': String(fimResult.durationMs),
+            ...attemptHeaders,
+          },
+        }
+      );
     }
 
+    // --- Standard completion (non-FIM): route through chat inference ---
+    const messages: ChatCompletionRequest['messages'] = [
+      {
+        role: 'system',
+        content:
+          'You are a code completion assistant. Complete the code that follows. Output ONLY the completion, no explanation, no markdown fences.',
+      },
+      { role: 'user', content: prompt },
+    ];
+
     const request: ChatCompletionRequest = {
-      model: body.model ?? 'qwen-2.5-coder-7b',
+      model,
       messages,
-      temperature: body.temperature ?? 0.2,
-      max_tokens: body.max_tokens ?? 256,
+      temperature,
+      max_tokens: maxTokens,
     };
 
     const result = await infer(request);
@@ -1183,6 +1457,11 @@ async function handleRequest(req: Request): Promise<Response> {
 
   // Peer-to-peer inference endpoint (called by other mesh nodes)
   if (path === '/mesh/infer' && req.method === 'POST') {
+    // Only accept mesh inference when the mesh is running
+    const meshRunning = getMeshStatus();
+    if (!meshRunning.running) {
+      return jsonResponse({ error: 'Mesh is not running' }, 503);
+    }
     const body = (await req.json()) as ChatRequestBody;
     const request: ChatCompletionRequest = {
       model: body.model ?? getZedgeConfig().preferredModel,
@@ -1271,6 +1550,27 @@ async function handleRequest(req: Request): Promise<Response> {
     return jsonResponse({ deleted: true });
   }
 
+  // ==================== Multi-File Agent ====================
+
+  if (path === '/agent/multi-file' && req.method === 'POST') {
+    const body = (await req.json()) as {
+      instruction?: string;
+      target_files?: string[];
+      model?: string;
+    };
+    if (!body.instruction) {
+      return jsonResponse({ error: 'instruction is required' }, 400);
+    }
+    const { executeMultiFileEdit } = await import('./multi-file-agent');
+    const result = await executeMultiFileEdit({
+      instruction: body.instruction,
+      workspacePath: process.env.AEON_ROOT || process.cwd(),
+      targetFiles: body.target_files,
+      model: body.model,
+    });
+    return jsonResponse(result, result.failedCount > 0 && result.appliedCount === 0 ? 400 : 200);
+  }
+
   // ==================== Binary Protocol v2 ====================
 
   if (path === '/v1/binary/infer' && req.method === 'POST') {
@@ -1305,7 +1605,7 @@ async function handleRequest(req: Request): Promise<Response> {
 
   if (path === '/auth/login' && req.method === 'POST') {
     const result = await login();
-    return jsonResponse(result, result.success ? 200 : 401);
+    return jsonResponse(result, result.success || result.pending ? 200 : 401);
   }
 
   if (path === '/auth/logout' && req.method === 'POST') {
@@ -1329,9 +1629,16 @@ async function handleRequest(req: Request): Promise<Response> {
 
   if (path === '/probe/fastest' && req.method === 'GET') {
     const model =
-      new URL(req.url).searchParams.get('model') ?? 'tinyllama-1.1b';
+      url.searchParams.get('model') ?? getZedgeConfig().preferredModel;
     const tier = getFastestTier(model);
     return jsonResponse({ model, fastestTier: tier });
+  }
+
+  if (path === '/selftest/inference' && req.method === 'GET') {
+    const model =
+      url.searchParams.get('model') ??
+      getZedgeConfig().preferredModel;
+    return jsonResponse(await runInferenceSelfTest(model));
   }
 
   // ==================== Resilient Streaming ====================
@@ -1497,34 +1804,48 @@ async function handleRequest(req: Request): Promise<Response> {
   }
 
   if (path === '/cera/daydream/status' && req.method === 'GET') {
-    if (!ceraBridge) {
-      return jsonResponse({ error: 'CERA bridge not initialized' }, 503);
-    }
-    // Daydream status comes from the perturbation engine's daydream sub-engine
-    return jsonResponse({
-      dreaming: false,
-      totalDreams: 0,
-      cachedCandidates: 0,
-      cacheHits: 0,
-      cacheMisses: 0,
-      lastDream: null,
-      voidMapEntropy: 0,
-      idleSinceMs: 0,
-    });
+    const { daydreamEngine } = await import('./daydream');
+    return jsonResponse(daydreamEngine.getStatus());
   }
 
   if (path === '/cera/daydream/candidates' && req.method === 'GET') {
-    if (!ceraBridge) {
-      return jsonResponse({ error: 'CERA bridge not initialized' }, 503);
-    }
-    return jsonResponse([]);
+    const { daydreamEngine } = await import('./daydream');
+    return jsonResponse(daydreamEngine.getCandidates());
   }
 
   if (path === '/cera/daydream/dream' && req.method === 'POST') {
-    if (!ceraBridge) {
-      return jsonResponse({ error: 'CERA bridge not initialized' }, 503);
-    }
-    return jsonResponse({ triggered: true, message: 'Manual dream cycle requested' });
+    const { daydreamEngine } = await import('./daydream');
+    const body = (await req.json()) as { file_path?: string };
+    const cycle = await daydreamEngine.triggerDream(body.file_path);
+    return jsonResponse({
+      triggered: true,
+      cycle,
+    });
+  }
+
+  if (path === '/cera/daydream/accept' && req.method === 'POST') {
+    const { daydreamEngine } = await import('./daydream');
+    const body = (await req.json()) as { id?: string };
+    if (!body.id) return jsonResponse({ error: 'id is required' }, 400);
+    const candidate = daydreamEngine.acceptCandidate(body.id);
+    if (!candidate) return jsonResponse({ error: 'Candidate not found' }, 404);
+    return jsonResponse({ accepted: true, candidate });
+  }
+
+  if (path === '/cera/daydream/reject' && req.method === 'POST') {
+    const { daydreamEngine } = await import('./daydream');
+    const body = (await req.json()) as { id?: string };
+    if (!body.id) return jsonResponse({ error: 'id is required' }, 400);
+    const candidate = daydreamEngine.rejectCandidate(body.id);
+    if (!candidate) return jsonResponse({ error: 'Candidate not found' }, 404);
+    return jsonResponse({ rejected: true, candidate });
+  }
+
+  if (path === '/cera/daydream/activity' && req.method === 'POST') {
+    const { daydreamEngine } = await import('./daydream');
+    const body = (await req.json()) as { file_path?: string };
+    daydreamEngine.notifyActivity(body.file_path);
+    return jsonResponse({ notified: true });
   }
 
   if (path === '/forge/events' && req.method === 'GET') {
@@ -1532,20 +1853,22 @@ async function handleRequest(req: Request): Promise<Response> {
       return jsonResponse({ error: 'Forge bridge not initialized' }, 503);
     }
     // SSE endpoint streaming forge events to Zed in real time
-    // Uses the same pattern as /gnosis/viz/events
     const encoder = new TextEncoder();
+    let forgeHeartbeat: ReturnType<typeof setInterval> | null = null;
     const stream = new ReadableStream({
       start(controller) {
         controller.enqueue(encoder.encode('data: {"type":"connected"}\n\n'));
-        const interval = setInterval(() => {
+        forgeHeartbeat = setInterval(() => {
           try {
             controller.enqueue(encoder.encode(': heartbeat\n\n'));
           } catch {
-            clearInterval(interval);
+            if (forgeHeartbeat) clearInterval(forgeHeartbeat);
           }
         }, 15_000);
       },
-      cancel() {},
+      cancel() {
+        if (forgeHeartbeat) clearInterval(forgeHeartbeat);
+      },
     });
     return new Response(stream, {
       headers: {
@@ -2654,72 +2977,193 @@ async function handleRequest(req: Request): Promise<Response> {
   return jsonResponse({ error: 'Not found' }, 404);
 }
 
-/** Convert Node IncomingMessage to web Request */
-function nodeToWebRequest(req: IncomingMessage): Promise<Request> {
-  return new Promise((resolve, reject) => {
-    const chunks: Buffer[] = [];
-    req.on('data', (chunk: Buffer) => chunks.push(chunk));
-    req.on('error', reject);
-    req.on('end', () => {
-      const body = Buffer.concat(chunks);
-      const url = `http://localhost:${getCompanionPort()}${req.url ?? '/'}`;
-      const headers = new Headers();
-      for (const [key, value] of Object.entries(req.headers)) {
-        if (value) headers.set(key, Array.isArray(value) ? value.join(', ') : value);
-      }
-      const init: RequestInit = { method: req.method ?? 'GET', headers };
-      if (req.method !== 'GET' && req.method !== 'HEAD' && body.length > 0) {
-        init.body = body;
-      }
-      resolve(new Request(url, init));
-    });
-  });
+function requestPayloadToWebRequest(request: RequestPayload): Request {
+  const host = request.headers.host ?? `localhost:${getCompanionPort()}`;
+  const query = request.query ?? '';
+  const headers = new Headers();
+  for (const [key, value] of Object.entries(request.headers)) {
+    headers.set(key, value);
+  }
+
+  const init: RequestInit = {
+    method: request.method,
+    headers,
+  };
+  if (
+    request.method !== 'GET' &&
+    request.method !== 'HEAD' &&
+    request.body &&
+    request.body.length > 0
+  ) {
+    init.body = new Blob([Uint8Array.from(request.body)]);
+  }
+
+  return new Request(`http://${host}${request.path}${query}`, init);
 }
 
-/** Pipe web Response back to Node ServerResponse */
-async function webToNodeResponse(webRes: Response, nodeRes: ServerResponse): Promise<void> {
-  nodeRes.writeHead(webRes.status, Object.fromEntries(webRes.headers.entries()));
-  if (!webRes.body) {
-    nodeRes.end();
+async function webResponseToPayload(
+  response: Response
+): Promise<ResponsePayload> {
+  return {
+    status: response.status,
+    headers: Object.fromEntries(response.headers.entries()),
+    body: response.body
+      ? new Uint8Array(await response.arrayBuffer())
+      : new Uint8Array(0),
+  };
+}
+
+export const zedgeControlSurface: XGnosisControlSurface = {
+  async handleRequest(request) {
+    if (request.path.startsWith('/.aeon/')) {
+      return null;
+    }
+
+    const webRequest = requestPayloadToWebRequest(request);
+    const webResponse = await handleWebRequest(webRequest);
+    return await webResponseToPayload(webResponse);
+  },
+};
+
+function createCompanionConfigSource(port: number): string {
+  return `
+http {
+  server {
+    listen ${port};
+    server_name localhost 127.0.0.1 _;
+    root /;
+  }
+}
+`;
+}
+
+let nativeListenerCleanupRegistered = false;
+let nativeListenerProcess: Bun.Subprocess | null = null;
+
+function registerNativeListenerCleanup(): void {
+  if (nativeListenerCleanupRegistered) {
     return;
   }
-  const reader = webRes.body.getReader();
-  try {
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      nodeRes.write(value);
+
+  nativeListenerCleanupRegistered = true;
+  process.on('exit', () => {
+    try {
+      nativeListenerProcess?.kill();
+    } catch {
+      // Best effort shutdown
     }
-  } finally {
-    nodeRes.end();
-  }
+  });
 }
 
-export function startServer(): void {
-  const port = getCompanionPort();
+async function waitForListenerHealth(
+  port: number,
+  timeoutMs = 90_000
+): Promise<void> {
+  const startedAt = Date.now();
 
-  const server = createServer(async (req, res) => {
+  while (Date.now() - startedAt < timeoutMs) {
     try {
-      const webReq = await nodeToWebRequest(req);
-      const webRes = await handleRequest(webReq);
-      await webToNodeResponse(webRes, res);
-    } catch (err) {
-      res.writeHead(500, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ error: String(err) }));
+      const response = await fetch(`http://127.0.0.1:${port}/health`, {
+        signal: AbortSignal.timeout(1_500),
+      });
+      if (response.ok) {
+        return;
+      }
+    } catch {
+      // Listener not ready yet.
+    }
+
+    await new Promise((resolve) => setTimeout(resolve, 250));
+  }
+
+  throw new Error(`Listener on :${port} did not become healthy in time`);
+}
+
+async function startNativeProxyListener(
+  publicPort: number,
+  listenerConfig: ReturnType<typeof getZedgeConfig>['listener']
+): Promise<void> {
+  if (typeof Bun === 'undefined') {
+    throw new Error('gnosis-uring proxy mode requires the Bun runtime');
+  }
+
+  const internalPort = listenerConfig.internalPort ?? publicPort;
+  const internalServer = new XGnosisServer({
+    configSource: createCompanionConfigSource(internalPort),
+    controlSurfaces: [zedgeControlSurface],
+    listenHostname: '127.0.0.1',
+  });
+
+  await internalServer.listen();
+
+  const command = resolveGnosisUringCommand({
+    port: publicPort,
+    root: '/',
+    threads: listenerConfig.threads,
+    flowPort: listenerConfig.flowPort,
+    useUring: listenerConfig.useUring,
+    proxyAll: true,
+    proxyUpstreamHost: '127.0.0.1',
+    proxyUpstreamPort: internalPort,
+  });
+
+  registerNativeListenerCleanup();
+  nativeListenerProcess = Bun.spawn([command.command, ...command.args], {
+    stdin: 'ignore',
+    stdout: 'inherit',
+    stderr: 'inherit',
+  });
+  void nativeListenerProcess.exited.then((exitCode) => {
+    if (nativeListenerProcess) {
+      console.warn(
+        `[zedge] gnosis-uring proxy exited with code ${exitCode} (${command.display})`
+      );
+      nativeListenerProcess = null;
     }
   });
 
-  server.listen(port, () => {
-    console.log(`[zedge] Companion sidecar v2.0 on http://localhost:${port}`);
-    console.log(`[zedge] OpenAI-compatible API: http://localhost:${port}/v1`);
+  await waitForListenerHealth(publicPort);
+  console.log(
+    `[zedge] Companion sidecar v2.0 mounted on gnosis-uring:${publicPort} -> x-gnosis:127.0.0.1:${internalPort}`
+  );
+}
+
+export async function startServer(): Promise<void> {
+  const config = getZedgeConfig();
+  const port = getCompanionPort();
+
+  if (config.listener.mode === 'gnosis-uring-proxy') {
+    try {
+      await startNativeProxyListener(port, config.listener);
+    } catch (error) {
+      console.warn(
+        `[zedge] Falling back to direct x-gnosis listener: ${
+          error instanceof Error ? error.message : String(error)
+        }`
+      );
+    }
+  }
+
+  if (!nativeListenerProcess) {
+    const server = new XGnosisServer({
+      configSource: createCompanionConfigSource(port),
+      controlSurfaces: [zedgeControlSurface],
+    });
+
+    await server.listen();
     console.log(
-      `[zedge] Superinference: POST http://localhost:${port}/v1/superinference`
+      `[zedge] Companion sidecar v2.0 mounted on x-gnosis at http://localhost:${port}`
     );
-    console.log(`[zedge] Mesh: http://localhost:${port}/mesh/status`);
-    console.log(`[zedge] Agent: POST http://localhost:${port}/agent/session`);
-    console.log(`[zedge] Forge: http://localhost:${port}/forge/status`);
-    console.log(`[zedge] Health: http://localhost:${port}/health`);
-    console.log(`[zedge] Ghostwriter CRDT: http://localhost:${port}/crdt/status`);
-    console.log(`[zedge] Ghostwriter UCAN: http://localhost:${port}/ucan/status`);
-  });
+  }
+
+  console.log(`[zedge] OpenAI-compatible API: http://localhost:${port}/v1`);
+  console.log(
+    `[zedge] Superinference: POST http://localhost:${port}/v1/superinference`
+  );
+  console.log(`[zedge] Mesh: http://localhost:${port}/mesh/status`);
+  console.log(`[zedge] Agent: POST http://localhost:${port}/agent/session`);
+  console.log(`[zedge] Forge: http://localhost:${port}/forge/status`);
+  console.log(`[zedge] Health: http://localhost:${port}/health`);
+  console.log(`[zedge] Ghostwriter CRDT: http://localhost:${port}/crdt/status`);
+  console.log(`[zedge] Ghostwriter UCAN: http://localhost:${port}/ucan/status`);
 }
