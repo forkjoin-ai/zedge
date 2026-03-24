@@ -20,6 +20,7 @@ import type { ChatCompletionRequest } from './inference-bridge';
 import { getZedgeConfig } from './config';
 import { voidMapStore } from './void-map-store';
 import { analyzeCodeEmotion, routeByEmotion } from './emotion-router';
+import { broadcastCandidates, broadcastCycleComplete, broadcastAccepted, broadcastRejected } from './daydream-annotations';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -107,6 +108,7 @@ class DaydreamEngine {
     if (!candidate) return null;
     this.candidates.delete(id);
     this.cacheHits++;
+    broadcastAccepted(candidate);
     return candidate;
   }
 
@@ -126,6 +128,7 @@ class DaydreamEngine {
     });
 
     this.cacheMisses++;
+    broadcastRejected(candidate);
     return candidate;
   }
 
@@ -254,6 +257,12 @@ Only suggest changes you are confident about. Be specific about the line number.
       this.lastDream = cycle;
       this.totalDreams++;
       this.lastDreamPerFile.set(filePath, Date.now());
+
+      // Broadcast to connected annotation clients
+      if (candidates.length > 0) {
+        broadcastCandidates(candidates);
+      }
+      broadcastCycleComplete(cycle);
 
       return cycle;
     } catch {

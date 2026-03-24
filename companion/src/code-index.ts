@@ -181,7 +181,7 @@ function parseFileIntoBlocks(
 // ---------------------------------------------------------------------------
 
 /** Extract embedding vector from the local embedding endpoint */
-async function computeEmbedding(text: string): Promise<Float32Array | null> {
+export async function computeEmbedding(text: string): Promise<Float32Array | null> {
   try {
     const resp = await embed(text, 'local');
     const data = (await resp.json()) as {

@@ -1902,6 +1902,30 @@ export async function handleWebRequest(req: Request): Promise<Response> {
     });
   }
 
+  // Daydream annotation stream -- live suggestions pushed to editor
+  if (path === '/cera/daydream/annotations' && req.method === 'GET') {
+    const { createAnnotationStream, getAnnotationClientCount } = await import('./daydream-annotations');
+    return new Response(createAnnotationStream(), {
+      headers: {
+        'Content-Type': 'text/event-stream',
+        'Cache-Control': 'no-cache',
+        Connection: 'keep-alive',
+        'Access-Control-Allow-Origin': '*',
+      },
+    });
+  }
+
+  if (path === '/cera/daydream/annotations/diagnostics' && req.method === 'GET') {
+    const { daydreamEngine } = await import('./daydream');
+    const { convertToDiagnostics } = await import('./daydream-annotations');
+    const fileParam = url.searchParams.get('file');
+    if (!fileParam) return jsonResponse({ error: 'file query param required' }, 400);
+    const candidates = daydreamEngine.getCandidates().filter((c) => c.filePath === fileParam);
+    const fileUri = fileParam.startsWith('file://') ? fileParam : `file://${fileParam}`;
+    const diagnostics = convertToDiagnostics(candidates, fileUri);
+    return jsonResponse({ diagnostics, count: diagnostics.length });
+  }
+
   if (path === '/cera/daydream/status' && req.method === 'GET') {
     const { daydreamEngine } = await import('./daydream');
     return jsonResponse(daydreamEngine.getStatus());
