@@ -1143,6 +1143,83 @@ async function executeZedgeCommandTool(
         return createToolResult(await fetchCompanionText('/feedback?n=10'));
       case 'zedge-babelfish':
         return createToolResult(await handleBabelfishSlashCommand(argsText));
+      case 'zedge-review': {
+        const { execSync } = await import('child_process');
+        let diff: string;
+        try {
+          diff = execSync('git diff HEAD', {
+            cwd: WORKSPACE_ROOT,
+            encoding: 'utf-8',
+            timeout: 10_000,
+          }).slice(0, 8000);
+        } catch {
+          return createToolResult('Could not read git diff.');
+        }
+        if (!diff.trim()) {
+          return createToolResult('No changes in current diff.');
+        }
+        const { superinfer } = await import('./superinference');
+        const { voidMapStore } = await import('./void-map-store');
+        const steering = voidMapStore.getSteeringVector();
+        const result = await superinfer({
+          request: {
+            model: 'qwen-2.5-coder-7b',
+            messages: [
+              { role: 'system', content: 'You are a code reviewer. Review the following git diff. For each issue, cite the file and line. Separate agreements (high confidence) from disagreements (flagged for human review).' },
+              { role: 'user', content: diff },
+            ],
+            temperature: 0.3,
+            max_tokens: 2048,
+          },
+          models: ['qwen-2.5-coder-7b', 'gemma3-4b-it', 'tinyllama-1.1b'],
+          strategy: 'constructive',
+          steeringOverrides: steering.negativePrompt || undefined,
+          timeoutMs: 60_000,
+        });
+        return createToolResult(
+          `## Consensus Review (confidence: ${result.confidence.toFixed(2)})\n\n${result.content}\n\n---\nModels: ${result.modelResults.map((m) => m.model).join(', ')} | Strategy: ${result.strategy} | ${result.durationMs}ms`
+        );
+      }
+      case 'zedge-void': {
+        const resp = await fetch(`${getCompanionBase()}/void-map/status`, { signal: AbortSignal.timeout(10_000) });
+        return createToolResult(JSON.stringify(await resp.json(), null, 2));
+      }
+      case 'zedge-swarm': {
+        if (!argsText?.trim()) {
+          const { AgentSwarm } = await import('./agent-swarm');
+          return createToolResult(`Available roles: ${AgentSwarm.listRoles().join(', ')}\n\nUsage: /zedge-swarm role1,role2 [task description]`);
+        }
+        const parts = argsText.trim().split(/\s+/);
+        const roles = parts[0].split(',');
+        const task = parts.slice(1).join(' ') || 'Review and improve the current file';
+        const resp = await fetch(`${getCompanionBase()}/agent/swarm/start`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ task, roles }),
+          signal: AbortSignal.timeout(120_000),
+        });
+        return createToolResult(JSON.stringify(await resp.json(), null, 2));
+      }
+      case 'zedge-engram': {
+        const resp = await fetch(`${getCompanionBase()}/engram/status`, { signal: AbortSignal.timeout(10_000) });
+        return createToolResult(JSON.stringify(await resp.json(), null, 2));
+      }
+      case 'zedge-emotion': {
+        return createToolResult('Use the zedge_emotion MCP tool with a file_path to analyze emotional profile.');
+      }
+      case 'zedge-agent': {
+        if (!argsText?.trim()) {
+          const resp = await fetch(`${getCompanionBase()}/forge/projects`, { signal: AbortSignal.timeout(10_000) });
+          return createToolResult(JSON.stringify(await resp.json(), null, 2));
+        }
+        const resp = await fetch(`${getCompanionBase()}/forge/deploy`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ project: argsText.trim(), trigger: 'manual' }),
+          signal: AbortSignal.timeout(120_000),
+        });
+        return createToolResult(JSON.stringify(await resp.json(), null, 2));
+      }
       default:
         return createToolResult(`Unknown Zedge command: ${command}`, true);
     }

@@ -14,6 +14,7 @@
  */
 
 import type { CollapseStrategy } from './superinference';
+import type { AmygdalaTag } from './capacitor-bridge';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -210,4 +211,71 @@ export function routeByEmotion(profile: EmotionalProfile): EmotionRouteDecision 
     daydreamPriority: 1.0,
     reasoning: 'Neutral emotional profile. Using default strategy.',
   };
+}
+
+// ---------------------------------------------------------------------------
+// Capacitor-Aware Analysis
+// ---------------------------------------------------------------------------
+
+/**
+ * Analyze emotional profile from Capacitor AmygdalaTag data.
+ * Uses real sensor/tagging data instead of heuristic pattern matching.
+ */
+export function analyzeCodeEmotionFromCapacitor(tags: AmygdalaTag[]): EmotionalProfile {
+  if (tags.length === 0) {
+    return {
+      dominantEmotion: 'neutral',
+      avgValence: 0,
+      avgArousal: 0,
+      volatility: 0,
+      blockCount: 0,
+      emotionCounts: { neutral: 1 },
+    };
+  }
+
+  let totalValence = 0;
+  let totalArousal = 0;
+  const emotionCounts: Record<string, number> = {};
+
+  for (const tag of tags) {
+    totalValence += tag.valence;
+    totalArousal += tag.arousal;
+    emotionCounts[tag.emotion] = (emotionCounts[tag.emotion] ?? 0) + 1;
+  }
+
+  const avgValence = totalValence / tags.length;
+  const avgArousal = totalArousal / tags.length;
+
+  // Find dominant emotion
+  const dominant = Object.entries(emotionCounts).reduce(
+    (max, [k, v]) => (v > max[1] ? [k, v] : max),
+    ['neutral', 0]
+  );
+
+  // Volatility: standard deviation of valence across tags
+  const valenceVariance =
+    tags.reduce((acc, t) => acc + (t.valence - avgValence) ** 2, 0) / tags.length;
+  const volatility = Math.sqrt(valenceVariance);
+
+  return {
+    dominantEmotion: dominant[0] as string,
+    avgValence: Math.max(-1, Math.min(1, avgValence)),
+    avgArousal: Math.max(0, Math.min(1, avgArousal)),
+    volatility,
+    blockCount: tags.length,
+    emotionCounts,
+  };
+}
+
+/**
+ * Analyze with Capacitor data when available, fallback to heuristics.
+ */
+export function analyzeCodeEmotionWithFallback(
+  content: string,
+  tags?: AmygdalaTag[]
+): EmotionalProfile {
+  if (tags && tags.length > 0) {
+    return analyzeCodeEmotionFromCapacitor(tags);
+  }
+  return analyzeCodeEmotion(content);
 }

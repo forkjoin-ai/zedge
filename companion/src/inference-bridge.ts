@@ -1500,6 +1500,59 @@ export async function infer(
 }
 
 /**
+ * Auto-learn from a completed inference interaction.
+ * Extracts learnable information and stores as engrams.
+ * Called by server.ts after successful chat completions.
+ */
+export function autoLearnFromInference(
+  request: ChatCompletionRequest,
+  responseContent: string,
+  tier: string
+): void {
+  queueMicrotask(async () => {
+    try {
+      const { getEngramStore } = await import('./engram-store');
+      const store = getEngramStore();
+
+      const lastUserMsg = [...request.messages].reverse().find((m) => m.role === 'user');
+      if (!lastUserMsg || lastUserMsg.content.length < 20) return;
+
+      // Extract file paths mentioned in the conversation
+      const filePathMatch = lastUserMsg.content.match(/(?:[\w./\\-]+\.(?:ts|js|py|rs|go|tsx|jsx|css|html|gg))/);
+      if (filePathMatch) {
+        void store.remember({
+          type: 'file-relationship',
+          content: `User asked about ${filePathMatch[0]}: ${lastUserMsg.content.slice(0, 200)}`,
+          filePath: filePathMatch[0],
+        });
+      }
+
+      // If response contains code patterns, store as code-pattern
+      if (responseContent.includes('function ') || responseContent.includes('class ') || responseContent.includes('export ')) {
+        void store.remember({
+          type: 'code-pattern',
+          content: `Pattern discussed (tier: ${tier}): ${responseContent.slice(0, 300)}`,
+        });
+      }
+
+      // If multi-turn, store conversation summary
+      if (request.messages.length >= 6) {
+        const summary = request.messages
+          .filter((m) => m.role === 'user')
+          .map((m) => m.content.slice(0, 100))
+          .join(' | ');
+        void store.remember({
+          type: 'conversation-summary',
+          content: `Multi-turn conversation (${request.messages.length} msgs): ${summary.slice(0, 400)}`,
+        });
+      }
+    } catch {
+      // Auto-learning is best-effort
+    }
+  });
+}
+
+/**
  * Get merged model list from remote + local + mesh peers
  */
 export async function getModels(): Promise<ModelInfo[]> {

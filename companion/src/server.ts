@@ -1292,6 +1292,15 @@ export async function handleWebRequest(req: Request): Promise<Response> {
     const result = await infer(inferRequest);
     const attemptHeaders = buildAttemptHeaders(result.attempts);
     const data = await extractResponseData(result.response);
+
+    // Auto-learn from this conversation (non-blocking)
+    const responseContent = (data as Record<string, unknown> & { choices?: Array<{ message?: { content?: string } }> })?.choices?.[0]?.message?.content ?? '';
+    if (responseContent) {
+      import('./inference-bridge').then(({ autoLearnFromInference }) => {
+        autoLearnFromInference(request, responseContent, result.tier);
+      }).catch(() => {});
+    }
+
     return new Response(
       JSON.stringify(data),
       {

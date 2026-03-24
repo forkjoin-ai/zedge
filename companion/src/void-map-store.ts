@@ -67,9 +67,15 @@ const STEERING_MIN_REJECTIONS = 3; // Need at least 3 rejections to steer
 class VoidMapStore {
   private entries: VoidMapEntry[] = [];
   private loaded = false;
+  private onRecordCallback: ((entry: VoidMapEntry) => void) | null = null;
 
   constructor() {
     this.load();
+  }
+
+  /** Register a callback that fires after every record (for training pipeline) */
+  onRecord(callback: (entry: VoidMapEntry) => void): void {
+    this.onRecordCallback = callback;
   }
 
   /** Record a new rejection */
@@ -80,6 +86,13 @@ class VoidMapStore {
     };
 
     this.entries.push(full);
+
+    // Fire callback for training pipeline
+    try {
+      this.onRecordCallback?.(full);
+    } catch {
+      // Callback errors must not break record persistence
+    }
 
     // Trim to max
     if (this.entries.length > MAX_ENTRIES) {

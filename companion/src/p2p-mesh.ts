@@ -16,6 +16,7 @@ import { recordServedRequest } from './compute-node';
 import type { ChatCompletionRequest } from './inference-bridge';
 import { createSocket, type Socket } from 'dgram';
 import { hostname, cpus, totalmem, freemem } from 'os';
+import { meshTransport, FRAME_INFERENCE, decodeFrame, encodeFrame } from './ws-mesh-transport';
 
 // --- Types ---
 
@@ -146,6 +147,7 @@ export function stopMesh(): MeshStatus {
     meshState.broadcastSocket = null;
   }
 
+  meshTransport.disconnectAll();
   meshState.running = false;
   meshState.peers.clear();
 
@@ -207,10 +209,26 @@ export async function meshInfer(
     return a.load - b.load;
   });
 
-  // Try peers in order
+  // Try peers in order -- prefer WebSocket when available
   for (const peer of peers) {
     try {
       const start = Date.now();
+
+      // Attempt WS transport first (persistent connection, no per-request overhead)
+      const conn = await meshTransport.connect(peer);
+      if (conn.transport === 'websocket') {
+        const sent = meshTransport.send(peer.id, {
+          type: FRAME_INFERENCE,
+          seq: Date.now(),
+          data: new TextEncoder().encode(JSON.stringify(request)),
+        });
+        if (sent) {
+          // WS response arrives via onFrame handler -- for now fall through to HTTP
+          // TODO: wire bidirectional frame response handling
+        }
+      }
+
+      // HTTP fallback (always works)
       const resp = await fetch(
         `http://${peer.address}:${peer.port}/v1/chat/completions`,
         {

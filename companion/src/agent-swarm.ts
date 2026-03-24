@@ -14,6 +14,9 @@ import { getRole, listRoles, type AgentRole } from './agent-roles';
 import type { CrdtBridge } from './crdt-bridge';
 import type { UcanBridge } from './ucan-bridge';
 import { voidMapStore } from './void-map-store';
+import { superinfer } from './superinference';
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -78,6 +81,7 @@ export class AgentSwarm {
   private completedAt?: number;
   private crdtBridge: CrdtBridge;
   private ucanBridge: UcanBridge | null;
+  private taskCompletion: Promise<PromiseSettledResult<void>[]> | null = null;
 
   constructor(crdtBridge: CrdtBridge, ucanBridge?: UcanBridge) {
     this.crdtBridge = crdtBridge;
@@ -141,11 +145,6 @@ export class AgentSwarm {
 
     await Promise.all(joinPromises);
 
-    // Get void map steering for targeted files
-    const steering = config.targetFiles?.[0]
-      ? voidMapStore.getSteeringVector(config.targetFiles[0])
-      : voidMapStore.getSteeringVector();
-
     // Open target files for each agent
     if (config.targetFiles) {
       for (const agent of this.agents.values()) {
@@ -160,13 +159,83 @@ export class AgentSwarm {
       }
     }
 
+    // Execute tasks through superinference for each agent
+    const steering = config.targetFiles?.[0]
+      ? voidMapStore.getSteeringVector(config.targetFiles[0])
+      : voidMapStore.getSteeringVector();
+
+    const taskPromises = [...this.agents.values()]
+      .filter((a) => a.status === 'working')
+      .map((a) => this.executeAgentTask(a, config.task, config.targetFiles, steering.negativePrompt));
+
+    // Fire and don't block -- collapse() waits for completion
+    this.taskCompletion = Promise.allSettled(taskPromises);
+
     return this.getStatus();
+  }
+
+  /**
+   * Execute a task for a single agent through superinference.
+   */
+  private async executeAgentTask(
+    agent: SwarmAgent,
+    task: string,
+    targetFiles?: string[],
+    steeringOverrides?: string
+  ): Promise<void> {
+    try {
+      // Read target file contents for context
+      let fileContext = '';
+      if (targetFiles) {
+        const workspacePath = process.env.AEON_ROOT || process.cwd();
+        for (const file of targetFiles.slice(0, 3)) {
+          try {
+            const content = readFileSync(resolve(workspacePath, file), 'utf-8');
+            fileContext += `\n--- ${file} ---\n${content.slice(0, 4000)}\n`;
+          } catch {
+            // File may not exist
+          }
+        }
+      }
+
+      const result = await superinfer({
+        request: {
+          model: agent.role.preferredModel,
+          messages: [
+            { role: 'system', content: agent.role.systemPrompt },
+            {
+              role: 'user',
+              content: `Task: ${task}${fileContext ? `\n\nCode context:${fileContext}` : ''}`,
+            },
+          ],
+          temperature: 0.3,
+          max_tokens: 2048,
+        },
+        models: [agent.role.preferredModel],
+        strategy: agent.role.strategy,
+        steeringOverrides: steeringOverrides || undefined,
+      });
+
+      agent.result = result.content;
+      agent.status = 'done';
+      agent.finishedAt = Date.now();
+    } catch (err) {
+      agent.error = err instanceof Error ? err.message : String(err);
+      agent.status = 'error';
+      agent.finishedAt = Date.now();
+    }
   }
 
   /**
    * Wait for all agents to finish and return unified results.
    */
   async collapse(): Promise<SwarmResult> {
+    // Wait for task execution to complete
+    if (this.taskCompletion) {
+      await this.taskCompletion;
+      this.taskCompletion = null;
+    }
+
     // Leave all agents
     for (const agent of this.agents.values()) {
       try {
