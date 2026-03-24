@@ -315,6 +315,8 @@ interface McpPromptDefinition {
   description: string;
   arguments?: McpPromptArgument[];
   instructions: string;
+  toolName?: string;
+  payload?: (args: string | null) => Record<string, unknown>;
 }
 
 // ---------- Companion health check ----------
@@ -343,6 +345,21 @@ const slashArgsPrompt: McpPromptArgument[] = [
       'The raw argument text after the slash command, matching the extension command surface',
   },
 ];
+
+function parsePromptArgs(args: string | null): string[] {
+  return tokenizeArgs(args);
+}
+
+function buildSwarmPromptPayload(args: string | null): Record<string, unknown> {
+  if (!args) {
+    return { action: 'roles' };
+  }
+
+  return {
+    action: 'start',
+    task: args,
+  };
+}
 
 const ZEDGE_PROMPTS: McpPromptDefinition[] = [
   {
@@ -487,6 +504,87 @@ const ZEDGE_PROMPTS: McpPromptDefinition[] = [
     instructions:
       'Run a consensus review of the current git diff. Use the `zedge_command` tool with `command: "zedge-review"` and summarize the highest-signal findings and disagreements between reviewers.',
   },
+  {
+    name: 'zedge-void',
+    description:
+      'Void map — persistent rejection memory, steering vectors, and export surfaces',
+    arguments: slashArgsPrompt,
+    instructions:
+      'Inspect the void map or export rejection-memory signals. Use the `zedge_void_map` tool. With no argument, request `action: "status"`. To query or steer by file/category, translate the slash argument into the tool fields `action`, `file_path`, and `category`.',
+    toolName: 'zedge_void_map',
+    payload: (args) => {
+      const parts = parsePromptArgs(args);
+      const action = parts[0] ?? 'status';
+      const payload: Record<string, unknown> = { action };
+      if (parts[1]) payload.file_path = parts[1];
+      if (parts[2]) payload.category = parts[2];
+      return payload;
+    },
+  },
+  {
+    name: 'zedge-swarm',
+    description:
+      'Launch a swarm of specialized agents or inspect the available swarm roles',
+    arguments: slashArgsPrompt,
+    instructions:
+      'Launch or inspect the agent swarm. Use the `zedge_swarm` tool. With no argument, request `action: "roles"`. If the user supplied a task, request `action: "start"` and pass the task text through as `task`.',
+    toolName: 'zedge_swarm',
+    payload: buildSwarmPromptPayload,
+  },
+  {
+    name: 'zedge-engram',
+    description:
+      'Persistent agent memory — inspect status, recall context, remember patterns, or forget entries',
+    arguments: slashArgsPrompt,
+    instructions:
+      'Inspect or mutate the persistent engram store. Use the `zedge_engram` tool. With no argument, request `action: "status"`. Otherwise translate the slash arguments into the structured tool fields such as `action`, `query`, `type`, and `id`.',
+    toolName: 'zedge_engram',
+    payload: (args) => {
+      const parts = parsePromptArgs(args);
+      const action = parts[0] ?? 'status';
+      const payload: Record<string, unknown> = { action };
+      if (action === 'forget' && parts[1]) {
+        payload.id = parts[1];
+      } else if (parts.length > 1) {
+        payload.query = parts.slice(1).join(' ');
+      }
+      return payload;
+    },
+  },
+  {
+    name: 'zedge-emotion',
+    description:
+      'Analyze the emotional profile of the active file or a user-specified file',
+    arguments: slashArgsPrompt,
+    instructions:
+      'Analyze the emotional profile of a file. Use the `zedge_emotion` tool. If the user supplied a file path, pass it as `file_path`. Otherwise use the active file when it is available in context, or ask the user which file to inspect.',
+    toolName: 'zedge_emotion',
+    payload: (args) => {
+      const payload: Record<string, unknown> = {};
+      if (args) {
+        payload.file_path = args;
+      }
+      return payload;
+    },
+  },
+  {
+    name: 'zedge-agent',
+    description:
+      'GG agent management — list, trigger, or inspect topology-driven Forge agents',
+    arguments: slashArgsPrompt,
+    instructions:
+      'Manage GG agents through the Forge-backed MCP surface. Use the `zedge_gg_agent` tool. With no argument, request `action: "list"`. Otherwise translate the slash arguments into the structured fields `action`, `agent_name`, and optional `payload`.',
+    toolName: 'zedge_gg_agent',
+    payload: (args) => {
+      const parts = parsePromptArgs(args);
+      const action = parts[0] ?? 'list';
+      const payload: Record<string, unknown> = { action };
+      if (parts[1]) {
+        payload.agent_name = parts[1];
+      }
+      return payload;
+    },
+  },
 ];
 
 function optionalString(value: unknown): string | null {
@@ -591,13 +689,19 @@ function createToolResult(
 }
 
 function renderPromptText(prompt: McpPromptDefinition, args: string | null): string {
-  const payload: Record<string, unknown> = { command: prompt.name };
-  if (args) {
-    payload.args = args;
-  }
+  const payload =
+    prompt.payload?.(args) ??
+    (() => {
+      const toolPayload: Record<string, unknown> = { command: prompt.name };
+      if (args) {
+        toolPayload.args = args;
+      }
+      return toolPayload;
+    })();
+  const toolName = prompt.toolName ?? 'zedge_command';
 
   const invocation = JSON.stringify(payload, null, 2);
-  return `${prompt.instructions}\n\nUse this MCP tool payload:\n\`\`\`json\n${invocation}\n\`\`\``;
+  return `${prompt.instructions}\n\nUse the \`${toolName}\` MCP tool with this payload:\n\`\`\`json\n${invocation}\n\`\`\``;
 }
 
 function resolveWorkspacePath(filePath: string): string {
@@ -1370,6 +1474,36 @@ export async function handleToolsList(): Promise<Record<string, unknown>> {
           },
         },
       },
+      {
+        name: 'zedge_swarm',
+        description:
+          'List swarm roles or launch a swarm of specialized agents against a task.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            action: {
+              type: 'string',
+              enum: ['roles', 'start'],
+              description: 'Action to perform (default: roles)',
+            },
+            task: {
+              type: 'string',
+              description: 'Task description for start action',
+            },
+            roles: {
+              type: 'array',
+              items: { type: 'string' },
+              description:
+                'Optional explicit role IDs for start action (defaults to reviewer/refactorer/tester)',
+            },
+            target_files: {
+              type: 'array',
+              items: { type: 'string' },
+              description: 'Optional file paths to constrain the swarm task',
+            },
+          },
+        },
+      },
       ...getBabelfishMcpTools(),
     ],
   };
@@ -1697,6 +1831,52 @@ export async function handleToolCall(
           default:
             return { content: [{ type: 'text', text: `Unknown agent action: ${action}` }], isError: true };
         }
+      }
+
+      case 'zedge_swarm': {
+        const action = String(args.action ?? 'roles');
+        const base = getCompanionBase();
+        if (action === 'start') {
+          const task = String(args.task ?? '');
+          if (!task) {
+            return {
+              content: [{ type: 'text', text: 'task is required for start' }],
+              isError: true,
+            };
+          }
+
+          const roles = Array.isArray(args.roles)
+            ? args.roles.filter((value): value is string => typeof value === 'string')
+            : ['reviewer', 'refactorer', 'tester'];
+          const targetFiles = Array.isArray(args.target_files)
+            ? args.target_files.filter(
+                (value): value is string => typeof value === 'string'
+              )
+            : undefined;
+
+          const resp = await fetch(`${base}/agent/swarm/start`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              task,
+              roles,
+              target_files: targetFiles,
+            }),
+            signal: AbortSignal.timeout(120_000),
+          });
+          return {
+            content: [{ type: 'text', text: JSON.stringify(await resp.json(), null, 2) }],
+            isError: !resp.ok,
+          };
+        }
+
+        const resp = await fetch(`${base}/agent/swarm/roles`, {
+          signal: AbortSignal.timeout(10_000),
+        });
+        return {
+          content: [{ type: 'text', text: JSON.stringify(await resp.json(), null, 2) }],
+          isError: !resp.ok,
+        };
       }
 
       case 'zedge_multi_file_edit': {

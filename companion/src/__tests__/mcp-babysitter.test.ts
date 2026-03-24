@@ -33,6 +33,20 @@ describe('MCP companion babysitter policy', () => {
     expect(decision.restartTimestamps).toEqual([now]);
   });
 
+  test('does not restart while the owned companion is marked busy', () => {
+    const now = 100_000;
+    const decision = decideCompanionRestart({
+      now,
+      activityBusyUntil: now + 30_000,
+      companionSpawnedAt: now - (STARTUP_GRACE_MS + 5_000),
+      consecutiveFailures: CONSECUTIVE_FAILURES_BEFORE_RESTART,
+      restartTimestamps: [],
+    });
+
+    expect(decision.shouldRestart).toBe(false);
+    expect(decision.reason).toBe('busy');
+  });
+
   test('force restart bypasses the health failure threshold', () => {
     const now = 100_000;
     const decision = decideCompanionRestart({

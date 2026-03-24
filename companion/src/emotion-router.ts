@@ -78,7 +78,7 @@ const CONFIDENCE_MARKERS = [
   /describe\s*\(/,
   /test\s*\(/,
   /expect\s*\(/,
-  /assert\s*[\.(]/,
+  /assert\s*[.(]/,
   /it\s*\(/,
   /\/\/\s*TESTED/i,
   /\/\/\s*STABLE/i,

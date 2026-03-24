@@ -8,10 +8,12 @@ export const COMPANION_STOP_TIMEOUT_MS = 5_000;
 
 export type CompanionRestartSkipReason =
   | 'below_failure_threshold'
+  | 'busy'
   | 'startup_grace'
   | 'rate_limited';
 
 export interface CompanionRestartDecisionInput {
+  activityBusyUntil?: number | null;
   now: number;
   companionSpawnedAt: number;
   consecutiveFailures: number;
@@ -41,6 +43,17 @@ export function decideCompanionRestart(
   }
 
   if (!input.force) {
+    if (
+      typeof input.activityBusyUntil === 'number' &&
+      input.activityBusyUntil > input.now
+    ) {
+      return {
+        shouldRestart: false,
+        reason: 'busy',
+        restartTimestamps,
+      };
+    }
+
     if (
       input.companionSpawnedAt > 0 &&
       input.now - input.companionSpawnedAt < STARTUP_GRACE_MS

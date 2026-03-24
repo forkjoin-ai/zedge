@@ -70,7 +70,9 @@ describe('Agent Swarm', () => {
     const { AgentSwarm } = await import('../agent-swarm');
 
     // Create with mock bridges
-    const mockCrdtBridge = {} as any;
+    const mockCrdtBridge = {} as unknown as ConstructorParameters<
+      typeof AgentSwarm
+    >[0];
     const swarm = new AgentSwarm(mockCrdtBridge);
 
     expect(swarm.isActive).toBe(false);

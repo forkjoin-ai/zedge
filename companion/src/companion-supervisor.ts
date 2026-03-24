@@ -11,6 +11,7 @@ import {
   HEALTH_CHECK_TIMEOUT_MS,
   decideCompanionRestart,
 } from './companion-restart-policy';
+import { getOwnedCompanionActivity } from './companion-activity';
 import { resolveTypeScriptEntrypointCommand } from './runtime-command';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -144,8 +145,10 @@ async function restartCompanion(
   }
 
   restartInFlight = (async () => {
+    const busyActivity = getOwnedCompanionActivity(childProc?.pid);
     const decision = decideCompanionRestart({
       now: Date.now(),
+      activityBusyUntil: busyActivity?.busyUntil ?? null,
       companionSpawnedAt: childSpawnedAt,
       consecutiveFailures: consecutiveHealthFailures,
       restartTimestamps: recentRestartTimestamps,
@@ -154,7 +157,13 @@ async function restartCompanion(
     recentRestartTimestamps = decision.restartTimestamps;
 
     if (!decision.shouldRestart) {
-      if (decision.reason === 'startup_grace') {
+      if (decision.reason === 'busy' && busyActivity) {
+        console.debug(
+          `[zedge:supervisor] Companion busy with ${busyActivity.kind}; skipping restart until ${new Date(
+            busyActivity.busyUntil
+          ).toISOString()}`
+        );
+      } else if (decision.reason === 'startup_grace') {
         console.debug(
           '[zedge:supervisor] Skipping restart during companion startup grace window'
         );
@@ -201,6 +210,15 @@ function startSupervisor(): void {
       const alive = await isCompanionAlive();
       if (alive) {
         consecutiveHealthFailures = 0;
+        return;
+      }
+
+      const busyActivity = getOwnedCompanionActivity(childProc?.pid);
+      if (busyActivity) {
+        consecutiveHealthFailures = 0;
+        await restartCompanion(
+          `health check timed out while companion was busy with ${busyActivity.kind}`
+        );
         return;
       }
 

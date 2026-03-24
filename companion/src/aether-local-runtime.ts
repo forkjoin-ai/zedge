@@ -185,6 +185,19 @@ class AetherLocalRuntime {
     return this.chatLoadingPromise;
   }
 
+  get chatStatus(): 'idle' | 'loading' | 'ready' | 'failed' {
+    if (this.chatPipe) {
+      return 'ready';
+    }
+    if (this.chatLoadFailed) {
+      return 'failed';
+    }
+    if (this.chatLoadingPromise) {
+      return 'loading';
+    }
+    return 'idle';
+  }
+
   private async loadChatPipeline(): Promise<boolean> {
     try {
       const { pipeline } = await this.loadTransformers();

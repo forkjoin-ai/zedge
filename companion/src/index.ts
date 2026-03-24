@@ -121,6 +121,12 @@ setTimeout(async () => {
     //   codeIndex.indexWorkspace(workspacePath).catch(() => {})
     // ).catch(() => {});
 
+    setTimeout(() => {
+      import('./inference-bridge')
+        .then(({ startLocalWasmWarmup }) => void startLocalWasmWarmup())
+        .catch(() => {});
+    }, 1_000);
+
     console.log(`[zedge] Ready. Mesh peers: ${getMeshStatus().peers.length}`);
   } catch (err) {
     console.error('[zedge] Init error:', err);
