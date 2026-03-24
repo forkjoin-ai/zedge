@@ -1,11 +1,11 @@
-import { getZedgeConfig } from './config';
+import { getZedgeConfig } from "./config.ts";
 import {
   applyBabelfishCodePreview,
   explainBabelfishScope,
   getBabelfishCapabilities,
   previewBabelfishCode,
   translateBabelfishText,
-} from './babelfish';
+} from "./babelfish.ts";
 
 interface BabelfishCodePreviewRequestBody {
   scope?: {

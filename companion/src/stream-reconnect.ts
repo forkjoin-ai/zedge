@@ -11,8 +11,8 @@
  * 4. Sending a continuation prompt with the buffered tokens
  */
 
-import { infer, createSSEProxyStream } from './inference-bridge';
-import type { ChatCompletionRequest, InferenceTier } from './inference-bridge';
+import { infer, createSSEProxyStream } from "./inference-bridge.ts";
+import type { ChatCompletionRequest, InferenceTier } from "./inference-bridge.ts";
 
 // --- Types ---
 

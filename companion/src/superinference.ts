@@ -12,8 +12,8 @@
  * Reference: docs/ebooks/24-superinference-quantum-inspired-distributed-compute/
  */
 
-import type { ChatCompletionRequest, ChatMessage } from './inference-bridge';
-import { infer } from './inference-bridge';
+import type { ChatCompletionRequest, ChatMessage } from "./inference-bridge.ts";
+import { infer } from "./inference-bridge.ts";
 
 // --- Types ---
 

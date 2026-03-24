@@ -12,13 +12,13 @@
  * Single JSON snapshot + SSE stream for live updates.
  */
 
-import { voidMapStore } from './void-map-store';
-import { getEngramStore } from './engram-store';
-import { getPhase3Status } from './wire-phase3';
-import { analyzeCodeEmotion } from './emotion-router';
+import { voidMapStore } from "./void-map-store.ts";
+import { getEngramStore } from "./engram-store.ts";
+import { getPhase3Status } from "./wire-phase3.ts";
+import { analyzeCodeEmotion } from "./emotion-router.ts";
 import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { join, extname, relative } from 'node:path';
-import { recordSnapshot as persistSnapshot } from './observatory-history';
+import { recordSnapshot as persistSnapshot } from "./observatory-history.ts";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -172,7 +172,7 @@ export async function getObservatorySnapshot(): Promise<ObservatorySnapshot> {
   // Agent sessions
   const agentStats = { totalSessions: 0, completed: 0, failed: 0, avgDurationMs: 0 };
   try {
-    const { listSessions } = await import('./cloud-agent-session');
+    const { listSessions } = await import("./cloud-agent-session.ts");
     const sessions = listSessions(100);
     agentStats.totalSessions = sessions.length;
     agentStats.completed = sessions.filter((s) => s.status === 'completed').length;
@@ -191,7 +191,7 @@ export async function getObservatorySnapshot(): Promise<ObservatorySnapshot> {
   // Peer count
   let peersConnected = 0;
   try {
-    const { getMeshStatus } = await import('./p2p-mesh');
+    const { getMeshStatus } = await import("./p2p-mesh.ts");
     peersConnected = getMeshStatus().peers.length;
   } catch { /* mesh may not be running */ }
 

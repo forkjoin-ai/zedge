@@ -12,7 +12,7 @@
  *   → Accept/reject through MCP tools
  */
 
-import type { DaydreamCandidate, DaydreamCycle } from './daydream';
+import type { DaydreamCandidate, DaydreamCycle } from "./daydream.ts";
 
 // ---------------------------------------------------------------------------
 // Types

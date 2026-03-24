@@ -15,7 +15,7 @@ import {
   mkdirSync,
   unlinkSync,
 } from 'fs';
-import { getEdgeworkConfig } from './config';
+import { getEdgeworkConfig } from "./config.ts";
 
 const CONFIG_DIR = join(homedir(), '.edgework');
 const TOKEN_FILE = join(CONFIG_DIR, 'token.json');

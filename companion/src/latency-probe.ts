@@ -6,9 +6,9 @@
  * Routes to the fastest healthy coordinator per model.
  */
 
-import { getApiBaseUrl, getAuthHeaders } from './config';
-import { CLOUD_RUN_COORDINATORS } from './coordinator-urls';
-import { buildCloudRunHealthUrls } from './cloudrun-auth';
+import { getApiBaseUrl, getAuthHeaders } from "./config.ts";
+import { CLOUD_RUN_COORDINATORS } from "./coordinator-urls.ts";
+import { buildCloudRunHealthUrls } from "./cloudrun-auth.ts";
 
 // --- Types ---
 

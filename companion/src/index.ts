@@ -31,15 +31,20 @@ async function verifyKeyTier(
 export async function main(): Promise<void> {
   console.log('[zedge] Starting companion sidecar v2.0...');
 
+  await runCompanionBootstrap();
+  return;
+}
+
+async function runCompanionBootstrap(): Promise<void> {
   try {
-    const serverMod = await import('./server');
+    const serverMod = await import("./server.ts");
     await serverMod.startServer();
 
     console.log('[zedge] Companion sidecar v2.0 ready');
 
-    const { whoami } = await import('./auth');
+    const { whoami } = await import("./auth.ts");
     const { getZedgeConfig, getApiBaseUrl, getAuthHeaders } = await import(
-      './config'
+      "./config.ts"
     );
     const config = getZedgeConfig();
 
@@ -53,44 +58,45 @@ export async function main(): Promise<void> {
       console.log('[zedge] Not authenticated.');
     }
 
-    const { startProbing } = await import('./latency-probe');
+    const { startProbing } = await import("./latency-probe.ts");
     startProbing();
 
-    const { startMesh, getMeshStatus } = await import('./p2p-mesh');
+    const { startMesh, getMeshStatus } = await import("./p2p-mesh.ts");
     const mesh = startMesh();
     console.log(`[zedge] Mesh started. Node ID: ${mesh.nodeId}`);
 
     if (config.computePool.enabled) {
-      const { joinPool, getPoolStatus } = await import('./compute-node');
+      const { joinPool, getPoolStatus } = await import("./compute-node.ts");
       await joinPool();
       console.log(`[zedge] Pool: ${getPoolStatus().connectedNodes} nodes`);
     }
 
-    serverMod.startGnosisWatcher();
-
     const [
-      { ForgeBridge },
       { VfsBridge },
       { CollabBridge },
       { KernelBridge },
       { CapacitorBridge },
-      { CrdtBridge },
-      { UcanBridge },
     ] = await Promise.all([
-      import('./forge-bridge'),
-      import('./vfs-bridge'),
-      import('./collab-bridge'),
-      import('./kernel-bridge'),
-      import('./capacitor-bridge'),
-      import('./crdt-bridge'),
-      import('./ucan-bridge'),
+      import("./vfs-bridge.ts"),
+      import("./collab-bridge.ts"),
+      import("./kernel-bridge.ts"),
+      import("./capacitor-bridge.ts"),
     ]);
 
     const workspacePath = process.cwd();
-    const forge = new ForgeBridge(workspacePath);
-    serverMod.setForgeBridge(forge);
-    const projects = await forge.discoverProjects();
-    console.log(`[zedge] Forge: ${projects.length} project(s) discovered`);
+    try {
+      const { ForgeBridge } = await import("./forge-bridge.ts");
+      const forge = new ForgeBridge(workspacePath);
+      const projects = await forge.discoverProjects();
+      serverMod.setForgeBridge(forge);
+      console.log(`[zedge] Forge: ${projects.length} project(s) discovered`);
+    } catch (error) {
+      console.warn(
+        `[zedge] Forge unavailable: ${
+          error instanceof Error ? error.message : String(error)
+        }`
+      );
+    }
 
     const meshNodeId = getMeshStatus().nodeId;
     const displayName = authStatus.email ?? `zedge-${meshNodeId.slice(0, 8)}`;
@@ -126,35 +132,49 @@ export async function main(): Promise<void> {
       ucan: config.ucanToken,
       apiKey: config.dashRelayApiKey,
     };
-    const crdt = new CrdtBridge(crdtCfg);
-    serverMod.setCrdtBridge(crdt);
     try {
+      const { CrdtBridge } = await import("./crdt-bridge.ts");
+      const crdt = new CrdtBridge(crdtCfg);
+      serverMod.setCrdtBridge(crdt);
       await crdt.connect();
     } catch {
       console.log('[zedge] CRDT offline.');
     }
 
-    const ucan = new UcanBridge({
-      secret: config.dashRelayApiKey ?? `zedge-local-${meshNodeId}`,
-      workspaceId: crdtCfg.workspaceId,
-      peerId: meshNodeId,
-      displayName,
-    });
     try {
+      const { UcanBridge } = await import("./ucan-bridge.ts");
+      const ucan = new UcanBridge({
+        secret: config.dashRelayApiKey ?? `zedge-local-${meshNodeId}`,
+        workspaceId: crdtCfg.workspaceId,
+        peerId: meshNodeId,
+        displayName,
+      });
       await ucan.init();
       serverMod.setUcanBridge(ucan);
     } catch {
       // Keep the companion up even when UCAN bootstrap fails locally.
     }
 
-    setTimeout(() => {
-      import('./inference-bridge')
-        .then(({ startLocalWasmWarmup }) => void startLocalWasmWarmup())
-        .catch(() => {});
-    }, 1_000);
+    if (process.env.ZEDGE_ENABLE_GNOSIS_WATCHER === '1') {
+      setTimeout(() => {
+        try {
+          serverMod.startGnosisWatcher();
+        } catch {
+          // Best-effort background startup only.
+        }
+      }, 500);
+    }
+
+    if (process.env.ZEDGE_AUTO_WASM_WARMUP === '1') {
+      setTimeout(() => {
+        import("./inference-bridge.ts")
+          .then(({ startLocalWasmWarmup }) => void startLocalWasmWarmup())
+          .catch(() => {});
+      }, 1_000);
+    }
 
     setTimeout(() => {
-      import('./wire-phase3')
+      import("./wire-phase3.ts")
         .then(({ wirePhase3 }) => wirePhase3())
         .then((status) => {
           console.log(

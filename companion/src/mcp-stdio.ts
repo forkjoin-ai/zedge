@@ -15,8 +15,8 @@ import { readFileSync, existsSync } from 'fs';
 import { spawn, type ChildProcess } from 'child_process';
 import { resolve, dirname, relative, sep } from 'path';
 import { fileURLToPath } from 'url';
-import { getCompanionPort } from './config';
-import { callBabelfishMcpTool, getBabelfishMcpTools } from './babelfish-mcp';
+import { getCompanionPort } from "./config.ts";
+import { callBabelfishMcpTool, getBabelfishMcpTools } from "./babelfish-mcp.ts";
 import {
   COMPANION_STOP_TIMEOUT_MS,
   CONSECUTIVE_FAILURES_BEFORE_RESTART,
@@ -24,9 +24,9 @@ import {
   HEALTH_CHECK_TIMEOUT_MS,
   RESTART_WINDOW_MS,
   decideCompanionRestart,
-} from './companion-restart-policy';
-import { getOwnedCompanionActivity } from './companion-activity';
-import { resolveTypeScriptEntrypointCommand } from './runtime-command';
+} from "./companion-restart-policy.ts";
+import { getOwnedCompanionActivity } from "./companion-activity.ts";
+import { resolveTypeScriptEntrypointCommand } from "./runtime-command.ts";
 
 function getCompanionBase(): string {
   return `http://localhost:${getCompanionPort()}`;
@@ -34,11 +34,6 @@ function getCompanionBase(): string {
 
 // ---------- Companion babysitter ----------
 
-const __dirname = dirname(fileURLToPath(import.meta.url));
-const WORKSPACE_ROOT = resolve(
-  process.env.AEON_ROOT ?? resolve(__dirname, '../../../..')
-);
-const COMPANION_ENTRY = resolve(__dirname, 'index.ts');
 let companionProc: ChildProcess | null = null;
 let babysitterTimer: ReturnType<typeof setInterval> | null = null;
 let stdioLoggingConfigured = false;
@@ -49,6 +44,18 @@ let babysitterCheckInFlight = false;
 let restartInFlight: Promise<boolean> | null = null;
 let suppressExitRestart = false;
 let shuttingDown = false;
+
+function getModuleDirectory(): string {
+  return dirname(fileURLToPath(import.meta.url));
+}
+
+function getWorkspaceRoot(): string {
+  return resolve(process.env.AEON_ROOT ?? resolve(getModuleDirectory(), '../../../..'));
+}
+
+function getCompanionEntry(): string {
+  return resolve(getWorkspaceRoot(), 'open-source/zedge/companion/src/index.ts');
+}
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -94,7 +101,7 @@ function spawnCompanion(): void {
     return;
   }
 
-  const runtimeCommand = resolveTypeScriptEntrypointCommand(COMPANION_ENTRY);
+  const runtimeCommand = resolveTypeScriptEntrypointCommand(getCompanionEntry());
   console.log(
     `[zedge:babysitter] Spawning companion: ${runtimeCommand.display}`
   );
@@ -705,8 +712,9 @@ function renderPromptText(prompt: McpPromptDefinition, args: string | null): str
 }
 
 function resolveWorkspacePath(filePath: string): string {
-  const resolvedPath = resolve(WORKSPACE_ROOT, filePath);
-  const relativePath = relative(WORKSPACE_ROOT, resolvedPath);
+  const workspaceRoot = getWorkspaceRoot();
+  const resolvedPath = resolve(workspaceRoot, filePath);
+  const relativePath = relative(workspaceRoot, resolvedPath);
 
   if (relativePath === '..' || relativePath.startsWith(`..${sep}`)) {
     throw new Error(`Path escapes workspace root: ${filePath}`);
@@ -1149,7 +1157,7 @@ async function executeZedgeCommandTool(
         let diff: string;
         try {
           diff = execSync('git diff HEAD', {
-            cwd: WORKSPACE_ROOT,
+            cwd: getWorkspaceRoot(),
             encoding: 'utf-8',
             timeout: 10_000,
           }).slice(0, 8000);
@@ -1159,8 +1167,8 @@ async function executeZedgeCommandTool(
         if (!diff.trim()) {
           return createToolResult('No changes in current diff.');
         }
-        const { superinfer } = await import('./superinference');
-        const { voidMapStore } = await import('./void-map-store');
+        const { superinfer } = await import("./superinference.ts");
+        const { voidMapStore } = await import("./void-map-store.ts");
         const steering = voidMapStore.getSteeringVector();
         const result = await superinfer({
           request: {
@@ -1187,7 +1195,7 @@ async function executeZedgeCommandTool(
       }
       case 'zedge-swarm': {
         if (!argsText?.trim()) {
-          const { AgentSwarm } = await import('./agent-swarm');
+          const { AgentSwarm } = await import("./agent-swarm.ts");
           return createToolResult(`Available roles: ${AgentSwarm.listRoles().join(', ')}\n\nUsage: /zedge-swarm role1,role2 [task description]`);
         }
         const parts = argsText.trim().split(/\s+/);
@@ -1758,7 +1766,7 @@ export async function handleToolCall(
         }
 
         // Read file, apply replacement, write back via companion VFS
-        const fullPath = resolve(WORKSPACE_ROOT, filePath);
+        const fullPath = resolve(getWorkspaceRoot(), filePath);
         let fileContent: string;
         try {
           fileContent = readFileSync(fullPath, 'utf-8');
@@ -1809,7 +1817,7 @@ export async function handleToolCall(
 
       case 'zedge_related_context': {
         const file = String(args.file_path ?? '');
-        const fullFilePath = resolve(WORKSPACE_ROOT, file);
+        const fullFilePath = resolve(getWorkspaceRoot(), file);
         const resp = await fetch(
           `${getCompanionBase()}/code-index/related?file=${encodeURIComponent(fullFilePath)}`,
           { signal: AbortSignal.timeout(10_000) }
@@ -1865,7 +1873,7 @@ export async function handleToolCall(
             break;
           }
           case 'export': {
-            const { exportRecords } = await import('./void-map-export');
+            const { exportRecords } = await import("./void-map-export.ts");
             const records = exportRecords({
               filePath: args.file_path ? String(args.file_path) : undefined,
               category: args.category ? String(args.category) : undefined,
@@ -1885,7 +1893,7 @@ export async function handleToolCall(
 
       case 'zedge_engram': {
         const action = String(args.action ?? 'status');
-        const { getEngramStore } = await import('./engram-store');
+        const { getEngramStore } = await import("./engram-store.ts");
         const store = getEngramStore();
         switch (action) {
           case 'status':
@@ -1919,7 +1927,7 @@ export async function handleToolCall(
         if (!filePath) return { content: [{ type: 'text', text: 'file_path is required' }], isError: true };
         const { readFileSync } = await import('fs');
         const { resolve } = await import('path');
-        const { analyzeCodeEmotion, routeByEmotion } = await import('./emotion-router');
+        const { analyzeCodeEmotion, routeByEmotion } = await import("./emotion-router.ts");
         try {
           const fullPath = resolve(process.env.AEON_ROOT || process.cwd(), filePath);
           const content = readFileSync(fullPath, 'utf-8');
@@ -2225,13 +2233,13 @@ export async function dispatch(
       case 'resources/read': {
         const uri = (params as Record<string, unknown>)?.uri as string;
         if (uri === 'zedge://observatory') {
-          const { getObservatorySnapshot } = await import('./observatory');
+          const { getObservatorySnapshot } = await import("./observatory.ts");
           result = { contents: [{ uri, mimeType: 'application/json', text: JSON.stringify(await getObservatorySnapshot(), null, 2) }] };
         } else if (uri === 'zedge://void-sync') {
-          const { federatedVoidSync } = await import('./federated-void-sync');
+          const { federatedVoidSync } = await import("./federated-void-sync.ts");
           result = { contents: [{ uri, mimeType: 'application/json', text: JSON.stringify(federatedVoidSync.getStatus(), null, 2) }] };
         } else if (uri === 'zedge://breeding') {
-          const { agentBreeding } = await import('./agent-breeding');
+          const { agentBreeding } = await import("./agent-breeding.ts");
           result = { contents: [{ uri, mimeType: 'application/json', text: JSON.stringify(agentBreeding.getStatus(), null, 2) }] };
         } else {
           result = { contents: [] };
@@ -2273,6 +2281,11 @@ function send(response: JsonRpcResponse): void {
 export async function main(): Promise<void> {
   configureStdioLogging();
   console.log('Starting MCP stdio bridge...');
+  await runMcpBridge();
+  return;
+}
+
+async function runMcpBridge(): Promise<void> {
   const companionStartup = (async () => {
     const alreadyRunning = await isCompanionAlive();
     if (!alreadyRunning) {
@@ -2299,78 +2312,89 @@ export async function main(): Promise<void> {
   let stdinClosed = false;
   let pendingMessages = 0;
 
-  function exitIfIdle(): void {
-    if (!stdinClosed || pendingMessages > 0) {
-      return;
+  await new Promise<void>((resolve) => {
+    function exitIfIdle(): void {
+      if (!stdinClosed || pendingMessages > 0) {
+        return;
+      }
+
+      if (babysitterTimer) {
+        clearInterval(babysitterTimer);
+        babysitterTimer = null;
+      }
+      shuttingDown = true;
+      console.log('stdin closed, exiting');
+      resolve();
     }
 
-    console.log('stdin closed, exiting');
-    process.exit(0);
-  }
+    process.stdin.setEncoding('utf-8');
+    // Pipe-backed launches need stdin resumed explicitly or Node can exit before
+    // the first MCP request arrives.
+    process.stdin.resume();
+    process.stdin.on('data', async (chunk: string) => {
+      buffer += chunk;
 
-  process.stdin.setEncoding('utf-8');
-  // Pipe-backed launches need stdin resumed explicitly or Node can exit before
-  // the first MCP request arrives.
-  process.stdin.resume();
-  process.stdin.on('data', async (chunk: string) => {
-    buffer += chunk;
+      // Parse Content-Length framed messages
+      while (true) {
+        const headerEnd = buffer.indexOf('\r\n\r\n');
+        if (headerEnd === -1) break;
 
-    // Parse Content-Length framed messages
-    while (true) {
-      const headerEnd = buffer.indexOf('\r\n\r\n');
-      if (headerEnd === -1) break;
-
-      const headerBlock = buffer.slice(0, headerEnd);
-      const match = headerBlock.match(/Content-Length:\s*(\d+)/i);
-      if (!match) {
-        // Skip malformed header
-        buffer = buffer.slice(headerEnd + 4);
-        continue;
-      }
-
-      const contentLength = parseInt(match[1], 10);
-      const bodyStart = headerEnd + 4;
-
-      if (buffer.length < bodyStart + contentLength) {
-        // Incomplete body — wait for more data
-        break;
-      }
-
-      const body = buffer.slice(bodyStart, bodyStart + contentLength);
-      buffer = buffer.slice(bodyStart + contentLength);
-
-      try {
-        const msg = JSON.parse(body) as JsonRpcRequest;
-        pendingMessages += 1;
-        try {
-          await companionStartup;
-          const response = await dispatch(msg);
-          if (response) {
-            send(response);
-          }
-        } finally {
-          pendingMessages -= 1;
-          exitIfIdle();
+        const headerBlock = buffer.slice(0, headerEnd);
+        const match = headerBlock.match(/Content-Length:\s*(\d+)/i);
+        if (!match) {
+          // Skip malformed header
+          buffer = buffer.slice(headerEnd + 4);
+          continue;
         }
-      } catch (err) {
-        console.warn('Failed to parse MCP message:', err);
-        // Send parse error if we had an id somehow
-        send({
-          jsonrpc: '2.0',
-          id: null,
-          error: { code: -32700, message: 'Parse error' },
-        });
-      }
-    }
-  });
 
-  process.stdin.on('end', () => {
-    stdinClosed = true;
-    exitIfIdle();
+        const contentLength = parseInt(match[1], 10);
+        const bodyStart = headerEnd + 4;
+
+        if (buffer.length < bodyStart + contentLength) {
+          // Incomplete body — wait for more data
+          break;
+        }
+
+        const body = buffer.slice(bodyStart, bodyStart + contentLength);
+        buffer = buffer.slice(bodyStart + contentLength);
+
+        try {
+          const msg = JSON.parse(body) as JsonRpcRequest;
+          pendingMessages += 1;
+          try {
+            await companionStartup;
+            const response = await dispatch(msg);
+            if (response) {
+              send(response);
+            }
+          } finally {
+            pendingMessages -= 1;
+            exitIfIdle();
+          }
+        } catch (err) {
+          console.warn('Failed to parse MCP message:', err);
+          // Send parse error if we had an id somehow
+          send({
+            jsonrpc: '2.0',
+            id: null,
+            error: { code: -32700, message: 'Parse error' },
+          });
+        }
+      }
+    });
+
+    process.stdin.on('end', () => {
+      stdinClosed = true;
+      exitIfIdle();
+    });
   });
 }
 
 function isExecutedDirectly(importMetaUrl: string): boolean {
+  if (process.env.GNODE_RUNTIME === '1') {
+    return false;
+  }
+
   const entryPath = process.argv[1];
   if (!entryPath) {
     return false;

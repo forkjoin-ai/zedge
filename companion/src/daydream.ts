@@ -15,12 +15,12 @@
  */
 
 import { readFileSync, existsSync } from 'node:fs';
-import { infer } from './inference-bridge';
-import type { ChatCompletionRequest } from './inference-bridge';
-import { getZedgeConfig } from './config';
-import { voidMapStore } from './void-map-store';
-import { analyzeCodeEmotion, routeByEmotion } from './emotion-router';
-import { broadcastCandidates, broadcastCycleComplete, broadcastAccepted, broadcastRejected } from './daydream-annotations';
+import { infer } from "./inference-bridge.ts";
+import type { ChatCompletionRequest } from "./inference-bridge.ts";
+import { getZedgeConfig } from "./config.ts";
+import { voidMapStore } from "./void-map-store.ts";
+import { analyzeCodeEmotion, routeByEmotion } from "./emotion-router.ts";
+import { broadcastCandidates, broadcastCycleComplete, broadcastAccepted, broadcastRejected } from "./daydream-annotations.ts";
 
 // ---------------------------------------------------------------------------
 // Types

@@ -57,7 +57,7 @@ case "${ABS_ENTRY_PATH}" in
     ;;
   "${WORKSPACE_ROOT}/open-source/zedge/companion/src/mcp-stdio.ts")
     NODE_RUNTIME="$(resolve_node_runtime)"
-    exec "${NODE_RUNTIME}" "${WORKSPACE_ROOT}/open-source/gnosis/bin/gnode.js" run "${ENTRY_PATH}" "$@"
+    exec "${NODE_RUNTIME}" "${WORKSPACE_ROOT}/open-source/gnosis/bin/gnode.js" run "${ENTRY_PATH}" --export main "$@"
     ;;
   "${WORKSPACE_ROOT}/open-source/zedge/companion/src/companion-supervisor.ts"|\
   "${WORKSPACE_ROOT}/open-source/zedge/companion/src/gnosis-lsp.ts")

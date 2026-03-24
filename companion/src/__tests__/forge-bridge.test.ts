@@ -64,6 +64,21 @@ describe('ForgeBridge', () => {
     expect(names).toContain('app-two');
   });
 
+  test('Forge discovery keeps explicit .ts specifiers for native boot', async () => {
+    const discoverySource = Bun.file(
+      new URL('../../../../aeon-forge/src/deploy/discovery.ts', import.meta.url)
+    );
+    const wranglerCompatSource = Bun.file(
+      new URL('../../../../aeon-forge/src/deploy/wrangler-compat.ts', import.meta.url)
+    );
+    const discoveryText = await discoverySource.text();
+    const wranglerCompatText = await wranglerCompatSource.text();
+
+    expect(discoveryText).toContain("from './wrangler-compat.ts'");
+    expect(discoveryText).toContain("from './logger.ts'");
+    expect(wranglerCompatText).toContain("from './types.ts'");
+  });
+
   test('discovers zero projects in empty workspace', async () => {
     mkdirSync(TEST_DIR, { recursive: true });
 

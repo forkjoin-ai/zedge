@@ -119,7 +119,7 @@ export async function runTopology(
   try {
     // Compile with Betty compiler
     const { BettyCompiler } = await import(
-      '../../../gnosis/src/betty/compiler'
+      '@a0n/gnosis/betty/compiler'
     );
     const compiler = new BettyCompiler();
     const parseResult = compiler.parse(content);
@@ -159,7 +159,7 @@ export async function runTopology(
     // For TypeScript files, use the ts-check path
     if (ext === '.ts' || ext === '.tsx') {
       const { checkTypeScriptWithGnosis } = await import(
-        '../../../gnosis/src/ts-check'
+        '@a0n/gnosis/ts-check'
       );
       const tsResult = await checkTypeScriptWithGnosis(content, fullPath);
 

@@ -1,4 +1,4 @@
-import { formatChatPrompt } from '../../../aether/src/config/chat-templates';
+import { formatChatPrompt } from "../../../aether/src/config/chat-templates.ts";
 
 export interface LocalChatMessage {
   role: 'system' | 'user' | 'assistant';

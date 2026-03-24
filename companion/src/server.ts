@@ -10,11 +10,11 @@ import { join as pathJoin, dirname as pathDirname } from 'path';
 import { fileURLToPath } from 'url';
 import {
   XGnosisServer,
-  resolveGnosisUringCommand,
   type RequestPayload,
   type ResponsePayload,
   type XGnosisControlSurface,
-} from '@a0n/x-gnosis';
+} from '@a0n/x-gnosis/server';
+import { resolveGnosisUringCommand } from '@a0n/x-gnosis/gnosis-uring-command';
 
 import {
   infer,
@@ -25,52 +25,52 @@ import {
   createSSEProxyStream,
   getRecentLogs,
   clearLogs,
-} from './inference-bridge';
-import type { TierAttempt } from './inference-bridge';
-import { aetherLocalRuntime } from './aether-local-runtime';
-import { getOwnedCompanionActivity } from './companion-activity';
-import { fimCache, fimCacheKey, speculativePrefetch } from './fim-cache';
-import { joinPool, leavePool, getPoolStatus } from './compute-node';
-import { getRecentFeedback, recordFeedback } from './feedback-log';
-import { getCompanionPort, getZedgeConfig } from './config';
-import { handleBabelfishRequest } from './babelfish-routes';
+} from "./inference-bridge.ts";
+import type { TierAttempt } from "./inference-bridge.ts";
+import { aetherLocalRuntime } from "./aether-local-runtime.ts";
+import { getOwnedCompanionActivity } from "./companion-activity.ts";
+import { fimCache, fimCacheKey, speculativePrefetch } from "./fim-cache.ts";
+import { joinPool, leavePool, getPoolStatus } from "./compute-node.ts";
+import { getRecentFeedback, recordFeedback } from "./feedback-log.ts";
+import { getCompanionPort, getZedgeConfig } from "./config.ts";
+import { handleBabelfishRequest } from "./babelfish-routes.ts";
 import {
   startMesh,
   stopMesh,
   getMeshStatus,
   handlePeerRequest,
-} from './p2p-mesh';
-import { login, logout, whoami } from './auth';
+} from "./p2p-mesh.ts";
+import { login, logout, whoami } from "./auth.ts";
 import {
   getTierHealth,
   getProbeResults,
   getFastestTier,
-} from './latency-probe';
-import { runInferenceSelfTest } from './selftest';
-import { createResilientStream, getActiveSessions } from './stream-reconnect';
-import { superinfer, recursiveSuperinfer } from './superinference';
-import type { CollapseStrategy, RecursiveRequest } from './superinference';
+} from "./latency-probe.ts";
+import { runInferenceSelfTest } from "./selftest.ts";
+import { createResilientStream, getActiveSessions } from "./stream-reconnect.ts";
+import { superinfer, recursiveSuperinfer } from "./superinference.ts";
+import type { CollapseStrategy, RecursiveRequest } from "./superinference.ts";
 import {
   createSession,
   getSession,
   deleteSession,
   agentTurn,
-} from './acp-agent';
-import type { AgentCapabilities } from './acp-agent';
+} from "./acp-agent.ts";
+import type { AgentCapabilities } from "./acp-agent.ts";
 import {
   encode as binaryEncode,
   decode as binaryDecode,
   isValidFrame,
   CONTENT_TYPE as BINARY_CONTENT_TYPE,
-} from './binary-protocol';
-import type { ChatCompletionRequest } from './inference-bridge';
-import type { ForgeBridge } from './forge-bridge';
-import type { CeraBridge } from './cera-bridge';
+} from "./binary-protocol.ts";
+import type { ChatCompletionRequest } from "./inference-bridge.ts";
+import type { ForgeBridge } from "./forge-bridge.ts";
+import type { CeraBridge } from "./cera-bridge.ts";
 import {
   superinferWithPreset,
   getCompositionPreset,
   COMPOSITION_PRESETS,
-} from './superinference';
+} from "./superinference.ts";
 // Gnosis modules -- lazy-loaded to avoid blocking the event loop at startup.
 // The file watcher, incremental checker, and betty compiler are CPU-heavy, and
 // scanning the entire workspace directory on import would delay the companion
@@ -87,9 +87,9 @@ let _gnosisInitStarted = false;
 async function ensureGnosisModules() {
   if (_gnosisModules) return _gnosisModules;
   const [betty, tsCheck, tsAutofix] = await Promise.all([
-    import('../../../gnosis/src/betty/compiler'),
-    import('../../../gnosis/src/ts-check'),
-    import('../../../gnosis/src/ts-check-autofix'),
+    import('@a0n/gnosis/betty/compiler'),
+    import('@a0n/gnosis/ts-check'),
+    import('@a0n/gnosis/ts-check-autofix'),
   ]);
   _gnosisModules = {
     BettyCompiler: betty.BettyCompiler,
@@ -104,7 +104,7 @@ export function startGnosisWatcher(): void {
   if (_gnosisInitStarted) return;
   _gnosisInitStarted = true;
 
-  import('../../../gnosis/src/ts-check-watcher').then(({ GnosisFileWatcher }) => {
+  import('@a0n/gnosis/ts-check-watcher').then(({ GnosisFileWatcher }) => {
     _gnosisWatcher = new GnosisFileWatcher({
       debounceMs: 500,
       enableAutofix: true,
@@ -132,7 +132,7 @@ export function startGnosisWatcher(): void {
 
         // Auto-refresh code index on file change
         if (event.filePath) {
-          import('./code-index').then(({ codeIndex }) => {
+          import("./code-index.ts").then(({ codeIndex }) => {
             void codeIndex.reindexFile(event.filePath);
           }).catch(() => {});
         }
@@ -145,22 +145,22 @@ export function startGnosisWatcher(): void {
     console.warn(`[zedge] Gnosis file watcher failed to start: ${err}`);
   });
 }
-import type { VfsBridge } from './vfs-bridge';
-import type { CollabBridge, CollabPresenceUpdate } from './collab-bridge';
-import type { KernelBridge } from './kernel-bridge';
+import type { VfsBridge } from "./vfs-bridge.ts";
+import type { CollabBridge, CollabPresenceUpdate } from "./collab-bridge.ts";
+import type { KernelBridge } from "./kernel-bridge.ts";
 import type {
   CapacitorBridge,
   ProjectionType,
   CodeBlock,
-} from './capacitor-bridge';
-import type { CrdtBridge } from './crdt-bridge';
-import { generateInvite, parseRoomUcan, isRoomUcanExpired } from './ucan-scope';
-import type { ZedgeAccessMode } from './ucan-scope';
-import type { UcanBridge, AgentMode } from './ucan-bridge';
+} from "./capacitor-bridge.ts";
+import type { CrdtBridge } from "./crdt-bridge.ts";
+import { generateInvite, parseRoomUcan, isRoomUcanExpired } from "./ucan-scope.ts";
+import type { ZedgeAccessMode } from "./ucan-scope.ts";
+import type { UcanBridge, AgentMode } from "./ucan-bridge.ts";
 import type { UcanCapability } from '@affectively/auth';
-import { AgentParticipant } from './agent-participant';
-import type { AgentEdit, AgentReplacement } from './agent-participant';
-import { getMarketStatus } from './compute-node';
+import { AgentParticipant } from "./agent-participant.ts";
+import type { AgentEdit, AgentReplacement } from "./agent-participant.ts";
+import { getMarketStatus } from "./compute-node.ts";
 
 // --- Shell exec helper (replaces Bun.spawn) ---
 
@@ -747,7 +747,7 @@ export async function handleWebRequest(req: Request): Promise<Response> {
   // ==================== Code Index ====================
 
   if (path === '/code-index/search' && req.method === 'POST') {
-    const { codeIndex } = await import('./code-index');
+    const { codeIndex } = await import("./code-index.ts");
     const body = (await req.json()) as { query?: string; topK?: number };
     if (!body.query) return jsonResponse({ error: 'query is required' }, 400);
     const results = await codeIndex.search(body.query, body.topK ?? 5);
@@ -765,7 +765,7 @@ export async function handleWebRequest(req: Request): Promise<Response> {
   }
 
   if (path === '/code-index/related' && req.method === 'GET') {
-    const { codeIndex } = await import('./code-index');
+    const { codeIndex } = await import("./code-index.ts");
     const filePath = url.searchParams.get('file');
     if (!filePath) return jsonResponse({ error: 'file query param is required' }, 400);
     const results = await codeIndex.getRelatedContext(filePath, 5);
@@ -783,7 +783,7 @@ export async function handleWebRequest(req: Request): Promise<Response> {
   }
 
   if (path === '/code-index/stats' && req.method === 'GET') {
-    const { codeIndex } = await import('./code-index');
+    const { codeIndex } = await import("./code-index.ts");
     return jsonResponse(codeIndex.getStats());
   }
 
@@ -924,7 +924,7 @@ export async function handleWebRequest(req: Request): Promise<Response> {
   }
 
   if (path === '/gnosis/viz' && req.method === 'GET') {
-    const { default: serveGnosisViz } = await import('./gnosis-viz');
+    const { default: serveGnosisViz } = await import("./gnosis-viz.ts");
     return serveGnosisViz(url);
   }
 
@@ -1152,7 +1152,7 @@ export async function handleWebRequest(req: Request): Promise<Response> {
     try {
       const lastUserMsg = [...messages].reverse().find((m) => m.role === 'user');
       if (lastUserMsg && lastUserMsg.content.length > 10) {
-        const { codeIndex } = await import('./code-index');
+        const { codeIndex } = await import("./code-index.ts");
         const stats = codeIndex.getStats();
         if (stats.indexedBlocks > 0) {
           const results = await codeIndex.search(lastUserMsg.content, 5);
@@ -1314,7 +1314,7 @@ export async function handleWebRequest(req: Request): Promise<Response> {
     // Auto-learn from this conversation (non-blocking)
     const responseContent = (data as Record<string, unknown> & { choices?: Array<{ message?: { content?: string } }> })?.choices?.[0]?.message?.content ?? '';
     if (responseContent) {
-      import('./inference-bridge').then(({ autoLearnFromInference }) => {
+      import("./inference-bridge.ts").then(({ autoLearnFromInference }) => {
         autoLearnFromInference(request, responseContent, result.tier);
       }).catch(() => {});
     }
@@ -1631,7 +1631,7 @@ export async function handleWebRequest(req: Request): Promise<Response> {
     if (!body.instruction) {
       return jsonResponse({ error: 'instruction is required' }, 400);
     }
-    const { executeMultiFileEdit } = await import('./multi-file-agent');
+    const { executeMultiFileEdit } = await import("./multi-file-agent.ts");
     const result = await executeMultiFileEdit({
       instruction: body.instruction,
       workspacePath: process.env.AEON_ROOT || process.cwd(),
@@ -1648,8 +1648,8 @@ export async function handleWebRequest(req: Request): Promise<Response> {
     if (!body.task || !body.roles?.length) {
       return jsonResponse({ error: 'task and roles[] are required' }, 400);
     }
-    const { AgentSwarm } = await import('./agent-swarm');
-    const { CrdtBridge } = await import('./crdt-bridge');
+    const { AgentSwarm } = await import("./agent-swarm.ts");
+    const { CrdtBridge } = await import("./crdt-bridge.ts");
     // Create a lightweight swarm (no full CRDT init needed for status tracking)
     const swarm = new AgentSwarm({} as InstanceType<typeof CrdtBridge>);
     try {
@@ -1665,8 +1665,8 @@ export async function handleWebRequest(req: Request): Promise<Response> {
   }
 
   if (path === '/agent/swarm/roles' && req.method === 'GET') {
-    const { AgentSwarm } = await import('./agent-swarm');
-    const { AGENT_ROLES } = await import('./agent-roles');
+    const { AgentSwarm } = await import("./agent-swarm.ts");
+    const { AGENT_ROLES } = await import("./agent-roles.ts");
     return jsonResponse({
       roles: AgentSwarm.listRoles(),
       details: Object.values(AGENT_ROLES).map((r) => ({
@@ -1683,7 +1683,7 @@ export async function handleWebRequest(req: Request): Promise<Response> {
   // ==================== Theme Engine ====================
 
   if (path === '/theme/current' && req.method === 'GET') {
-    const { getThemePalette } = await import('./theme-engine');
+    const { getThemePalette } = await import("./theme-engine.ts");
     const filePath = url.searchParams.get('file') ?? undefined;
     return jsonResponse(getThemePalette(filePath));
   }
@@ -1700,7 +1700,7 @@ export async function handleWebRequest(req: Request): Promise<Response> {
     if (!body.agent_name || !body.task) {
       return jsonResponse({ error: 'agent_name and task are required' }, 400);
     }
-    const { startCloudAgent } = await import('./cloud-agent-session');
+    const { startCloudAgent } = await import("./cloud-agent-session.ts");
     const session = await startCloudAgent({
       agentName: body.agent_name,
       task: body.task,
@@ -1711,14 +1711,14 @@ export async function handleWebRequest(req: Request): Promise<Response> {
   }
 
   if (path === '/cloud-agent/sessions' && req.method === 'GET') {
-    const { listSessions } = await import('./cloud-agent-session');
+    const { listSessions } = await import("./cloud-agent-session.ts");
     return jsonResponse({ sessions: listSessions() });
   }
 
   if (path.startsWith('/cloud-agent/session/') && req.method === 'GET') {
     const sessionId = path.split('/').pop();
     if (!sessionId) return jsonResponse({ error: 'session ID required' }, 400);
-    const { getSession } = await import('./cloud-agent-session');
+    const { getSession } = await import("./cloud-agent-session.ts");
     const session = getSession(sessionId);
     if (!session) return jsonResponse({ error: 'Session not found' }, 404);
     return jsonResponse(session);
@@ -1727,7 +1727,7 @@ export async function handleWebRequest(req: Request): Promise<Response> {
   if (path.startsWith('/cloud-agent/stream/') && req.method === 'GET') {
     const sessionId = path.split('/').pop();
     if (!sessionId) return jsonResponse({ error: 'session ID required' }, 400);
-    const { createSessionStream } = await import('./cloud-agent-session');
+    const { createSessionStream } = await import("./cloud-agent-session.ts");
     return new Response(createSessionStream(sessionId), {
       headers: {
         'Content-Type': 'text/event-stream',
@@ -1741,7 +1741,7 @@ export async function handleWebRequest(req: Request): Promise<Response> {
   if (path.startsWith('/cloud-agent/cancel/') && req.method === 'POST') {
     const sessionId = path.split('/').pop();
     if (!sessionId) return jsonResponse({ error: 'session ID required' }, 400);
-    const { cancelSession } = await import('./cloud-agent-session');
+    const { cancelSession } = await import("./cloud-agent-session.ts");
     return jsonResponse({ cancelled: cancelSession(sessionId) });
   }
 
@@ -1754,7 +1754,7 @@ export async function handleWebRequest(req: Request): Promise<Response> {
       strategy?: 'cannon' | 'linear';
     };
     if (!body.file_path) return jsonResponse({ error: 'file_path is required' }, 400);
-    const { runTopology } = await import('./topology-runner');
+    const { runTopology } = await import("./topology-runner.ts");
     const result = await runTopology({
       filePath: body.file_path,
       input: body.input,
@@ -1764,7 +1764,7 @@ export async function handleWebRequest(req: Request): Promise<Response> {
   }
 
   if (path === '/gnosis/run/stream' && req.method === 'GET') {
-    const { createRunStream } = await import('./topology-runner');
+    const { createRunStream } = await import("./topology-runner.ts");
     return new Response(createRunStream(), {
       headers: {
         'Content-Type': 'text/event-stream',
@@ -1778,12 +1778,12 @@ export async function handleWebRequest(req: Request): Promise<Response> {
   // ==================== Observatory ====================
 
   if (path === '/observatory' && req.method === 'GET') {
-    const { getObservatorySnapshot } = await import('./observatory');
+    const { getObservatorySnapshot } = await import("./observatory.ts");
     return jsonResponse(await getObservatorySnapshot());
   }
 
   if (path === '/observatory/stream' && req.method === 'GET') {
-    const { createObservatoryStream } = await import('./observatory');
+    const { createObservatoryStream } = await import("./observatory.ts");
     return new Response(createObservatoryStream(), {
       headers: {
         'Content-Type': 'text/event-stream',
@@ -1795,18 +1795,18 @@ export async function handleWebRequest(req: Request): Promise<Response> {
   }
 
   if (path === '/observatory/trends' && req.method === 'GET') {
-    const { computeTrends } = await import('./observatory-history');
+    const { computeTrends } = await import("./observatory-history.ts");
     return jsonResponse({ trends: computeTrends() });
   }
 
   if (path === '/observatory/void-boundary' && req.method === 'GET') {
-    const { computeSystemVoidBoundary } = await import('./observatory-history');
+    const { computeSystemVoidBoundary } = await import("./observatory-history.ts");
     return jsonResponse(computeSystemVoidBoundary());
   }
 
   if (path === '/observatory/history' && req.method === 'GET') {
     const limitParam = url.searchParams.get('limit');
-    const { getHistory, getHistorySize } = await import('./observatory-history');
+    const { getHistory, getHistorySize } = await import("./observatory-history.ts");
     const limit = limitParam ? parseInt(limitParam, 10) : 50;
     return jsonResponse({ entries: getHistory(limit), total: getHistorySize() });
   }
@@ -1814,12 +1814,12 @@ export async function handleWebRequest(req: Request): Promise<Response> {
   // ==================== Federated Void Sync ====================
 
   if (path === '/void-sync/status' && req.method === 'GET') {
-    const { federatedVoidSync } = await import('./federated-void-sync');
+    const { federatedVoidSync } = await import("./federated-void-sync.ts");
     return jsonResponse(federatedVoidSync.getStatus());
   }
 
   if (path === '/void-sync/handshake' && req.method === 'POST') {
-    const { federatedVoidSync } = await import('./federated-void-sync');
+    const { federatedVoidSync } = await import("./federated-void-sync.ts");
     const body = (await req.json()) as { target_device_id?: string; ucan_token?: string };
     if (!body.target_device_id || !body.ucan_token) {
       return jsonResponse({ error: 'target_device_id and ucan_token required' }, 400);
@@ -1829,7 +1829,7 @@ export async function handleWebRequest(req: Request): Promise<Response> {
   }
 
   if (path === '/void-sync/accept' && req.method === 'POST') {
-    const { federatedVoidSync } = await import('./federated-void-sync');
+    const { federatedVoidSync } = await import("./federated-void-sync.ts");
     const body = (await req.json()) as { from_device_id?: string; ucan_token?: string };
     if (!body.from_device_id || !body.ucan_token) {
       return jsonResponse({ error: 'from_device_id and ucan_token required' }, 400);
@@ -1839,7 +1839,7 @@ export async function handleWebRequest(req: Request): Promise<Response> {
   }
 
   if (path === '/void-sync/receive' && req.method === 'POST') {
-    const { federatedVoidSync } = await import('./federated-void-sync');
+    const { federatedVoidSync } = await import("./federated-void-sync.ts");
     const body = (await req.json()) as { device_id?: string; deficit?: number; rounds?: number; model_id?: string };
     if (body.device_id === undefined || body.deficit === undefined) {
       return jsonResponse({ error: 'device_id and deficit required' }, 400);
@@ -1856,7 +1856,7 @@ export async function handleWebRequest(req: Request): Promise<Response> {
   }
 
   if (path === '/void-sync/handshakes' && req.method === 'GET') {
-    const { federatedVoidSync } = await import('./federated-void-sync');
+    const { federatedVoidSync } = await import("./federated-void-sync.ts");
     return jsonResponse({ handshakes: federatedVoidSync.getHandshakes() });
   }
 
@@ -1864,19 +1864,19 @@ export async function handleWebRequest(req: Request): Promise<Response> {
   if (path === '/void-sync/connect' && req.method === 'POST') {
     const body = (await req.json()) as { workspace_id?: string };
     if (!body.workspace_id) return jsonResponse({ error: 'workspace_id required' }, 400);
-    const { connectVoidSyncRoom } = await import('./void-sync-transport');
+    const { connectVoidSyncRoom } = await import("./void-sync-transport.ts");
     const room = await connectVoidSyncRoom(body.workspace_id);
     return jsonResponse(room);
   }
 
   if (path === '/void-sync/disconnect' && req.method === 'POST') {
-    const { disconnectVoidSyncRoom } = await import('./void-sync-transport');
+    const { disconnectVoidSyncRoom } = await import("./void-sync-transport.ts");
     disconnectVoidSyncRoom();
     return jsonResponse({ disconnected: true });
   }
 
   if (path === '/void-sync/room' && req.method === 'GET') {
-    const { getRoomStatus } = await import('./void-sync-transport');
+    const { getRoomStatus } = await import("./void-sync-transport.ts");
     return jsonResponse(getRoomStatus());
   }
 
@@ -1885,7 +1885,7 @@ export async function handleWebRequest(req: Request): Promise<Response> {
     const startLine = url.searchParams.get('start');
     const endLine = url.searchParams.get('end');
     if (!filePath) return jsonResponse({ error: 'file query param required' }, 400);
-    const { computeLineScopedDeficit, getFileDeficitMap } = await import('./void-sync-transport');
+    const { computeLineScopedDeficit, getFileDeficitMap } = await import("./void-sync-transport.ts");
     if (startLine && endLine) {
       const deficit = computeLineScopedDeficit(filePath, [parseInt(startLine, 10), parseInt(endLine, 10)]);
       return jsonResponse(deficit);
@@ -1897,12 +1897,12 @@ export async function handleWebRequest(req: Request): Promise<Response> {
   // ==================== Agent Breeding ====================
 
   if (path === '/breeding/status' && req.method === 'GET') {
-    const { agentBreeding } = await import('./agent-breeding');
+    const { agentBreeding } = await import("./agent-breeding.ts");
     return jsonResponse(agentBreeding.getStatus());
   }
 
   if (path === '/breeding/run' && req.method === 'POST') {
-    const { agentBreeding } = await import('./agent-breeding');
+    const { agentBreeding } = await import("./agent-breeding.ts");
     try {
       const cycle = await agentBreeding.runCycle();
       return jsonResponse(cycle);
@@ -1912,7 +1912,7 @@ export async function handleWebRequest(req: Request): Promise<Response> {
   }
 
   if (path === '/breeding/stream' && req.method === 'GET') {
-    const { createBreedingStream } = await import('./agent-breeding');
+    const { createBreedingStream } = await import("./agent-breeding.ts");
     return new Response(createBreedingStream(), {
       headers: {
         'Content-Type': 'text/event-stream',
@@ -1996,12 +1996,12 @@ export async function handleWebRequest(req: Request): Promise<Response> {
   // ==================== Neural Bridge ====================
 
   if (path === '/neural/status' && req.method === 'GET') {
-    const { neuralBridge } = await import('./neural-bridge');
+    const { neuralBridge } = await import("./neural-bridge.ts");
     return jsonResponse(neuralBridge.getStatus());
   }
 
   if (path === '/neural/steering' && req.method === 'GET') {
-    const { neuralBridge } = await import('./neural-bridge');
+    const { neuralBridge } = await import("./neural-bridge.ts");
     return jsonResponse({
       steering: neuralBridge.getLearnedSteering(),
       prompt: neuralBridge.getLearnedSteeringPrompt(),
@@ -2009,7 +2009,7 @@ export async function handleWebRequest(req: Request): Promise<Response> {
   }
 
   if (path === '/neural/categories' && req.method === 'GET') {
-    const { neuralBridge } = await import('./neural-bridge');
+    const { neuralBridge } = await import("./neural-bridge.ts");
     return jsonResponse({ categories: neuralBridge.getLearnedSteering() });
   }
 
@@ -2177,7 +2177,7 @@ export async function handleWebRequest(req: Request): Promise<Response> {
 
   // Daydream annotation stream -- live suggestions pushed to editor
   if (path === '/cera/daydream/annotations' && req.method === 'GET') {
-    const { createAnnotationStream, getAnnotationClientCount } = await import('./daydream-annotations');
+    const { createAnnotationStream, getAnnotationClientCount } = await import("./daydream-annotations.ts");
     return new Response(createAnnotationStream(), {
       headers: {
         'Content-Type': 'text/event-stream',
@@ -2189,8 +2189,8 @@ export async function handleWebRequest(req: Request): Promise<Response> {
   }
 
   if (path === '/cera/daydream/annotations/diagnostics' && req.method === 'GET') {
-    const { daydreamEngine } = await import('./daydream');
-    const { convertToDiagnostics } = await import('./daydream-annotations');
+    const { daydreamEngine } = await import("./daydream.ts");
+    const { convertToDiagnostics } = await import("./daydream-annotations.ts");
     const fileParam = url.searchParams.get('file');
     if (!fileParam) return jsonResponse({ error: 'file query param required' }, 400);
     const candidates = daydreamEngine.getCandidates().filter((c) => c.filePath === fileParam);
@@ -2200,17 +2200,17 @@ export async function handleWebRequest(req: Request): Promise<Response> {
   }
 
   if (path === '/cera/daydream/status' && req.method === 'GET') {
-    const { daydreamEngine } = await import('./daydream');
+    const { daydreamEngine } = await import("./daydream.ts");
     return jsonResponse(daydreamEngine.getStatus());
   }
 
   if (path === '/cera/daydream/candidates' && req.method === 'GET') {
-    const { daydreamEngine } = await import('./daydream');
+    const { daydreamEngine } = await import("./daydream.ts");
     return jsonResponse(daydreamEngine.getCandidates());
   }
 
   if (path === '/cera/daydream/dream' && req.method === 'POST') {
-    const { daydreamEngine } = await import('./daydream');
+    const { daydreamEngine } = await import("./daydream.ts");
     const body = (await req.json()) as { file_path?: string };
     const cycle = await daydreamEngine.triggerDream(body.file_path);
     return jsonResponse({
@@ -2220,7 +2220,7 @@ export async function handleWebRequest(req: Request): Promise<Response> {
   }
 
   if (path === '/cera/daydream/accept' && req.method === 'POST') {
-    const { daydreamEngine } = await import('./daydream');
+    const { daydreamEngine } = await import("./daydream.ts");
     const body = (await req.json()) as { id?: string; apply?: boolean };
     if (!body.id) return jsonResponse({ error: 'id is required' }, 400);
     const candidate = daydreamEngine.acceptCandidate(body.id);
@@ -2230,7 +2230,7 @@ export async function handleWebRequest(req: Request): Promise<Response> {
     let editResult = null;
     if (body.apply !== false) {
       try {
-        const { executeMultiFileEdit } = await import('./multi-file-agent');
+        const { executeMultiFileEdit } = await import("./multi-file-agent.ts");
         editResult = await executeMultiFileEdit({
           instruction: candidate.suggestion,
           workspacePath: process.env.AEON_ROOT || process.cwd(),
@@ -2245,7 +2245,7 @@ export async function handleWebRequest(req: Request): Promise<Response> {
   }
 
   if (path === '/cera/daydream/reject' && req.method === 'POST') {
-    const { daydreamEngine } = await import('./daydream');
+    const { daydreamEngine } = await import("./daydream.ts");
     const body = (await req.json()) as { id?: string };
     if (!body.id) return jsonResponse({ error: 'id is required' }, 400);
     const candidate = daydreamEngine.rejectCandidate(body.id);
@@ -2254,7 +2254,7 @@ export async function handleWebRequest(req: Request): Promise<Response> {
   }
 
   if (path === '/cera/daydream/activity' && req.method === 'POST') {
-    const { daydreamEngine } = await import('./daydream');
+    const { daydreamEngine } = await import("./daydream.ts");
     const body = (await req.json()) as { file_path?: string };
     daydreamEngine.notifyActivity(body.file_path);
     return jsonResponse({ notified: true });
@@ -2262,24 +2262,24 @@ export async function handleWebRequest(req: Request): Promise<Response> {
 
   // Phase 3 wiring status
   if (path === '/phase3/status' && req.method === 'GET') {
-    const { getPhase3Status } = await import('./wire-phase3');
+    const { getPhase3Status } = await import("./wire-phase3.ts");
     return jsonResponse(getPhase3Status());
   }
 
   if (path === '/phase3/wire' && req.method === 'POST') {
-    const { wirePhase3 } = await import('./wire-phase3');
+    const { wirePhase3 } = await import("./wire-phase3.ts");
     const status = await wirePhase3();
     return jsonResponse(status);
   }
 
   // Void Map endpoints -- persistent rejection memory
   if (path === '/void-map/status' && req.method === 'GET') {
-    const { voidMapStore } = await import('./void-map-store');
+    const { voidMapStore } = await import("./void-map-store.ts");
     return jsonResponse(voidMapStore.getStatus());
   }
 
   if (path === '/void-map/query' && req.method === 'GET') {
-    const { voidMapStore } = await import('./void-map-store');
+    const { voidMapStore } = await import("./void-map-store.ts");
     const fileParam = url.searchParams.get('file') ?? undefined;
     const categoryParam = url.searchParams.get('category') ?? undefined;
     const limitParam = url.searchParams.get('limit');
@@ -2292,19 +2292,19 @@ export async function handleWebRequest(req: Request): Promise<Response> {
   }
 
   if (path === '/void-map/steering' && req.method === 'GET') {
-    const { voidMapStore } = await import('./void-map-store');
+    const { voidMapStore } = await import("./void-map-store.ts");
     const fileParam = url.searchParams.get('file') ?? undefined;
     return jsonResponse(voidMapStore.getSteeringVector(fileParam));
   }
 
   if (path === '/void-map/compact' && req.method === 'POST') {
-    const { voidMapStore } = await import('./void-map-store');
+    const { voidMapStore } = await import("./void-map-store.ts");
     const removed = voidMapStore.compact();
     return jsonResponse({ compacted: true, removedEntries: removed });
   }
 
   if (path === '/void-map/export' && req.method === 'POST') {
-    const { exportForTraining } = await import('./void-map-export');
+    const { exportForTraining } = await import("./void-map-export.ts");
     const body = (await req.json()) as { file_path?: string; category?: string };
     const result = exportForTraining({
       filePath: body.file_path,
@@ -2314,7 +2314,7 @@ export async function handleWebRequest(req: Request): Promise<Response> {
   }
 
   if (path === '/void-map/export/records' && req.method === 'GET') {
-    const { exportRecords } = await import('./void-map-export');
+    const { exportRecords } = await import("./void-map-export.ts");
     const fileParam = url.searchParams.get('file') ?? undefined;
     const categoryParam = url.searchParams.get('category') ?? undefined;
     const records = exportRecords({ filePath: fileParam, category: categoryParam });
@@ -2325,7 +2325,7 @@ export async function handleWebRequest(req: Request): Promise<Response> {
   if (path.startsWith('/emotion/profile') && req.method === 'GET') {
     const filePath = url.searchParams.get('file');
     if (!filePath) return jsonResponse({ error: 'file query param required' }, 400);
-    const { analyzeCodeEmotion, routeByEmotion } = await import('./emotion-router');
+    const { analyzeCodeEmotion, routeByEmotion } = await import("./emotion-router.ts");
     try {
       const { readFileSync } = await import('fs');
       const { resolve } = await import('path');
@@ -2341,12 +2341,12 @@ export async function handleWebRequest(req: Request): Promise<Response> {
 
   // Engram store endpoints
   if (path === '/engram/status' && req.method === 'GET') {
-    const { getEngramStore } = await import('./engram-store');
+    const { getEngramStore } = await import("./engram-store.ts");
     return jsonResponse(getEngramStore().getStatus());
   }
 
   if (path === '/engram/recall' && req.method === 'POST') {
-    const { getEngramStore } = await import('./engram-store');
+    const { getEngramStore } = await import("./engram-store.ts");
     const body = (await req.json()) as { query?: string; top_k?: number };
     if (!body.query) return jsonResponse({ error: 'query is required' }, 400);
     const results = await getEngramStore().recall(body.query, body.top_k ?? 5);
@@ -2354,7 +2354,7 @@ export async function handleWebRequest(req: Request): Promise<Response> {
   }
 
   if (path === '/engram/remember' && req.method === 'POST') {
-    const { getEngramStore } = await import('./engram-store');
+    const { getEngramStore } = await import("./engram-store.ts");
     const body = (await req.json()) as { type?: string; content?: string; file_path?: string };
     if (!body.content) return jsonResponse({ error: 'content is required' }, 400);
     const engram = await getEngramStore().remember({
@@ -2366,7 +2366,7 @@ export async function handleWebRequest(req: Request): Promise<Response> {
   }
 
   if (path === '/engram/forget' && req.method === 'DELETE') {
-    const { getEngramStore } = await import('./engram-store');
+    const { getEngramStore } = await import("./engram-store.ts");
     const id = url.searchParams.get('id');
     if (!id) return jsonResponse({ error: 'id query param required' }, 400);
     const removed = getEngramStore().forget(id);

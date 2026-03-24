@@ -9,7 +9,7 @@
 import { join } from 'node:path';
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { spawn as nodeSpawn } from 'node:child_process';
-import { resolveTypeScriptEntrypointCommand } from './runtime-command';
+import { resolveTypeScriptEntrypointCommand } from "./runtime-command.ts";
 
 /** Run a shell command and collect output */
 function execShellForge(
@@ -35,14 +35,14 @@ import type {
   ForgoProcessState,
   ForgoProjectConfig,
   ForgoDeployEvent,
-} from '../../../aeon-forge/src/deploy/types';
-import { discoverProjects } from '../../../aeon-forge/src/deploy/discovery';
-import { createLogger } from '../../../aeon-forge/src/deploy/logger';
+} from "../../../aeon-forge/src/deploy/types.ts";
+import { discoverProjects } from "../../../aeon-forge/src/deploy/discovery.ts";
+import { createLogger } from "../../../aeon-forge/src/deploy/logger.ts";
 import type {
   ForgeEventBus,
   ExtendedForgoEvent,
   EventHandler,
-} from '../../../aeon-forge/src/deploy/event-bus';
+} from "../../../aeon-forge/src/deploy/event-bus.ts";
 
 const log = createLogger('zedge-forge');
 

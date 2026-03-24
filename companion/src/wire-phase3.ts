@@ -10,10 +10,10 @@
  * Every rejection trains the local model. Every conversation builds memory.
  */
 
-import { voidMapStore, type VoidMapEntry } from './void-map-store';
-import { convertToRejectionRecords } from './void-map-export';
-import { getEngramStore } from './engram-store';
-import { neuralBridge } from './neural-bridge';
+import { voidMapStore, type VoidMapEntry } from "./void-map-store.ts";
+import { convertToRejectionRecords } from "./void-map-export.ts";
+import { getEngramStore } from "./engram-store.ts";
+import { neuralBridge } from "./neural-bridge.ts";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -115,7 +115,7 @@ export async function wirePhase3(): Promise<Phase3Status> {
   try {
     const store = getEngramStore();
     // Wire embedding function for semantic recall
-    const { computeEmbedding } = await import('./code-index').then(
+    const { computeEmbedding } = await import("./code-index.ts").then(
       (m) => m as unknown as { computeEmbedding: (text: string) => Promise<Float32Array | null> }
     ).catch(() => ({ computeEmbedding: null }));
     if (computeEmbedding) {

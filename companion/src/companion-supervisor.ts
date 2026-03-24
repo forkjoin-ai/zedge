@@ -3,19 +3,16 @@
 import { spawn, type ChildProcess } from 'child_process';
 import { dirname, resolve } from 'path';
 import { fileURLToPath } from 'url';
-import { getCompanionPort } from './config';
+import { getCompanionPort } from "./config.ts";
 import {
   COMPANION_STOP_TIMEOUT_MS,
   CONSECUTIVE_FAILURES_BEFORE_RESTART,
   HEALTH_CHECK_INTERVAL_MS,
   HEALTH_CHECK_TIMEOUT_MS,
   decideCompanionRestart,
-} from './companion-restart-policy';
-import { getOwnedCompanionActivity } from './companion-activity';
-import { resolveTypeScriptEntrypointCommand } from './runtime-command';
-
-const __dirname = dirname(fileURLToPath(import.meta.url));
-const COMPANION_ENTRY = resolve(__dirname, 'index.ts');
+} from "./companion-restart-policy.ts";
+import { getOwnedCompanionActivity } from "./companion-activity.ts";
+import { resolveTypeScriptEntrypointCommand } from "./runtime-command.ts";
 
 let childProc: ChildProcess | null = null;
 let supervisorTimer: ReturnType<typeof setInterval> | null = null;
@@ -26,6 +23,13 @@ let restartInFlight: Promise<boolean> | null = null;
 let suppressExitRestart = false;
 let shuttingDown = false;
 let healthCheckInFlight = false;
+
+function getCompanionEntry(): string {
+  return resolve(
+    process.env.AEON_ROOT ?? process.cwd(),
+    'open-source/zedge/companion/src/index.ts'
+  );
+}
 
 function getCompanionBase(): string {
   return `http://127.0.0.1:${getCompanionPort()}`;
@@ -65,7 +69,7 @@ function spawnCompanion(): void {
     return;
   }
 
-  const runtimeCommand = resolveTypeScriptEntrypointCommand(COMPANION_ENTRY);
+  const runtimeCommand = resolveTypeScriptEntrypointCommand(getCompanionEntry());
   console.log(`[zedge:supervisor] Spawning companion: ${runtimeCommand.display}`);
   const child = spawn(runtimeCommand.command, [...runtimeCommand.args], {
     stdio: ['ignore', 'inherit', 'inherit'],
@@ -235,7 +239,7 @@ function startSupervisor(): void {
   }, HEALTH_CHECK_INTERVAL_MS);
 }
 
-export async function main(): Promise<void> {
+async function runSupervisor(): Promise<void> {
   if (await isCompanionAlive()) {
     console.log(
       `[zedge:supervisor] Companion already healthy at ${getCompanionBase()}; refusing to take over an existing listener`
@@ -251,6 +255,12 @@ export async function main(): Promise<void> {
 
   console.log('[zedge:supervisor] Companion sidecar is ready');
   startSupervisor();
+}
+
+export async function main(): Promise<void> {
+  registerShutdownHandlers();
+  await runSupervisor();
+  return;
 }
 
 function registerShutdownHandlers(): void {
@@ -291,6 +301,10 @@ function registerShutdownHandlers(): void {
 }
 
 function isExecutedDirectly(importMetaUrl: string): boolean {
+  if (process.env.GNODE_RUNTIME === '1') {
+    return false;
+  }
+
   const entryPath = process.argv[1];
   if (!entryPath) {
     return false;
@@ -300,7 +314,6 @@ function isExecutedDirectly(importMetaUrl: string): boolean {
 }
 
 if (isExecutedDirectly(import.meta.url)) {
-  registerShutdownHandlers();
   main().catch((error) => {
     console.error(
       `[zedge:supervisor] Fatal error: ${

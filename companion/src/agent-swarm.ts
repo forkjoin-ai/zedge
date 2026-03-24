@@ -9,12 +9,12 @@
  * You watch them work in real time.
  */
 
-import { AgentParticipant, type AgentParticipantConfig } from './agent-participant';
-import { getRole, listRoles, type AgentRole } from './agent-roles';
-import type { CrdtBridge } from './crdt-bridge';
-import type { UcanBridge } from './ucan-bridge';
-import { voidMapStore } from './void-map-store';
-import { superinfer } from './superinference';
+import { AgentParticipant, type AgentParticipantConfig } from "./agent-participant.ts";
+import { getRole, listRoles, type AgentRole } from "./agent-roles.ts";
+import type { CrdtBridge } from "./crdt-bridge.ts";
+import type { UcanBridge } from "./ucan-bridge.ts";
+import { voidMapStore } from "./void-map-store.ts";
+import { superinfer } from "./superinference.ts";
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 

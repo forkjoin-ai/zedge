@@ -30,42 +30,48 @@ const VERSION = 0x0002;
 const DESCRIPTOR_SIZE = 32;
 const HEADER_SIZE = 8; // magic(4) + version(2) + count(2)
 
-// --- Enums ---
+// --- Tagged numeric constants ---
 
-export enum ArchType {
-  Transformer = 0,
-  SSM = 1, // Mamba, state-space
-  RWKV = 2,
-  Diffusion = 3,
-  Hybrid = 4, // Jamba
-}
+export const ArchType = {
+  Transformer: 0,
+  SSM: 1, // Mamba, state-space
+  RWKV: 2,
+  Diffusion: 3,
+  Hybrid: 4, // Jamba
+} as const;
 
-export enum TensorType {
-  HiddenStates = 0,
-  KV_K = 1, // Transformer key cache
-  KV_V = 2, // Transformer value cache
-  SSM_State = 3, // Mamba recurrent state
-  ConvState = 4, // Mamba conv buffer
-  RWKV_R = 5,
-  RWKV_K = 6,
-  RWKV_V = 7,
-  RWKV_W = 8,
-  Latent = 9, // Diffusion latent
-  Embeddings = 10,
-  Logits = 11,
-  Attention = 12,
-}
+export type ArchType = (typeof ArchType)[keyof typeof ArchType];
 
-export enum DataType {
-  F32 = 0,
-  F16 = 1,
-  BF16 = 2,
-  Q8_0 = 3,
-  Q4_0 = 4,
-  Q4_K = 5,
-  Q6_K = 6,
-  I32 = 7,
-}
+export const TensorType = {
+  HiddenStates: 0,
+  KV_K: 1, // Transformer key cache
+  KV_V: 2, // Transformer value cache
+  SSM_State: 3, // Mamba recurrent state
+  ConvState: 4, // Mamba conv buffer
+  RWKV_R: 5,
+  RWKV_K: 6,
+  RWKV_V: 7,
+  RWKV_W: 8,
+  Latent: 9, // Diffusion latent
+  Embeddings: 10,
+  Logits: 11,
+  Attention: 12,
+} as const;
+
+export type TensorType = (typeof TensorType)[keyof typeof TensorType];
+
+export const DataType = {
+  F32: 0,
+  F16: 1,
+  BF16: 2,
+  Q8_0: 3,
+  Q4_0: 4,
+  Q4_K: 5,
+  Q6_K: 6,
+  I32: 7,
+} as const;
+
+export type DataType = (typeof DataType)[keyof typeof DataType];
 
 const DATA_TYPE_BYTES: Record<DataType, number> = {
   [DataType.F32]: 4,
@@ -76,6 +82,17 @@ const DATA_TYPE_BYTES: Record<DataType, number> = {
   [DataType.Q4_K]: 0.5625,
   [DataType.Q6_K]: 0.6875,
   [DataType.I32]: 4,
+};
+
+const DATA_TYPE_NAMES: Record<DataType, string> = {
+  [DataType.F32]: 'F32',
+  [DataType.F16]: 'F16',
+  [DataType.BF16]: 'BF16',
+  [DataType.Q8_0]: 'Q8_0',
+  [DataType.Q4_0]: 'Q4_0',
+  [DataType.Q4_K]: 'Q4_K',
+  [DataType.Q6_K]: 'Q6_K',
+  [DataType.I32]: 'I32',
 };
 
 // --- Types ---
@@ -267,9 +284,7 @@ export function fromFloat32(
 export function toFloat32(tensor: Tensor): Float32Array {
   if (tensor.descriptor.dataType !== DataType.F32) {
     throw new Error(
-      `Cannot convert ${
-        DataType[tensor.descriptor.dataType]
-      } to Float32 directly`
+      `Cannot convert ${DATA_TYPE_NAMES[tensor.descriptor.dataType]} to Float32 directly`
     );
   }
   return new Float32Array(tensor.data);

@@ -16,7 +16,7 @@
 
 import { readFileSync, existsSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { analyzeCodeEmotion, routeByEmotion, type EmotionalProfile, type EmotionRouteDecision } from './emotion-router';
+import { analyzeCodeEmotion, routeByEmotion, type EmotionalProfile, type EmotionRouteDecision } from "./emotion-router.ts";
 
 // ---------------------------------------------------------------------------
 // Base AeonOS Palette (from shared-ui/src/styles/tokens/aeon.css)

@@ -8,8 +8,8 @@
  * - Superinference strategy (how results are collapsed)
  */
 
-import type { AgentMode } from './ucan-bridge';
-import type { CollapseStrategy } from './superinference';
+import type { AgentMode } from "./ucan-bridge.ts";
+import type { CollapseStrategy } from "./superinference.ts";
 
 // ---------------------------------------------------------------------------
 // Types

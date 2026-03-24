@@ -12,11 +12,11 @@
 
 import { readFileSync, existsSync } from 'node:fs';
 import { join, relative } from 'node:path';
-import { recursiveSuperinfer } from './superinference';
-import { infer } from './inference-bridge';
-import type { ChatCompletionRequest } from './inference-bridge';
-import { getZedgeConfig } from './config';
-import { parseCodeBlocks, type ParsedCodeBlock } from './acp-agent';
+import { recursiveSuperinfer } from "./superinference.ts";
+import { infer } from "./inference-bridge.ts";
+import type { ChatCompletionRequest } from "./inference-bridge.ts";
+import { getZedgeConfig } from "./config.ts";
+import { parseCodeBlocks, type ParsedCodeBlock } from "./acp-agent.ts";
 
 // ---------------------------------------------------------------------------
 // Types

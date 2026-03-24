@@ -13,9 +13,9 @@
  * Protocol: Bule deficit exchange on void map record events.
  */
 
-import { voidMapStore } from './void-map-store';
-import type { VoidMapEntry } from './void-map-store';
-import { getZedgeConfig } from './config';
+import { voidMapStore } from "./void-map-store.ts";
+import type { VoidMapEntry } from "./void-map-store.ts";
+import { getZedgeConfig } from "./config.ts";
 
 // UCAN-scoped deficit exchange: both parties must present valid capabilities
 // before void sync begins. Mutual handshake = bilateral trust.

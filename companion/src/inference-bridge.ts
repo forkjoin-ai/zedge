@@ -11,14 +11,14 @@
  * All inference is local/coordinator-based, zero paid AI.
  */
 
-import { getApiBaseUrl, getAuthHeaders, getZedgeConfig } from './config';
-import { CLOUD_RUN_COORDINATORS } from './coordinator-urls';
+import { getApiBaseUrl, getAuthHeaders, getZedgeConfig } from "./config.ts";
+import { CLOUD_RUN_COORDINATORS } from "./coordinator-urls.ts";
 import { appendFileSync, mkdirSync, writeFileSync } from 'fs';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
-import { getCloudRunAuthHeaders } from './cloudrun-auth';
-import { aetherLocalRuntime } from './aether-local-runtime';
-import { runWithCompanionActivity } from './companion-activity';
+import { getCloudRunAuthHeaders } from "./cloudrun-auth.ts";
+import { aetherLocalRuntime } from "./aether-local-runtime.ts";
+import { runWithCompanionActivity } from "./companion-activity.ts";
 
 // --- Inference log file + in-memory ring buffer ---
 const __inference_dirname = dirname(fileURLToPath(import.meta.url));
@@ -203,7 +203,7 @@ async function tryMeshInference(
   request: ChatCompletionRequest
 ): Promise<Response | null> {
   // Lazy import to avoid circular deps at module load time
-  const { meshInfer, getMeshStatus } = await import('./p2p-mesh');
+  const { meshInfer, getMeshStatus } = await import("./p2p-mesh.ts");
   const status = getMeshStatus();
   if (!status.running || status.peers.length === 0) return null;
 
@@ -1028,7 +1028,7 @@ export async function inferFim(
   {
     const meshT0 = Date.now();
     try {
-      const { meshInfer, getMeshStatus } = await import('./p2p-mesh');
+      const { meshInfer, getMeshStatus } = await import("./p2p-mesh.ts");
       const status = getMeshStatus();
       if (status.running && status.peers.length > 0) {
         const meshResult = await Promise.race([
@@ -1217,7 +1217,7 @@ export async function infer(
 ): Promise<TierResult> {
   // --- Engram Store: inject relevant memories into context ---
   try {
-    const { getEngramStore } = await import('./engram-store');
+    const { getEngramStore } = await import("./engram-store.ts");
     const store = getEngramStore();
     if (store.size > 0) {
       const lastUserMsg = [...request.messages].reverse().find((m) => m.role === 'user');
@@ -1526,7 +1526,7 @@ export function autoLearnFromInference(
 ): void {
   queueMicrotask(async () => {
     try {
-      const { getEngramStore } = await import('./engram-store');
+      const { getEngramStore } = await import("./engram-store.ts");
       const store = getEngramStore();
 
       const lastUserMsg = [...request.messages].reverse().find((m) => m.role === 'user');
@@ -1603,7 +1603,7 @@ export async function getModels(): Promise<ModelInfo[]> {
 
   // Add mesh peer models
   try {
-    const { getMeshStatus } = await import('./p2p-mesh');
+    const { getMeshStatus } = await import("./p2p-mesh.ts");
     const meshStatus = getMeshStatus();
     for (const peer of meshStatus.peers) {
       for (const modelId of peer.capabilities.models) {

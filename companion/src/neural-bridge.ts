@@ -16,7 +16,7 @@
  * failure_strictly_more_informative: rejection carries N-1 bits.
  */
 
-import { voidMapStore, type VoidMapEntry } from './void-map-store';
+import { voidMapStore, type VoidMapEntry } from "./void-map-store.ts";
 
 // ---------------------------------------------------------------------------
 // Types (matching @a0n/neural)

@@ -20,9 +20,9 @@ import {
   federatedVoidSync,
   type DeficitExchange,
   type VoidSyncHandshake,
-} from './federated-void-sync';
-import { voidMapStore } from './void-map-store';
-import { getZedgeConfig } from './config';
+} from "./federated-void-sync.ts";
+import { voidMapStore } from "./void-map-store.ts";
+import { getZedgeConfig } from "./config.ts";
 
 // ---------------------------------------------------------------------------
 // Types

@@ -14,9 +14,9 @@
  * Reference: https://zed.dev/docs/extensions/agent-servers
  */
 
-import { infer } from './inference-bridge';
-import { getZedgeConfig } from './config';
-import type { ChatCompletionRequest, ChatMessage } from './inference-bridge';
+import { infer } from "./inference-bridge.ts";
+import { getZedgeConfig } from "./config.ts";
+import type { ChatCompletionRequest, ChatMessage } from "./inference-bridge.ts";
 import {
   readFileSync,
   writeFileSync,

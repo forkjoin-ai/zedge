@@ -14,7 +14,7 @@
 
 import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { join, relative, extname } from 'node:path';
-import { embed } from './inference-bridge';
+import { embed } from "./inference-bridge.ts";
 
 // ---------------------------------------------------------------------------
 // Types

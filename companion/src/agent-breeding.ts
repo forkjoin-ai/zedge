@@ -16,8 +16,8 @@
  * - Cannot modify constitution
  */
 
-import { voidMapStore } from './void-map-store';
-import { computeSystemVoidBoundary, type SystemVoidBoundary } from './observatory-history';
+import { voidMapStore } from "./void-map-store.ts";
+import { computeSystemVoidBoundary, type SystemVoidBoundary } from "./observatory-history.ts";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -234,7 +234,7 @@ class AgentBreedingEngine {
     const fitnessData: AgentFitnessData[] = [];
 
     try {
-      const { listSessions } = await import('./cloud-agent-session');
+      const { listSessions } = await import("./cloud-agent-session.ts");
       const sessions = listSessions(100);
 
       // Group by agent name
@@ -316,7 +316,7 @@ class AgentBreedingEngine {
         let beta1 = 0;
         try {
           const { BettyCompiler } = await import(
-            '../../../gnosis/src/betty/compiler'
+            '@a0n/gnosis/betty/compiler'
           );
           const compiler = new BettyCompiler();
           const result = compiler.parse(topologySource);

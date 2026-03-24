@@ -1,17 +1,17 @@
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
-import { getZedgeConfig } from './config';
+import { getZedgeConfig } from "./config.ts";
 import {
   analyzePolyglotSourceString,
   type PolyglotAnalysisResult,
-} from './babelfish-gnosis';
-import { extractFunctions, translate } from './babelfish-gnosis';
+} from "./babelfish-gnosis.ts";
+import { extractFunctions, translate } from "./babelfish-gnosis.ts";
 import {
   getPolyglotCapabilityMatrix,
   type PolyglotCapabilityMatrix,
   type PolyglotCapabilityStatus,
-} from './babelfish-gnosis';
+} from "./babelfish-gnosis.ts";
 
 export type BabelfishCodeMode =
   | 'translate-code'

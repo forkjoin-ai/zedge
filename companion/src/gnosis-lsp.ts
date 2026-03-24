@@ -10,8 +10,8 @@ import {
   BettyCompiler,
   type Diagnostic,
   type GraphAST,
-} from '../../../gnosis/src/betty/compiler';
-import { checkTypeScriptWithGnosis } from '../../../gnosis/src/ts-check';
+} from '@a0n/gnosis/betty/compiler';
+import { checkTypeScriptWithGnosis } from '@a0n/gnosis/ts-check';
 import { resolve } from 'path';
 import { fileURLToPath } from 'url';
 import { getZedgeConfig, type ZedgeConfig } from './config';

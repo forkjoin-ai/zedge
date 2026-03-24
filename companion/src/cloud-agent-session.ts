@@ -16,8 +16,8 @@
  *   7. On completion: results collected, rejections → void map
  */
 
-import { voidMapStore } from './void-map-store';
-import type { VfsMount } from './vfs-bridge';
+import { voidMapStore } from "./void-map-store.ts";
+import type { VfsMount } from "./vfs-bridge.ts";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -244,7 +244,7 @@ async function tryForgeAgentTick(
   try {
     // Try to discover agent ports from forge
     const { discoverProjects } = await import(
-      '../../../aeon-forge/src/deploy/discovery'
+      "../../../aeon-forge/src/deploy/discovery.ts"
     );
     const workspacePath = process.env.AEON_ROOT || process.cwd();
     const projects = await discoverProjects(workspacePath);
@@ -339,7 +339,7 @@ async function tryTopologyExecution(
     if (!existsSync(topologyPath)) return null;
 
     // Execute through topology runner
-    const { runTopology } = await import('./topology-runner');
+    const { runTopology } = await import("./topology-runner.ts");
     const result = await runTopology({
       filePath: topologyPath,
       input: {
@@ -391,8 +391,8 @@ async function executeSuperinferenceFallback(
     .map(([path, content]) => `--- ${path} ---\n${content}`)
     .join('\n\n');
 
-  const { superinfer } = await import('./superinference');
-  const { analyzeCodeEmotion, routeByEmotion } = await import('./emotion-router');
+  const { superinfer } = await import("./superinference.ts");
+  const { analyzeCodeEmotion, routeByEmotion } = await import("./emotion-router.ts");
 
   let strategy: 'fastest' | 'consensus' | 'constructive' = 'constructive';
   if (fileContext) {

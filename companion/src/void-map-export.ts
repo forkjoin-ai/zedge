@@ -13,7 +13,7 @@
  * learning loop formalized in ch17 arxiv manuscript.
  */
 
-import { voidMapStore, type VoidMapEntry } from './void-map-store';
+import { voidMapStore, type VoidMapEntry } from "./void-map-store.ts";
 import { writeFileSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { homedir } from 'node:os';

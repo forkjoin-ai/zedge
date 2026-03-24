@@ -8,13 +8,13 @@
 import type {
   ExtendedForgoEvent,
   ForgeEventBus,
-} from '../../../aeon-forge/src/deploy/event-bus';
+} from "../../../aeon-forge/src/deploy/event-bus.ts";
 import type {
   PerturbationEngine,
   PerturbationCycle,
-} from '../../../../shared-utils/src/laminar/perturbation-engine';
-import type { CodeMutationOutput } from '../../../../shared-utils/src/laminar/code-laminar';
-import { voidMapStore } from './void-map-store';
+} from "../../../../shared-utils/src/laminar/perturbation-engine.ts";
+import type { CodeMutationOutput } from "../../../../shared-utils/src/laminar/code-laminar.ts";
+import { voidMapStore } from "./void-map-store.ts";
 
 // ── Types ────────────────────────────────────────────────────
 

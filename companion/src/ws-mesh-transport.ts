@@ -18,7 +18,7 @@
  * - Heartbeat over the same connection (no separate UDP)
  */
 
-import type { PeerNode } from './p2p-mesh';
+import type { PeerNode } from "./p2p-mesh.ts";
 
 // ---------------------------------------------------------------------------
 // Types

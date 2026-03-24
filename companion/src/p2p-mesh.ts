@@ -11,12 +11,12 @@
  * Scheduling: Hot-seat — reduce contribution under high local load
  */
 
-import { getCompanionPort, getZedgeConfig } from './config';
-import { recordServedRequest } from './compute-node';
-import type { ChatCompletionRequest } from './inference-bridge';
+import { getCompanionPort, getZedgeConfig } from "./config.ts";
+import { recordServedRequest } from "./compute-node.ts";
+import type { ChatCompletionRequest } from "./inference-bridge.ts";
 import { createSocket, type Socket } from 'dgram';
 import { hostname, cpus, totalmem, freemem } from 'os';
-import { meshTransport, FRAME_INFERENCE, decodeFrame, encodeFrame } from './ws-mesh-transport';
+import { meshTransport, FRAME_INFERENCE, decodeFrame, encodeFrame } from "./ws-mesh-transport.ts";
 
 // --- Types ---
 
@@ -271,7 +271,7 @@ export async function handlePeerRequest(
   request: ChatCompletionRequest
 ): Promise<Response> {
   // Import infer lazily to avoid circular dependency
-  const { infer } = await import('./inference-bridge');
+  const { infer } = await import("./inference-bridge.ts");
   const result = await infer(request);
 
   // Record as served request for token earning

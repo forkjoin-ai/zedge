@@ -22,7 +22,7 @@ import {
 } from 'node:fs';
 import { join } from 'node:path';
 import { homedir } from 'node:os';
-import type { ObservatorySnapshot } from './observatory';
+import type { ObservatorySnapshot } from "./observatory.ts";
 
 // ---------------------------------------------------------------------------
 // Types

@@ -1,10 +1,10 @@
 export {
   analyzePolyglotSourceString,
   type PolyglotAnalysisResult,
-} from '../../../gnosis/src/polyglot-bridge';
-export { extractFunctions, translate } from '../../../gnosis/src/polyglot-compose';
-export { getPolyglotCapabilityMatrix } from '../../../gnosis/src/polyglot-registry';
+} from "@a0n/gnosis/polyglot-bridge";
+export { extractFunctions, translate } from "@a0n/gnosis/polyglot-compose";
+export { getPolyglotCapabilityMatrix } from "@a0n/gnosis/polyglot-registry";
 export type {
   PolyglotCapabilityMatrix,
   PolyglotCapabilityStatus,
-} from '../../../gnosis/src/polyglot-registry';
+} from "@a0n/gnosis/polyglot-registry";

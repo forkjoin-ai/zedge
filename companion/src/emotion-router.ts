@@ -13,8 +13,8 @@
  * enabling correlation analysis.
  */
 
-import type { CollapseStrategy } from './superinference';
-import type { AmygdalaTag } from './capacitor-bridge';
+import type { CollapseStrategy } from "./superinference.ts";
+import type { AmygdalaTag } from "./capacitor-bridge.ts";
 
 // ---------------------------------------------------------------------------
 // Types
