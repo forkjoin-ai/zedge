@@ -1757,6 +1757,103 @@ export async function handleWebRequest(req: Request): Promise<Response> {
     });
   }
 
+  // ==================== Observatory ====================
+
+  if (path === '/observatory' && req.method === 'GET') {
+    const { getObservatorySnapshot } = await import('./observatory');
+    return jsonResponse(await getObservatorySnapshot());
+  }
+
+  if (path === '/observatory/stream' && req.method === 'GET') {
+    const { createObservatoryStream } = await import('./observatory');
+    return new Response(createObservatoryStream(), {
+      headers: {
+        'Content-Type': 'text/event-stream',
+        'Cache-Control': 'no-cache',
+        Connection: 'keep-alive',
+        'Access-Control-Allow-Origin': '*',
+      },
+    });
+  }
+
+  // ==================== Federated Void Sync ====================
+
+  if (path === '/void-sync/status' && req.method === 'GET') {
+    const { federatedVoidSync } = await import('./federated-void-sync');
+    return jsonResponse(federatedVoidSync.getStatus());
+  }
+
+  if (path === '/void-sync/handshake' && req.method === 'POST') {
+    const { federatedVoidSync } = await import('./federated-void-sync');
+    const body = (await req.json()) as { target_device_id?: string; ucan_token?: string };
+    if (!body.target_device_id || !body.ucan_token) {
+      return jsonResponse({ error: 'target_device_id and ucan_token required' }, 400);
+    }
+    const handshake = federatedVoidSync.initiateHandshake(body.target_device_id, body.ucan_token);
+    return jsonResponse(handshake);
+  }
+
+  if (path === '/void-sync/accept' && req.method === 'POST') {
+    const { federatedVoidSync } = await import('./federated-void-sync');
+    const body = (await req.json()) as { from_device_id?: string; ucan_token?: string };
+    if (!body.from_device_id || !body.ucan_token) {
+      return jsonResponse({ error: 'from_device_id and ucan_token required' }, 400);
+    }
+    const accepted = federatedVoidSync.acceptHandshake(body.from_device_id, body.ucan_token);
+    return jsonResponse({ accepted });
+  }
+
+  if (path === '/void-sync/receive' && req.method === 'POST') {
+    const { federatedVoidSync } = await import('./federated-void-sync');
+    const body = (await req.json()) as { device_id?: string; deficit?: number; rounds?: number; model_id?: string };
+    if (body.device_id === undefined || body.deficit === undefined) {
+      return jsonResponse({ error: 'device_id and deficit required' }, 400);
+    }
+    const accepted = federatedVoidSync.receiveDeficit({
+      type: 'void-deficit',
+      deviceId: body.device_id,
+      modelId: body.model_id ?? 'unknown',
+      deficit: body.deficit,
+      rounds: body.rounds ?? 0,
+      timestamp: Date.now(),
+    });
+    return jsonResponse({ accepted });
+  }
+
+  if (path === '/void-sync/handshakes' && req.method === 'GET') {
+    const { federatedVoidSync } = await import('./federated-void-sync');
+    return jsonResponse({ handshakes: federatedVoidSync.getHandshakes() });
+  }
+
+  // ==================== Agent Breeding ====================
+
+  if (path === '/breeding/status' && req.method === 'GET') {
+    const { agentBreeding } = await import('./agent-breeding');
+    return jsonResponse(agentBreeding.getStatus());
+  }
+
+  if (path === '/breeding/run' && req.method === 'POST') {
+    const { agentBreeding } = await import('./agent-breeding');
+    try {
+      const cycle = await agentBreeding.runCycle();
+      return jsonResponse(cycle);
+    } catch (err) {
+      return jsonResponse({ error: err instanceof Error ? err.message : String(err) }, 400);
+    }
+  }
+
+  if (path === '/breeding/stream' && req.method === 'GET') {
+    const { createBreedingStream } = await import('./agent-breeding');
+    return new Response(createBreedingStream(), {
+      headers: {
+        'Content-Type': 'text/event-stream',
+        'Cache-Control': 'no-cache',
+        Connection: 'keep-alive',
+        'Access-Control-Allow-Origin': '*',
+      },
+    });
+  }
+
   // ==================== Binary Protocol v2 ====================
 
   if (path === '/v1/binary/infer' && req.method === 'POST') {
