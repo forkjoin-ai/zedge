@@ -1,0 +1,85 @@
+{
+  "$schema": "https://zed.dev/schema/themes/v0.2.0.json",
+  "name": "Zedge Dark",
+  "author": "AFFECTIVELY",
+  "themes": [
+    {
+      "name": "Zedge Dark",
+      "appearance": "dark",
+      "style": {
+        "background": "#09090b",
+        "editor.background": "#0c0c0f",
+        "editor.foreground": "#fafafa",
+        "editor.line_highlight": "#18181b",
+        "editor.selection": "rgba(59, 130, 246, 0.25)",
+        "editor.active_line_number": "#3b82f6",
+        "editor.gutter.background": "#09090b",
+
+        "panel.background": "#0c0c0f",
+        "panel.focused_border": "#3b82f6",
+
+        "tab_bar.background": "#09090b",
+        "tab.active_background": "#111114",
+        "tab.inactive_background": "#09090b",
+
+        "title_bar.background": "#09090b",
+
+        "status_bar.background": "#09090b",
+
+        "scrollbar.thumb.background": "#27272a",
+        "scrollbar.thumb.hover_background": "#3b82f6",
+
+        "border": "#1f1f23",
+        "border.variant": "#17171a",
+        "border.focused": "#3b82f6",
+
+        "text": "#fafafa",
+        "text.muted": "#a1a1aa",
+        "text.placeholder": "#71717a",
+        "text.disabled": "#52525b",
+        "text.accent": "#93c5fd",
+
+        "icon": "#a1a1aa",
+        "icon.muted": "#52525b",
+        "icon.accent": "#3b82f6",
+
+        "terminal.background": "#09090b",
+        "terminal.foreground": "#fafafa",
+        "terminal.ansi.black": "#09090b",
+        "terminal.ansi.red": "#ef4444",
+        "terminal.ansi.green": "#10b981",
+        "terminal.ansi.yellow": "#eab308",
+        "terminal.ansi.blue": "#3b82f6",
+        "terminal.ansi.magenta": "#8b5cf6",
+        "terminal.ansi.cyan": "#06b6d4",
+        "terminal.ansi.white": "#fafafa",
+
+        "syntax": {
+          "comment": { "color": "#52525b", "font_style": "italic" },
+          "string": { "color": "#22c55e" },
+          "number": { "color": "#f59e0b" },
+          "keyword": { "color": "#3b82f6", "font_weight": 600 },
+          "keyword.control": { "color": "#60a5fa", "font_weight": 700 },
+          "keyword.control.fork": { "color": "#10b981", "font_weight": 700 },
+          "keyword.control.race": { "color": "#f59e0b", "font_weight": 700 },
+          "keyword.control.fold": { "color": "#06b6d4", "font_weight": 700 },
+          "keyword.control.vent": { "color": "#ef4444", "font_weight": 600 },
+          "function": { "color": "#8b5cf6" },
+          "type": { "color": "#06b6d4" },
+          "variable": { "color": "#fafafa" },
+          "variable.special": { "color": "#f59e0b" },
+          "property": { "color": "#a1a1aa" },
+          "operator": { "color": "#60a5fa" },
+          "punctuation": { "color": "#71717a" },
+          "punctuation.bracket": { "color": "#a1a1aa" },
+          "punctuation.delimiter": { "color": "#52525b" },
+          "punctuation.special": { "color": "#3b82f6" },
+          "entity.name": { "color": "#93c5fd", "font_weight": 600 },
+          "constant": { "color": "#f59e0b" },
+          "tag": { "color": "#ef4444" },
+          "attribute": { "color": "#f59e0b" }
+        }
+      }
+    }
+  ]
+}
