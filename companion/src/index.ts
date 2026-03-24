@@ -10,17 +10,20 @@
 
 console.log('[zedge] Starting companion sidecar v2.0...');
 
+const rawPort = Number.parseInt(process.env.ZEDGE_COMPANION_PORT ?? '7331', 10);
+const companionPort = Number.isFinite(rawPort) ? rawPort : 7331;
+
 let handler: (req: Request) => Promise<Response> = async () =>
   new Response('Companion is loading...', { status: 503 });
 
 Bun.serve({
-  port: 7331,
+  port: companionPort,
   fetch(req: Request) {
     return handler(req);
   },
 });
 
-console.log('[zedge] Listening on http://localhost:7331 (loading...)');
+console.log(`[zedge] Listening on http://localhost:${companionPort} (loading...)`);
 
 // ALL imports happen here -- never at top level
 setTimeout(async () => {
@@ -37,8 +40,10 @@ setTimeout(async () => {
     };
 
     console.log('[zedge] Companion sidecar v2.0 ready');
-    console.log('[zedge] OpenAI-compatible API: http://localhost:7331/v1');
-    console.log('[zedge] Health: http://localhost:7331/health');
+    console.log(
+      `[zedge] OpenAI-compatible API: http://localhost:${companionPort}/v1`
+    );
+    console.log(`[zedge] Health: http://localhost:${companionPort}/health`);
 
     // Stage 2: Auth, mesh, probing
     const { whoami } = await import('./auth');

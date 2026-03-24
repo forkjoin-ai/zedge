@@ -145,6 +145,10 @@ export async function startCloudAgent(
 
 /**
  * Execute the cloud agent (internal).
+ *
+ * Strategy: try the REAL forge agent scheduler first (HTTP POST to agent's
+ * /tick endpoint with full AgentTickContext). Fall back to superinference
+ * if the agent isn't deployed or the scheduler isn't available.
  */
 async function executeCloudAgent(
   session: CloudAgentSession,
@@ -157,73 +161,48 @@ async function executeCloudAgent(
   const t0 = Date.now();
 
   try {
-    // Read target files for the agent's context
-    const fileContents: Record<string, string> = {};
-    const { readFileSync } = await import('node:fs');
-    const { resolve } = await import('node:path');
-    const workspacePath = process.env.AEON_ROOT || process.cwd();
+    // --- Path 1: Try REAL forge agent invocation ---
+    const forgeResult = await tryForgeAgentTick(session, config, timeoutMs);
 
-    for (const file of session.targetFiles.slice(0, 5)) {
-      try {
-        fileContents[file] = readFileSync(resolve(workspacePath, file), 'utf-8').slice(0, 8000);
-      } catch {
-        // File may not exist
-      }
+    if (forgeResult) {
+      session.result = forgeResult;
+      session.status = 'completed';
+      session.completedAt = Date.now();
+
+      broadcastToSession(session.id, {
+        type: 'session-completed',
+        sessionId: session.id,
+        result: session.result,
+        path: 'forge-agent',
+      });
+      return;
     }
 
-    // Build agent context
-    const fileContext = Object.entries(fileContents)
-      .map(([path, content]) => `--- ${path} ---\n${content}`)
-      .join('\n\n');
+    // --- Path 2: Try topology execution through Betty ---
+    const topologyResult = await tryTopologyExecution(session, config, timeoutMs);
 
-    // Execute via superinference (simulates cloud agent tick)
-    const { superinfer } = await import('./superinference');
-    const { analyzeCodeEmotion, routeByEmotion } = await import('./emotion-router');
+    if (topologyResult) {
+      session.result = topologyResult;
+      session.status = 'completed';
+      session.completedAt = Date.now();
 
-    // Emotion-aware strategy selection
-    let strategy: 'fastest' | 'consensus' | 'constructive' = 'constructive';
-    if (fileContext) {
-      const emotion = analyzeCodeEmotion(fileContext);
-      const route = routeByEmotion(emotion);
-      strategy = route.strategy;
+      broadcastToSession(session.id, {
+        type: 'session-completed',
+        sessionId: session.id,
+        result: session.result,
+        path: 'topology-executor',
+      });
+      return;
     }
 
-    const steering = voidMapStore.getSteeringVector(session.targetFiles[0]);
-
-    const result = await superinfer({
-      request: {
-        model: config.model ?? 'qwen-2.5-coder-7b',
-        messages: [
-          {
-            role: 'system',
-            content: `You are a CERA cloud agent (${config.agentName}). You operate on the user's codebase through a secure VFS mount. Analyze the code and produce actionable results.\n\nAgent: ${config.agentName}\nTask: ${config.task}`,
-          },
-          {
-            role: 'user',
-            content: fileContext || `Task: ${config.task}\n\nNo target files specified.`,
-          },
-        ],
-        temperature: 0.3,
-        max_tokens: 2048,
-      },
-      models: [config.model ?? 'qwen-2.5-coder-7b'],
-      strategy,
-      steeringOverrides: steering.negativePrompt || undefined,
-      timeoutMs,
+    // --- Path 3: Fallback to superinference ---
+    broadcastToSession(session.id, {
+      type: 'fallback',
+      reason: 'forge agent not deployed, topology not available',
     });
 
-    session.result = {
-      filesModified: session.targetFiles,
-      output: result.content,
-      editsApplied: 0,
-      durationMs: Date.now() - t0,
-      metrics: {
-        beta1: result.confidence,
-        nodeCount: result.modelResults.length,
-        edgeCount: 0,
-      },
-    };
-
+    const superResult = await executeSuperinferenceFallback(session, config, timeoutMs);
+    session.result = superResult;
     session.status = 'completed';
     session.completedAt = Date.now();
 
@@ -231,13 +210,13 @@ async function executeCloudAgent(
       type: 'session-completed',
       sessionId: session.id,
       result: session.result,
+      path: 'superinference-fallback',
     });
   } catch (err) {
     session.status = 'failed';
     session.error = err instanceof Error ? err.message : String(err);
     session.completedAt = Date.now();
 
-    // Record failure in void map
     voidMapStore.record({
       filePath: session.targetFiles[0] ?? 'unknown',
       category: 'cloud-agent-failure',
@@ -251,6 +230,212 @@ async function executeCloudAgent(
       error: session.error,
     });
   }
+}
+
+/**
+ * Path 1: Invoke the real forge agent via HTTP /tick endpoint.
+ * Returns null if the agent isn't deployed or unreachable.
+ */
+async function tryForgeAgentTick(
+  session: CloudAgentSession,
+  config: CloudAgentConfig,
+  timeoutMs: number
+): Promise<CloudAgentResult | null> {
+  try {
+    // Try to discover agent ports from forge
+    const { discoverProjects } = await import(
+      '../../../aeon-forge/src/deploy/discovery'
+    );
+    const workspacePath = process.env.AEON_ROOT || process.cwd();
+    const projects = await discoverProjects(workspacePath);
+    const agentProject = projects.find(
+      (p: { name: string; kind: string }) =>
+        p.name === config.agentName && p.kind === 'agent'
+    );
+
+    if (!agentProject) return null;
+
+    // Build AgentTickContext
+    const tickContext = {
+      trigger: 'manual' as const,
+      payload: {
+        task: config.task,
+        targetFiles: session.targetFiles,
+        model: config.model,
+      },
+      env: {
+        AEON_ROOT: workspacePath,
+        AGENT_NAME: config.agentName,
+        ...process.env as Record<string, string>,
+      },
+      tickNumber: Date.now(),
+    };
+
+    // POST to the agent's /tick endpoint
+    const port = agentProject.port ?? 4800;
+    const resp = await fetch(`http://127.0.0.1:${port}/tick`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(tickContext),
+      signal: AbortSignal.timeout(timeoutMs),
+    });
+
+    if (!resp.ok) return null;
+
+    const tickResult = (await resp.json()) as {
+      success: boolean;
+      outputs?: Record<string, unknown>;
+      actions?: Array<{ type: string; detail: string; url?: string }>;
+      durationMs?: number;
+      entropy?: { before: number; after: number; delta: number };
+    };
+
+    if (!tickResult.success) return null;
+
+    return {
+      filesModified: session.targetFiles,
+      output: JSON.stringify(tickResult.outputs ?? {}, null, 2),
+      editsApplied: tickResult.actions?.filter((a) => a.type === 'deploy').length ?? 0,
+      durationMs: tickResult.durationMs ?? Date.now() - session.startedAt,
+      metrics: tickResult.entropy
+        ? {
+            beta1: Math.abs(tickResult.entropy.delta),
+            nodeCount: tickResult.actions?.length ?? 0,
+            edgeCount: 0,
+          }
+        : undefined,
+    };
+  } catch {
+    return null; // Agent not deployed or unreachable
+  }
+}
+
+/**
+ * Path 2: Execute the agent's topology through Betty/GnosisRuntime.
+ * Returns null if topology file doesn't exist or compilation fails.
+ */
+async function tryTopologyExecution(
+  session: CloudAgentSession,
+  config: CloudAgentConfig,
+  _timeoutMs: number
+): Promise<CloudAgentResult | null> {
+  try {
+    const { existsSync, readFileSync } = await import('node:fs');
+    const { resolve, join } = await import('node:path');
+    const workspacePath = process.env.AEON_ROOT || process.cwd();
+
+    // Look for the agent's topology file
+    const agentDir = resolve(workspacePath, 'packages', config.agentName);
+    const tomlPath = join(agentDir, 'aeon.toml');
+
+    if (!existsSync(tomlPath)) return null;
+
+    // Parse topology path from aeon.toml
+    const toml = readFileSync(tomlPath, 'utf-8');
+    const topologyMatch = toml.match(/topology\s*=\s*"([^"]+)"/);
+    if (!topologyMatch) return null;
+
+    const topologyPath = resolve(agentDir, topologyMatch[1]);
+    if (!existsSync(topologyPath)) return null;
+
+    // Execute through topology runner
+    const { runTopology } = await import('./topology-runner');
+    const result = await runTopology({
+      filePath: topologyPath,
+      input: {
+        task: config.task,
+        targetFiles: session.targetFiles,
+      },
+    });
+
+    if (!result.success) return null;
+
+    return {
+      filesModified: session.targetFiles,
+      output: result.logs + '\n' + JSON.stringify(result.payload, null, 2),
+      editsApplied: 0,
+      durationMs: result.durationMs,
+      metrics: {
+        beta1: result.metrics.beta1,
+        nodeCount: result.metrics.nodeCount,
+        edgeCount: result.metrics.edgeCount,
+      },
+    };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Path 3: Superinference fallback (original behavior).
+ * Used when forge agent isn't deployed and topology isn't available.
+ */
+async function executeSuperinferenceFallback(
+  session: CloudAgentSession,
+  config: CloudAgentConfig,
+  timeoutMs: number
+): Promise<CloudAgentResult> {
+  const t0 = Date.now();
+  const { readFileSync } = await import('node:fs');
+  const { resolve } = await import('node:path');
+  const workspacePath = process.env.AEON_ROOT || process.cwd();
+
+  const fileContents: Record<string, string> = {};
+  for (const file of session.targetFiles.slice(0, 5)) {
+    try {
+      fileContents[file] = readFileSync(resolve(workspacePath, file), 'utf-8').slice(0, 8000);
+    } catch { /* File may not exist */ }
+  }
+
+  const fileContext = Object.entries(fileContents)
+    .map(([path, content]) => `--- ${path} ---\n${content}`)
+    .join('\n\n');
+
+  const { superinfer } = await import('./superinference');
+  const { analyzeCodeEmotion, routeByEmotion } = await import('./emotion-router');
+
+  let strategy: 'fastest' | 'consensus' | 'constructive' = 'constructive';
+  if (fileContext) {
+    const emotion = analyzeCodeEmotion(fileContext);
+    const route = routeByEmotion(emotion);
+    strategy = route.strategy;
+  }
+
+  const steering = voidMapStore.getSteeringVector(session.targetFiles[0]);
+
+  const result = await superinfer({
+    request: {
+      model: config.model ?? 'qwen-2.5-coder-7b',
+      messages: [
+        {
+          role: 'system',
+          content: `You are a CERA cloud agent (${config.agentName}). Analyze the code and produce actionable results.\n\nAgent: ${config.agentName}\nTask: ${config.task}`,
+        },
+        {
+          role: 'user',
+          content: fileContext || `Task: ${config.task}\n\nNo target files specified.`,
+        },
+      ],
+      temperature: 0.3,
+      max_tokens: 2048,
+    },
+    models: [config.model ?? 'qwen-2.5-coder-7b'],
+    strategy,
+    steeringOverrides: steering.negativePrompt || undefined,
+    timeoutMs,
+  });
+
+  return {
+    filesModified: session.targetFiles,
+    output: result.content,
+    editsApplied: 0,
+    durationMs: Date.now() - t0,
+    metrics: {
+      beta1: result.confidence,
+      nodeCount: result.modelResults.length,
+      edgeCount: 0,
+    },
+  };
 }
 
 /**

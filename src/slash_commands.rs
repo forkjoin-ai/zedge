@@ -62,6 +62,16 @@ fn companion_delete(path: &str) -> Result<String, String> {
     String::from_utf8(response.body).map_err(|e| format!("Invalid UTF-8: {e}"))
 }
 
+fn escape_query_component(value: &str) -> String {
+    value
+        .replace('%', "%25")
+        .replace(' ', "%20")
+        .replace('#', "%23")
+        .replace('&', "%26")
+        .replace('?', "%3F")
+        .replace('+', "%2B")
+}
+
 /// Build a SlashCommandOutput with a single labeled section spanning the full text
 fn output_with_section(text: String, label: &str) -> SlashCommandOutput {
     let len = text.len() as u32;
@@ -1633,5 +1643,209 @@ pub fn run_review(worktree: Option<&Worktree>) -> Result<SlashCommandOutput, Str
             format!("**Superinference unavailable**: {e}\n\nEnsure the companion sidecar is running."),
             "Consensus Code Review",
         )),
+    }
+}
+
+/// /zedge-void — persistent rejection memory and steering vectors
+pub fn run_void(args: &[String]) -> Result<SlashCommandOutput, String> {
+    let sub = args.first().map(|s| s.as_str()).unwrap_or("status");
+    let response = match sub {
+        "query" => {
+            let mut path = "/void-map/query".to_string();
+            let mut params: Vec<String> = Vec::new();
+            if let Some(file) = args.get(1) {
+                params.push(format!("file={}", escape_query_component(file)));
+            }
+            if let Some(category) = args.get(2) {
+                params.push(format!("category={}", escape_query_component(category)));
+            }
+            if !params.is_empty() {
+                path.push('?');
+                path.push_str(&params.join("&"));
+            }
+            companion_get(&path)
+        }
+        "steering" => {
+            let path = if let Some(file) = args.get(1) {
+                format!(
+                    "/void-map/steering?file={}",
+                    escape_query_component(file)
+                )
+            } else {
+                "/void-map/steering".to_string()
+            };
+            companion_get(&path)
+        }
+        "export" => {
+            let mut path = "/void-map/export/records".to_string();
+            let mut params: Vec<String> = Vec::new();
+            if let Some(file) = args.get(1) {
+                params.push(format!("file={}", escape_query_component(file)));
+            }
+            if let Some(category) = args.get(2) {
+                params.push(format!("category={}", escape_query_component(category)));
+            }
+            if !params.is_empty() {
+                path.push('?');
+                path.push_str(&params.join("&"));
+            }
+            companion_get(&path)
+        }
+        "compact" => companion_post("/void-map/compact"),
+        _ => companion_get("/void-map/status"),
+    };
+
+    match response {
+        Ok(body) => Ok(output_with_section(
+            format!("## Void Map\n\n```json\n{body}\n```"),
+            "Void Map",
+        )),
+        Err(e) => Ok(output_with_section(format!("**Error**: {e}"), "Void Map")),
+    }
+}
+
+/// /zedge-swarm — list swarm roles or start a swarm run
+pub fn run_swarm(args: &[String]) -> Result<SlashCommandOutput, String> {
+    if args.is_empty() {
+        return match companion_get("/agent/swarm/roles") {
+            Ok(body) => Ok(output_with_section(
+                format!("## Swarm Roles\n\n```json\n{body}\n```"),
+                "Swarm Roles",
+            )),
+            Err(e) => Ok(output_with_section(format!("**Error**: {e}"), "Swarm Roles")),
+        };
+    }
+
+    let task = args.join(" ");
+    let body = serde_json::json!({
+        "task": task,
+        "roles": ["reviewer", "refactorer", "tester"]
+    });
+
+    match companion_post_json("/agent/swarm/start", body) {
+        Ok(resp_body) => Ok(output_with_section(
+            format!("## Swarm Started\n\n```json\n{resp_body}\n```"),
+            "Swarm",
+        )),
+        Err(e) => Ok(output_with_section(format!("**Error**: {e}"), "Swarm")),
+    }
+}
+
+/// /zedge-engram — persistent agent memory
+pub fn run_engram(args: &[String]) -> Result<SlashCommandOutput, String> {
+    let sub = args.first().map(|s| s.as_str()).unwrap_or("status");
+    let response = match sub {
+        "recall" => {
+            let query = args[1..].join(" ");
+            if query.is_empty() {
+                return Ok(output_with_section(
+                    "Usage: /zedge-engram recall <query>".to_string(),
+                    "Engram",
+                ));
+            }
+            companion_post_json(
+                "/engram/recall",
+                serde_json::json!({ "query": query, "top_k": 5 }),
+            )
+        }
+        "remember" => {
+            let content = args[1..].join(" ");
+            if content.is_empty() {
+                return Ok(output_with_section(
+                    "Usage: /zedge-engram remember <content>".to_string(),
+                    "Engram",
+                ));
+            }
+            companion_post_json(
+                "/engram/remember",
+                serde_json::json!({ "type": "code-pattern", "content": content }),
+            )
+        }
+        "forget" => {
+            let Some(id) = args.get(1) else {
+                return Ok(output_with_section(
+                    "Usage: /zedge-engram forget <id>".to_string(),
+                    "Engram",
+                ));
+            };
+            companion_delete(&format!(
+                "/engram/forget?id={}",
+                escape_query_component(id)
+            ))
+        }
+        _ => companion_get("/engram/status"),
+    };
+
+    match response {
+        Ok(body) => Ok(output_with_section(
+            format!("## Engram Store\n\n```json\n{body}\n```"),
+            "Engram",
+        )),
+        Err(e) => Ok(output_with_section(format!("**Error**: {e}"), "Engram")),
+    }
+}
+
+/// /zedge-emotion — emotional profile of a file
+pub fn run_emotion(
+    args: &[String],
+    _worktree: Option<&Worktree>,
+) -> Result<SlashCommandOutput, String> {
+    let Some(file_path) = args.first() else {
+        return Ok(output_with_section(
+            "Usage: /zedge-emotion <file-path>".to_string(),
+            "Emotion",
+        ));
+    };
+
+    match companion_get(&format!(
+        "/emotion/profile?file={}",
+        escape_query_component(file_path)
+    )) {
+        Ok(body) => Ok(output_with_section(
+            format!("## Emotional Profile\n\n```json\n{body}\n```"),
+            "Emotion",
+        )),
+        Err(e) => Ok(output_with_section(format!("**Error**: {e}"), "Emotion")),
+    }
+}
+
+/// /zedge-agent — GG agent management over Forge
+pub fn run_agent(args: &[String]) -> Result<SlashCommandOutput, String> {
+    let sub = args.first().map(|s| s.as_str()).unwrap_or("list");
+    let response = match sub {
+        "trigger" => {
+            let Some(agent_name) = args.get(1) else {
+                return Ok(output_with_section(
+                    "Usage: /zedge-agent trigger <agent-name>".to_string(),
+                    "GG Agent",
+                ));
+            };
+            companion_post_json(
+                "/forge/deploy",
+                serde_json::json!({ "project": agent_name, "trigger": "manual" }),
+            )
+        }
+        "status" => companion_get("/forge/status"),
+        "health" => {
+            let Some(agent_name) = args.get(1) else {
+                return Ok(output_with_section(
+                    "Usage: /zedge-agent health <agent-name>".to_string(),
+                    "GG Agent",
+                ));
+            };
+            companion_get(&format!(
+                "/forge/status?project={}",
+                escape_query_component(agent_name)
+            ))
+        }
+        _ => companion_get("/forge/projects"),
+    };
+
+    match response {
+        Ok(body) => Ok(output_with_section(
+            format!("## GG Agents\n\n```json\n{body}\n```"),
+            "GG Agent",
+        )),
+        Err(e) => Ok(output_with_section(format!("**Error**: {e}"), "GG Agent")),
     }
 }

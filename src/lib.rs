@@ -102,6 +102,11 @@ impl zed::Extension for ZedgeExtension {
             "zedge-feedback" => slash_commands::run_feedback(&_args),
             "zedge-babelfish" => slash_commands::run_babelfish(&_args, worktree),
             "zedge-review" => slash_commands::run_review(worktree),
+            "zedge-void" => slash_commands::run_void(&_args),
+            "zedge-swarm" => slash_commands::run_swarm(&_args),
+            "zedge-engram" => slash_commands::run_engram(&_args),
+            "zedge-emotion" => slash_commands::run_emotion(&_args, worktree),
+            "zedge-agent" => slash_commands::run_agent(&_args),
             _ => Err(format!("Unknown command: {}", command.name)),
         }
     }
@@ -251,6 +256,32 @@ impl zed::Extension for ZedgeExtension {
                     SlashCommandArgumentCompletion { label: "5 — Excellent response".into(), new_text: "5 ".into(), run_command: false },
                 ])
             }
+            "zedge-void" => Ok(vec![
+                SlashCommandArgumentCompletion { label: "status — Show void-map status".into(), new_text: "status".into(), run_command: true },
+                SlashCommandArgumentCompletion { label: "query — Query entries by file/category".into(), new_text: "query ".into(), run_command: false },
+                SlashCommandArgumentCompletion { label: "steering — Show steering vector".into(), new_text: "steering ".into(), run_command: false },
+                SlashCommandArgumentCompletion { label: "export — Export training records".into(), new_text: "export ".into(), run_command: false },
+                SlashCommandArgumentCompletion { label: "compact — Compact old entries".into(), new_text: "compact".into(), run_command: true },
+            ]),
+            "zedge-swarm" => Ok(vec![
+                SlashCommandArgumentCompletion { label: "roles — Show available swarm roles".into(), new_text: "".into(), run_command: true },
+                SlashCommandArgumentCompletion { label: "review the current diff — Start a review/refactor/test swarm".into(), new_text: "review the current diff".into(), run_command: true },
+            ]),
+            "zedge-engram" => Ok(vec![
+                SlashCommandArgumentCompletion { label: "status — Show engram-store status".into(), new_text: "status".into(), run_command: true },
+                SlashCommandArgumentCompletion { label: "recall — Recall matching memory".into(), new_text: "recall ".into(), run_command: false },
+                SlashCommandArgumentCompletion { label: "remember — Store a memory".into(), new_text: "remember ".into(), run_command: false },
+                SlashCommandArgumentCompletion { label: "forget — Remove an engram by id".into(), new_text: "forget ".into(), run_command: false },
+            ]),
+            "zedge-emotion" => Ok(vec![
+                SlashCommandArgumentCompletion { label: "Analyze a file path".into(), new_text: "".into(), run_command: false },
+            ]),
+            "zedge-agent" => Ok(vec![
+                SlashCommandArgumentCompletion { label: "list — List GG agents".into(), new_text: "list".into(), run_command: true },
+                SlashCommandArgumentCompletion { label: "trigger — Trigger an agent".into(), new_text: "trigger ".into(), run_command: false },
+                SlashCommandArgumentCompletion { label: "status — Show Forge agent status".into(), new_text: "status".into(), run_command: true },
+                SlashCommandArgumentCompletion { label: "health — Show health for one agent".into(), new_text: "health ".into(), run_command: false },
+            ]),
             _ => Ok(Vec::new()),
         }
     }

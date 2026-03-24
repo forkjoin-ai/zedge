@@ -244,31 +244,46 @@ async function tryEdgeCoordinator(
     ...authHeaders,
   };
 
-  logInference(
-    `[edge] → ${baseUrl}/v1/chat/completions model=${request.model} stream=${
-      request.stream
-    } headers=${JSON.stringify(Object.keys(authHeaders))}`
-  );
+  const MAX_RETRIES = 2;
+  for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+    logInference(
+      `[edge] → ${baseUrl}/v1/chat/completions model=${request.model} stream=${
+        request.stream
+      } attempt=${attempt}`
+    );
 
-  const resp = await fetch(`${baseUrl}/v1/chat/completions`, {
-    method: 'POST',
-    headers,
-    body: JSON.stringify(request),
-    signal,
-  });
+    const resp = await fetch(`${baseUrl}/v1/chat/completions`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(request),
+      signal,
+    });
 
-  // Log all response headers for debugging
-  const respHeaders: Record<string, string> = {};
-  resp.headers.forEach((v, k) => {
-    respHeaders[k] = v;
-  });
-  logInference(
-    `[edge] ← ${resp.status} ${resp.statusText} headers=${JSON.stringify(
-      respHeaders
-    )}`
-  );
+    // Log response
+    const respHeaders: Record<string, string> = {};
+    resp.headers.forEach((v, k) => {
+      respHeaders[k] = v;
+    });
+    logInference(
+      `[edge] ← ${resp.status} ${resp.statusText} headers=${JSON.stringify(
+        respHeaders
+      )}`
+    );
 
-  return resp;
+    // 503 with Retry-After: auth backend is warming up, retry after delay
+    if (resp.status === 503 && attempt < MAX_RETRIES) {
+      const retryAfter = parseInt(resp.headers.get('Retry-After') || '2', 10);
+      const delayMs = Math.min(retryAfter * 1000, 5000);
+      logInference(`[edge] 503 auth warming, retrying in ${delayMs}ms...`);
+      await new Promise((resolve) => setTimeout(resolve, delayMs));
+      continue;
+    }
+
+    return resp;
+  }
+
+  // Shouldn't reach here, but return the last response
+  return new Response('Edge coordinator unavailable', { status: 503 });
 }
 
 /**
