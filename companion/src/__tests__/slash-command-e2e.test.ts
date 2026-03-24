@@ -7,6 +7,7 @@ import {
 } from 'bun:test';
 import { mkdtempSync, mkdirSync } from 'fs';
 import { spawn, type ChildProcess } from 'child_process';
+import { get } from 'http';
 import { createServer } from 'net';
 import { tmpdir } from 'os';
 import { join, resolve } from 'path';
@@ -34,13 +35,27 @@ interface InferenceSelfTestPayload {
   cloudRunHealth: unknown;
 }
 
+interface CompanionHealthPayload {
+  preferredModel: string;
+  runtime: {
+    hostRuntime: string;
+  };
+  inference: {
+    localRuntime: {
+      pid: number;
+    };
+  };
+}
+
 const REPO_ROOT = resolve(process.cwd(), '../../..');
 const COMPANION_ENTRY = fileURLToPath(new URL('../index.ts', import.meta.url));
-const MCP_STDIO_MODULE_URL = new URL('../mcp-stdio.ts', import.meta.url).href;
+const MCP_STDIO_ENTRY = fileURLToPath(new URL('../mcp-stdio.ts', import.meta.url));
 
 let companionProcess: ChildProcess | null = null;
 let companionPort = 0;
 let companionLogs = '';
+let testHome = '';
+let testWorkspace = '';
 
 function appendLogChunk(chunk: Buffer | string): void {
   companionLogs = `${companionLogs}${chunk.toString()}`;
@@ -51,6 +66,41 @@ function appendLogChunk(chunk: Buffer | string): void {
 
 function getLogTail(): string {
   return companionLogs.trim().slice(-4_000);
+}
+
+async function getJson<T>(url: string, timeoutMs = 5_000): Promise<T> {
+  return await new Promise<T>((resolveJson, reject) => {
+    const request = get(
+      url,
+      {
+        timeout: timeoutMs,
+      },
+      (response) => {
+        if ((response.statusCode ?? 500) < 200 || (response.statusCode ?? 500) >= 300) {
+          response.resume();
+          reject(new Error(`Unexpected status ${response.statusCode ?? 500}`));
+          return;
+        }
+
+        let body = '';
+        response.setEncoding('utf8');
+        response.on('data', (chunk) => {
+          body += chunk;
+        });
+        response.once('end', () => {
+          try {
+            resolveJson(JSON.parse(body) as T);
+          } catch (error) {
+            reject(error);
+          }
+        });
+      }
+    );
+    request.once('timeout', () => {
+      request.destroy(new Error(`Timed out waiting for ${url}`));
+    });
+    request.once('error', reject);
+  });
 }
 
 async function reservePort(): Promise<number> {
@@ -92,12 +142,8 @@ async function waitForCompanionHealth(
     }
 
     try {
-      const response = await fetch(url, {
-        signal: AbortSignal.timeout(1_000),
-      });
-      if (response.ok) {
-        return;
-      }
+      await getJson<CompanionHealthPayload>(url, 1_000);
+      return;
     } catch {
       // Still booting.
     }
@@ -108,6 +154,24 @@ async function waitForCompanionHealth(
   throw new Error(
     `Timed out waiting for companion health on ${url}\n${getLogTail()}`
   );
+}
+
+async function fetchCompanionHealth(
+  port: number
+): Promise<CompanionHealthPayload> {
+  const payload = (await getJson<Partial<CompanionHealthPayload>>(
+    `http://127.0.0.1:${port}/health`
+  )) as Partial<CompanionHealthPayload>;
+  if (
+    typeof payload.preferredModel !== 'string' ||
+    typeof payload.runtime?.hostRuntime !== 'string' ||
+    typeof payload.inference?.localRuntime?.pid !== 'number'
+  ) {
+    throw new Error(
+      `Companion health payload missing runtime data\n${JSON.stringify(payload, null, 2)}\n${getLogTail()}`
+    );
+  }
+  return payload as CompanionHealthPayload;
 }
 
 async function stopCompanion(): Promise<void> {
@@ -176,24 +240,16 @@ async function runMcpToolInSubprocess(
       },
     },
   };
-  const script = `
-    (async () => {
-      const { dispatch } = await import(${JSON.stringify(MCP_STDIO_MODULE_URL)});
-      const response = await dispatch(${JSON.stringify(request)});
-      process.stdout.write(JSON.stringify(response));
-    })().catch((error) => {
-      console.error(error);
-      process.exit(1);
-    });
-  `;
-  const child = spawn(process.execPath, ['-e', script], {
-    cwd: REPO_ROOT,
+  const runtimeCommand = resolveTypeScriptEntrypointCommand(MCP_STDIO_ENTRY);
+  const child = spawn(runtimeCommand.command, [...runtimeCommand.args], {
+    cwd: testWorkspace || REPO_ROOT,
     env: {
       ...process.env,
+      HOME: testHome,
       AEON_ROOT: REPO_ROOT,
       ZEDGE_COMPANION_PORT: String(companionPort),
     },
-    stdio: ['ignore', 'pipe', 'pipe'],
+    stdio: ['pipe', 'pipe', 'pipe'],
   });
   let stdout = '';
   let stderr = '';
@@ -203,6 +259,10 @@ async function runMcpToolInSubprocess(
   child.stderr?.on('data', (chunk) => {
     stderr += chunk.toString();
   });
+  const payload = JSON.stringify(request);
+  child.stdin?.end(
+    `Content-Length: ${Buffer.byteLength(payload)}\r\n\r\n${payload}`
+  );
 
   const exitCode = await new Promise<number | null>((resolveExit) => {
     child.once('exit', resolveExit);
@@ -213,7 +273,23 @@ async function runMcpToolInSubprocess(
     );
   }
 
-  const response = JSON.parse(stdout) as {
+  const headerEnd = stdout.indexOf('\r\n\r\n');
+  if (headerEnd === -1) {
+    throw new Error(
+      `MCP subprocess produced no framed response for ${command}\nstdout=${stdout}\nstderr=${stderr}\n${getLogTail()}`
+    );
+  }
+  const headerBlock = stdout.slice(0, headerEnd);
+  const lengthMatch = headerBlock.match(/Content-Length:\s*(\d+)/i);
+  if (!lengthMatch) {
+    throw new Error(
+      `MCP subprocess response missing Content-Length for ${command}\nstdout=${stdout}\nstderr=${stderr}\n${getLogTail()}`
+    );
+  }
+  const contentLength = Number.parseInt(lengthMatch[1], 10);
+  const body = stdout.slice(headerEnd + 4, headerEnd + 4 + contentLength);
+
+  const response = JSON.parse(body) as {
     result?: ToolCallResult;
     error?: { message?: string };
   };
@@ -245,19 +321,19 @@ async function callZedgeCommand(
 beforeAll(async () => {
   companionPort = await reservePort();
 
-  const tempHome = mkdtempSync(join(tmpdir(), 'zedge-slash-e2e-'));
-  const tempWorkspace = mkdtempSync(join(tmpdir(), 'zedge-workspace-e2e-'));
-  mkdirSync(join(tempHome, '.edgework'), { recursive: true });
+  testHome = mkdtempSync(join(tmpdir(), 'zedge-slash-e2e-'));
+  testWorkspace = mkdtempSync(join(tmpdir(), 'zedge-workspace-e2e-'));
+  mkdirSync(join(testHome, '.edgework'), { recursive: true });
 
   const runtimeCommand = resolveTypeScriptEntrypointCommand(COMPANION_ENTRY);
   companionProcess = spawn(runtimeCommand.command, [...runtimeCommand.args], {
     // Keep the companion on a tiny workspace so startup does not spend the
     // health-check budget traversing the full monorepo before the live MCP
     // slash-command path is ready.
-    cwd: tempWorkspace,
+    cwd: testWorkspace,
     env: {
       ...process.env,
-      HOME: tempHome,
+      HOME: testHome,
       AEON_ROOT: REPO_ROOT,
       ZEDGE_COMPANION_PORT: String(companionPort),
       ZEDGE_LISTENER_MODE: 'bun',
@@ -277,6 +353,13 @@ afterAll(async () => {
 });
 
 describe('Zedge slash commands end to end', () => {
+  test('companion launches through gnode', async () => {
+    const health = await fetchCompanionHealth(companionPort);
+    expect(health.runtime.hostRuntime).toBe('gnode');
+    expect(health.preferredModel).toBe('wasm-local');
+    expect(health.inference.localRuntime.pid).toBeGreaterThan(0);
+  }, 20_000);
+
   test('zedge-models returns the local wasm model through the live companion', async () => {
     const text = await callZedgeCommand('zedge-models');
     expect(text).toContain('"id": "wasm-local"');

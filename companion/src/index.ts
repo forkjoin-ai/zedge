@@ -1,53 +1,46 @@
-#!/usr/bin/env bun
+#!/usr/bin/env node
 /**
  * Zedge Companion Sidecar v2.0
  *
- * Bun.serve runs synchronously in the entry file. ALL module imports
- * happen inside setTimeout(0) to ensure the event loop is never blocked.
- * Top-level await causes Bun.serve to stop dispatching external requests
- * during module evaluation.
+ * The companion now exports an async `main()` so the checked-in launcher can
+ * route the full sidecar through `gnode`. The HTTP listener itself comes from
+ * `startServer()`, which binds through x-gnosis on either Bun or Node.
  */
 
-console.log('[zedge] Starting companion sidecar v2.0...');
+async function verifyKeyTier(
+  getBaseUrl: () => string,
+  getHeaders: () => Record<string, string>
+): Promise<void> {
+  try {
+    const resp = await fetch(`${getBaseUrl()}/v1/models`, {
+      headers: getHeaders(),
+      signal: AbortSignal.timeout(10_000),
+    });
+    const payload = resp.ok
+      ? ((await resp.json()) as {
+          data?: unknown[];
+        })
+      : null;
+    const count = payload?.data?.length ?? '?';
+    console.log(`[zedge] Gateway: models=${count} status=${resp.status}`);
+  } catch (err) {
+    console.warn(`[zedge] Gateway probe failed: ${err}`);
+  }
+}
 
-const rawPort = Number.parseInt(process.env.ZEDGE_COMPANION_PORT ?? '7331', 10);
-const companionPort = Number.isFinite(rawPort) ? rawPort : 7331;
+export async function main(): Promise<void> {
+  console.log('[zedge] Starting companion sidecar v2.0...');
 
-let handler: (req: Request) => Promise<Response> = async () =>
-  new Response('Companion is loading...', { status: 503 });
-
-Bun.serve({
-  port: companionPort,
-  fetch(req: Request) {
-    return handler(req);
-  },
-});
-
-console.log(`[zedge] Listening on http://localhost:${companionPort} (loading...)`);
-
-// ALL imports happen here -- never at top level
-setTimeout(async () => {
   try {
     const serverMod = await import('./server');
-
-    handler = async (req: Request) => {
-      try {
-        return await serverMod.handleWebRequest(req);
-      } catch (err) {
-        console.error(`[zedge:fetch] Error:`, err);
-        return new Response(`Internal Server Error: ${err}`, { status: 500 });
-      }
-    };
+    await serverMod.startServer();
 
     console.log('[zedge] Companion sidecar v2.0 ready');
-    console.log(
-      `[zedge] OpenAI-compatible API: http://localhost:${companionPort}/v1`
-    );
-    console.log(`[zedge] Health: http://localhost:${companionPort}/health`);
 
-    // Stage 2: Auth, mesh, probing
     const { whoami } = await import('./auth');
-    const { getZedgeConfig, getApiBaseUrl, getAuthHeaders } = await import('./config');
+    const { getZedgeConfig, getApiBaseUrl, getAuthHeaders } = await import(
+      './config'
+    );
     const config = getZedgeConfig();
 
     const authStatus = whoami();
@@ -55,7 +48,7 @@ setTimeout(async () => {
       console.log(
         `[zedge] Authenticated via ${authStatus.method}${authStatus.email ? ` (${authStatus.email})` : ''}`
       );
-      verifyKeyTier(getApiBaseUrl, getAuthHeaders).catch(() => {});
+      void verifyKeyTier(getApiBaseUrl, getAuthHeaders);
     } else {
       console.log('[zedge] Not authenticated.');
     }
@@ -75,14 +68,22 @@ setTimeout(async () => {
 
     serverMod.startGnosisWatcher();
 
-    // Stage 3: Heavy bridges
     const [
-      { ForgeBridge }, { VfsBridge }, { CollabBridge },
-      { KernelBridge }, { CapacitorBridge }, { CrdtBridge }, { UcanBridge },
+      { ForgeBridge },
+      { VfsBridge },
+      { CollabBridge },
+      { KernelBridge },
+      { CapacitorBridge },
+      { CrdtBridge },
+      { UcanBridge },
     ] = await Promise.all([
-      import('./forge-bridge'), import('./vfs-bridge'), import('./collab-bridge'),
-      import('./kernel-bridge'), import('./capacitor-bridge'),
-      import('./crdt-bridge'), import('./ucan-bridge'),
+      import('./forge-bridge'),
+      import('./vfs-bridge'),
+      import('./collab-bridge'),
+      import('./kernel-bridge'),
+      import('./capacitor-bridge'),
+      import('./crdt-bridge'),
+      import('./ucan-bridge'),
     ]);
 
     const workspacePath = process.cwd();
@@ -99,8 +100,19 @@ setTimeout(async () => {
     const kernel = new KernelBridge();
     serverMod.setKernelBridge(kernel);
     kernel.registerPlugin({
-      id: 'zedge-companion', name: 'Zedge Companion', version: '2.0.0',
-      capabilities: ['inference', 'superinference', 'mesh', 'forge-deploy', 'vfs', 'collab', 'capacitor', 'compute-market'],
+      id: 'zedge-companion',
+      name: 'Zedge Companion',
+      version: '2.0.0',
+      capabilities: [
+        'inference',
+        'superinference',
+        'mesh',
+        'forge-deploy',
+        'vfs',
+        'collab',
+        'capacitor',
+        'compute-market',
+      ],
       commands: [],
     });
     console.log(`[zedge] Kernel: ${kernel.listCommands().length} commands`);
@@ -108,23 +120,32 @@ setTimeout(async () => {
 
     const crdtCfg = {
       workspaceId: Buffer.from(workspacePath).toString('base64url').slice(0, 16),
-      peerId: meshNodeId, displayName,
-      relayUrl: config.dashRelayUrl, ucan: config.ucanToken, apiKey: config.dashRelayApiKey,
+      peerId: meshNodeId,
+      displayName,
+      relayUrl: config.dashRelayUrl,
+      ucan: config.ucanToken,
+      apiKey: config.dashRelayApiKey,
     };
     const crdt = new CrdtBridge(crdtCfg);
     serverMod.setCrdtBridge(crdt);
-    try { await crdt.connect(); } catch { console.log('[zedge] CRDT offline.'); }
+    try {
+      await crdt.connect();
+    } catch {
+      console.log('[zedge] CRDT offline.');
+    }
 
     const ucan = new UcanBridge({
       secret: config.dashRelayApiKey ?? `zedge-local-${meshNodeId}`,
-      workspaceId: crdtCfg.workspaceId, peerId: meshNodeId, displayName,
+      workspaceId: crdtCfg.workspaceId,
+      peerId: meshNodeId,
+      displayName,
     });
-    try { await ucan.init(); serverMod.setUcanBridge(ucan); } catch {}
-
-    // Disabled: code indexer causes persistent high CPU
-    // import('./code-index').then(({ codeIndex }) =>
-    //   codeIndex.indexWorkspace(workspacePath).catch(() => {})
-    // ).catch(() => {});
+    try {
+      await ucan.init();
+      serverMod.setUcanBridge(ucan);
+    } catch {
+      // Keep the companion up even when UCAN bootstrap fails locally.
+    }
 
     setTimeout(() => {
       import('./inference-bridge')
@@ -132,7 +153,6 @@ setTimeout(async () => {
         .catch(() => {});
     }, 1_000);
 
-    // Wire Phase 3 integrations (void map → trainer, engram embeddings)
     setTimeout(() => {
       import('./wire-phase3')
         .then(({ wirePhase3 }) => wirePhase3())
@@ -147,15 +167,6 @@ setTimeout(async () => {
     console.log(`[zedge] Ready. Mesh peers: ${getMeshStatus().peers.length}`);
   } catch (err) {
     console.error('[zedge] Init error:', err);
-  }
-}, 0);
-
-async function verifyKeyTier(getBaseUrl: () => string, getHeaders: () => Record<string, string>) {
-  try {
-    const resp = await fetch(`${getBaseUrl()}/v1/models`, { headers: getHeaders(), signal: AbortSignal.timeout(10_000) });
-    const n = resp.ok ? ((await resp.json()) as any)?.data?.length ?? '?' : '?';
-    console.log(`[zedge] Gateway: models=${n} status=${resp.status}`);
-  } catch (err) {
-    console.warn(`[zedge] Gateway probe failed: ${err}`);
+    throw err instanceof Error ? err : new Error(String(err));
   }
 }

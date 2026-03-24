@@ -17,6 +17,9 @@ import { resolveTypeScriptEntrypointCommand } from '../runtime-command';
 interface CompanionHealthPayload {
   status: string;
   preferredModel: string;
+  runtime: {
+    hostRuntime: string;
+  };
   inference: {
     localRuntime: {
       pid: number;
@@ -33,11 +36,13 @@ function asRecord(value: unknown): Record<string, unknown> | null {
 
 function isCompanionHealthPayload(value: unknown): value is CompanionHealthPayload {
   const root = asRecord(value);
+  const runtime = asRecord(root?.['runtime']);
   const inference = asRecord(root?.['inference']);
   const localRuntime = asRecord(inference?.['localRuntime']);
   return (
     typeof root?.['status'] === 'string' &&
     typeof root?.['preferredModel'] === 'string' &&
+    typeof runtime?.['hostRuntime'] === 'string' &&
     typeof localRuntime?.['pid'] === 'number' &&
     typeof localRuntime?.['chatStatus'] === 'string'
   );
@@ -239,6 +244,7 @@ describe('companion supervisor end to end', () => {
     const firstPid = firstHealth.inference.localRuntime.pid;
 
     expect(firstHealth.preferredModel).toBe('wasm-local');
+    expect(firstHealth.runtime.hostRuntime).toBe('gnode');
     expect(firstPid).toBeGreaterThan(0);
 
     process.kill(firstPid, 'SIGKILL');
@@ -251,6 +257,7 @@ describe('companion supervisor end to end', () => {
 
     expect(restartedHealth.status).toBe('ok');
     expect(restartedHealth.preferredModel).toBe('wasm-local');
+    expect(restartedHealth.runtime.hostRuntime).toBe('gnode');
     expect(restartedHealth.inference.localRuntime.pid).not.toBe(firstPid);
     expect(supervisorProcess?.exitCode ?? null).toBeNull();
   }, 90_000);

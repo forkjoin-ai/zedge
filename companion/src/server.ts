@@ -334,6 +334,9 @@ function deprecatedJsonResponse(data: unknown, status = 200): Response {
 }
 
 function detectHostRuntime(): 'gnode' | 'bun' | 'node' {
+  if (process.env.GNODE_RUNTIME === '1') {
+    return 'gnode';
+  }
   if (process.argv.some((arg) => arg.endsWith('/gnode.js') || arg === 'gnode')) {
     return 'gnode';
   }

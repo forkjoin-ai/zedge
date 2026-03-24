@@ -12,43 +12,6 @@ shift
 SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 WORKSPACE_ROOT=$(CDPATH= cd -- "${SCRIPT_DIR}/../../.." && pwd)
 
-resolve_runtime() {
-  if [ -n "${ZEDGE_JS_RUNTIME:-}" ]; then
-    if [ -x "${ZEDGE_JS_RUNTIME}" ]; then
-      printf '%s\n' "${ZEDGE_JS_RUNTIME}"
-      return 0
-    fi
-
-    if command -v "${ZEDGE_JS_RUNTIME}" >/dev/null 2>&1; then
-      command -v "${ZEDGE_JS_RUNTIME}"
-      return 0
-    fi
-
-    echo "zedge: ZEDGE_JS_RUNTIME is not executable: ${ZEDGE_JS_RUNTIME}" >&2
-    exit 127
-  fi
-
-  if command -v bun >/dev/null 2>&1; then
-    command -v bun
-    return 0
-  fi
-
-  for candidate in /opt/homebrew/bin/bun /usr/local/bin/bun; do
-    if [ -x "${candidate}" ]; then
-      printf '%s\n' "${candidate}"
-      return 0
-    fi
-  done
-
-  if [ -n "${HOME:-}" ] && [ -x "${HOME}/.bun/bin/bun" ]; then
-    printf '%s\n' "${HOME}/.bun/bin/bun"
-    return 0
-  fi
-
-  echo "zedge: could not find Bun. Install Bun or set ZEDGE_JS_RUNTIME." >&2
-  exit 127
-}
-
 resolve_node_runtime() {
   if [ -n "${ZEDGE_NODE_RUNTIME:-}" ]; then
     if [ -x "${ZEDGE_NODE_RUNTIME}" ]; then
@@ -88,10 +51,7 @@ else
 fi
 
 case "${ABS_ENTRY_PATH}" in
-  "${WORKSPACE_ROOT}/open-source/zedge/companion/src/index.ts")
-    RUNTIME="$(resolve_runtime)"
-    exec "${RUNTIME}" run "${ENTRY_PATH}" "$@"
-    ;;
+  "${WORKSPACE_ROOT}/open-source/zedge/companion/src/index.ts"|\
   "${WORKSPACE_ROOT}/open-source/zedge/companion/src/mcp-stdio.ts"|\
   "${WORKSPACE_ROOT}/open-source/zedge/companion/src/companion-supervisor.ts"|\
   "${WORKSPACE_ROOT}/open-source/zedge/companion/src/gnosis-lsp.ts")

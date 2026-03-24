@@ -157,7 +157,9 @@ function generateSettings(): void {
 
   console.log('\n# ---- Companion Mode (local inference + tab completions) ----');
   console.log('# Start the companion sidecar:');
-  console.log('#   bun run open-source/zedge/companion/src/companion-supervisor.ts');
+  console.log(
+    '#   pnpm run gnode -- run open-source/zedge/companion/src/companion-supervisor.ts --export main'
+  );
   console.log('# Then use these settings for local inference + FIM tab completions:');
   console.log('#');
   console.log(JSON.stringify(companionSettings, null, 2));

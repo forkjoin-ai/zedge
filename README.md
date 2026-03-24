@@ -67,7 +67,7 @@ The quickest way to try Zedge is to run only the companion and point Zed's OpenA
 
 ```bash
 pnpm install
-bun run open-source/zedge/companion/src/companion-supervisor.ts
+pnpm run gnode -- run open-source/zedge/companion/src/companion-supervisor.ts --export main
 ```
 
 ### Then point Zed at:

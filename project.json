@@ -7,7 +7,7 @@
     "build": {
       "executor": "a0:run-commands",
       "options": {
-        "command": "echo 'zedge: Rust extension built via cargo, companion hosted on x-gnosis + Bun launcher'"
+        "command": "echo 'zedge: Rust extension built via cargo, companion hosted on x-gnosis + gnode launcher'"
       }
     },
     "build:companion": {

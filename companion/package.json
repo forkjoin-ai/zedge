@@ -5,10 +5,10 @@
   "type": "module",
   "main": "src/index.ts",
   "scripts": {
-    "start": "bun run src/companion-supervisor.ts",
-    "direct": "bun run src/index.ts",
-    "dev": "bun run --watch src/index.ts",
-    "mcp": "bun run src/mcp-stdio.ts",
+    "start": "../scripts/run-ts-entry.sh src/companion-supervisor.ts",
+    "direct": "../scripts/run-ts-entry.sh src/index.ts",
+    "dev": "node --watch ../../gnosis/bin/gnode.js run src/index.ts --export main",
+    "mcp": "../scripts/run-ts-entry.sh src/mcp-stdio.ts",
     "build": "pnpm exec esbuild src/index.ts --bundle --outdir=dist --platform=node --format=esm --minify --packages=external",
     "build:mcp": "pnpm exec esbuild src/mcp-stdio.ts --bundle --outdir=dist --platform=node --format=esm --minify --packages=external"
   },

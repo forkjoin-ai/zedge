@@ -8,7 +8,7 @@ Child: [Source](./src/README.md)
 
 The fair brag is that it is more than a thin proxy. It handles inference routing, local coordination, and the service layer that the Zed extension talks to on `localhost:7331`.
 
-The HTTP shell now rides on `x-gnosis`, and the default public listener path is a native `gnosis-uring` proxy in front of a loopback-only x-gnosis app shell. The companion API no longer carries its own standalone Node server loop or the old localhost OAuth callback server.
+The HTTP shell now rides on `x-gnosis`, and the default public listener path is a native `gnosis-uring` proxy in front of a loopback-only x-gnosis app shell. The companion API no longer carries its own standalone Node server loop or the old localhost OAuth callback server, and the checked-in launcher now runs the companion through `gnode` instead of a Bun-only shell.
 
 For local inference, the companion now routes its on-device fallback through Aether prompt/runtime helpers: SmolLM2 chat generation stays local-first, `wasm-local` is exposed as an explicit selectable model and now ships as the default `preferredModel`, and local embedding fallback upgrades from pure hash vectors to a MiniLM model path when the cache is available.
 
@@ -62,7 +62,7 @@ The same config file also controls the public listener mode:
 }
 ```
 
-`mode: "bun"` keeps the direct x-gnosis listener. `mode: "gnosis-uring-proxy"` starts a loopback x-gnosis app shell and exposes the public port through the native Rust listener instead.
+`mode: "bun"` keeps the direct x-gnosis listener shape for backward compatibility. `mode: "gnosis-uring-proxy"` starts a loopback x-gnosis app shell and exposes the public port through the native Rust listener instead.
 
 For hermetic local runs and integration tests, environment overrides take precedence over the file config: `ZEDGE_COMPANION_PORT` forces the public companion port and `ZEDGE_LISTENER_MODE` forces either `bun` or `gnosis-uring-proxy` without editing `~/.edgework/zedge.json`.
 
@@ -86,8 +86,9 @@ Babelfish is intentionally local/self-hosted at the companion layer. The sidecar
 ## Commands
 
 ```bash
-bun run open-source/zedge/companion/src/companion-supervisor.ts
-bun run open-source/zedge/companion/src/mcp-stdio.ts
+open-source/zedge/scripts/run-ts-entry.sh open-source/zedge/companion/src/index.ts
+open-source/zedge/scripts/run-ts-entry.sh open-source/zedge/companion/src/companion-supervisor.ts
+open-source/zedge/scripts/run-ts-entry.sh open-source/zedge/companion/src/mcp-stdio.ts
 ```
 
 The extension itself launches these entrypoints through the checked-in
