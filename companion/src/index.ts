@@ -68,8 +68,7 @@ setTimeout(async () => {
       console.log(`[zedge] Pool: ${getPoolStatus().connectedNodes} nodes`);
     }
 
-    // Disabled: gnosis watcher and code indexer cause 100%+ CPU
-    // serverMod.startGnosisWatcher();
+    serverMod.startGnosisWatcher();
 
     // Stage 3: Heavy bridges
     const [

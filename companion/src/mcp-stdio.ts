@@ -22,6 +22,7 @@ import {
   CONSECUTIVE_FAILURES_BEFORE_RESTART,
   HEALTH_CHECK_INTERVAL_MS,
   HEALTH_CHECK_TIMEOUT_MS,
+  RESTART_WINDOW_MS,
   decideCompanionRestart,
 } from './companion-restart-policy';
 import { resolveTypeScriptEntrypointCommand } from './runtime-command';
@@ -1626,7 +1627,7 @@ function send(response: JsonRpcResponse): void {
   process.stdout.write(header + json);
 }
 
-async function main(): Promise<void> {
+export async function main(): Promise<void> {
   configureStdioLogging();
   console.log('Starting MCP stdio bridge...');
 

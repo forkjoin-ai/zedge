@@ -217,7 +217,7 @@ function startSupervisor(): void {
   }, HEALTH_CHECK_INTERVAL_MS);
 }
 
-async function main(): Promise<void> {
+export async function main(): Promise<void> {
   if (await isCompanionAlive()) {
     console.log(
       `[zedge:supervisor] Companion already healthy at ${getCompanionBase()}; refusing to take over an existing listener`

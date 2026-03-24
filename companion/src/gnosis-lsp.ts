@@ -782,6 +782,10 @@ export function startGnosisLspStdioTransport(): void {
   });
 }
 
+export function main(): void {
+  startGnosisLspStdioTransport();
+}
+
 function isExecutedDirectly(importMetaUrl: string): boolean {
   const entryPath = process.argv[1];
   if (!entryPath) {
@@ -792,5 +796,5 @@ function isExecutedDirectly(importMetaUrl: string): boolean {
 }
 
 if (isExecutedDirectly(import.meta.url)) {
-  startGnosisLspStdioTransport();
+  main();
 }

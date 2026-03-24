@@ -1,13 +1,17 @@
 import { describe, expect, test } from 'bun:test';
-import { decideCompanionRestart } from '../companion-restart-policy';
+import {
+  CONSECUTIVE_FAILURES_BEFORE_RESTART,
+  STARTUP_GRACE_MS,
+  decideCompanionRestart,
+} from '../companion-restart-policy';
 
 describe('MCP companion babysitter policy', () => {
   test('does not restart during the startup grace window', () => {
     const now = 100_000;
     const decision = decideCompanionRestart({
       now,
-      companionSpawnedAt: now - 5_000,
-      consecutiveFailures: 3,
+      companionSpawnedAt: now - (STARTUP_GRACE_MS - 1_000),
+      consecutiveFailures: CONSECUTIVE_FAILURES_BEFORE_RESTART,
       restartTimestamps: [],
     });
 
@@ -19,8 +23,8 @@ describe('MCP companion babysitter policy', () => {
     const now = 100_000;
     const decision = decideCompanionRestart({
       now,
-      companionSpawnedAt: now - 25_000,
-      consecutiveFailures: 3,
+      companionSpawnedAt: now - (STARTUP_GRACE_MS + 5_000),
+      consecutiveFailures: CONSECUTIVE_FAILURES_BEFORE_RESTART,
       restartTimestamps: [],
     });
 

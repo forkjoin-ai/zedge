@@ -7,7 +7,7 @@ import {
 } from '../runtime-command';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const defaultLauncher = resolve(__dirname, '../../scripts/run-ts-entry.sh');
+const defaultLauncher = resolve(__dirname, '../../../scripts/run-ts-entry.sh');
 
 describe('runtime command resolution', () => {
   test('builds wrapper-backed entrypoint commands', () => {

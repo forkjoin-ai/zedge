@@ -92,6 +92,12 @@ case "${ABS_ENTRY_PATH}" in
     RUNTIME="$(resolve_runtime)"
     exec "${RUNTIME}" run "${ENTRY_PATH}" "$@"
     ;;
+  "${WORKSPACE_ROOT}/open-source/zedge/companion/src/mcp-stdio.ts"|\
+  "${WORKSPACE_ROOT}/open-source/zedge/companion/src/companion-supervisor.ts"|\
+  "${WORKSPACE_ROOT}/open-source/zedge/companion/src/gnosis-lsp.ts")
+    NODE_RUNTIME="$(resolve_node_runtime)"
+    exec "${NODE_RUNTIME}" "${WORKSPACE_ROOT}/open-source/gnosis/bin/gnode.js" run "${ENTRY_PATH}" --export main "$@"
+    ;;
 esac
 
 NODE_RUNTIME="$(resolve_node_runtime)"
