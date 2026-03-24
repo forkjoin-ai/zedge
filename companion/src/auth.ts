@@ -1,13 +1,9 @@
 /**
  * Zedge Auth Flow
  *
- * Opens browser OAuth, stores token in ~/.edgework/
- * Reuses the same auth infrastructure as edgework-cli.
- *
- * Usage:
- *   bunx zedge login
- *   bunx zedge logout
- *   bunx zedge whoami
+ * Uses the same ~/.edgework token storage as edgework-cli, but drives
+ * browser login through OAuth device authorization instead of a local
+ * callback server.
  */
 
 import { homedir } from 'os';
@@ -19,12 +15,14 @@ import {
   mkdirSync,
   unlinkSync,
 } from 'fs';
-import { createServer } from 'http';
 import { getEdgeworkConfig } from './config';
 
 const CONFIG_DIR = join(homedir(), '.edgework');
 const TOKEN_FILE = join(CONFIG_DIR, 'token.json');
 const API_KEY_FILE = join(CONFIG_DIR, 'api-key');
+const DEVICE_CODE_ENDPOINT = '/auth/device/code';
+const DEVICE_TOKEN_ENDPOINT = '/auth/device/token';
+const USER_INFO_ENDPOINT = '/auth/me';
 
 interface AuthToken {
   accessToken: string;
@@ -34,156 +32,262 @@ interface AuthToken {
   email: string;
 }
 
+interface DeviceCodeResponse {
+  device_code: string;
+  user_code: string;
+  verification_uri: string;
+  verification_uri_complete: string;
+  expires_in: number;
+  interval?: number;
+}
+
+interface DeviceTokenResponse {
+  access_token: string;
+  refresh_token?: string;
+  expires_in: number;
+  error?: string;
+  error_description?: string;
+}
+
+interface UserInfoResponse {
+  id: string;
+  email: string;
+}
+
+interface PendingDeviceAuthorization {
+  readonly deviceCode: string;
+  readonly userCode: string;
+  readonly verificationUri: string;
+  readonly verificationUriComplete: string;
+  readonly expiresAt: number;
+  readonly intervalMs: number;
+  readonly browserOpened: boolean;
+  pollPromise?: Promise<void>;
+}
+
+export interface LoginResult {
+  success: boolean;
+  pending?: boolean;
+  email?: string;
+  error?: string;
+  userCode?: string;
+  verificationUri?: string;
+  verificationUriComplete?: string;
+  expiresAt?: number;
+  browserOpened?: boolean;
+}
+
+let pendingDeviceAuthorization: PendingDeviceAuthorization | null = null;
+
 function ensureConfigDir(): void {
   if (!existsSync(CONFIG_DIR)) {
     mkdirSync(CONFIG_DIR, { recursive: true, mode: 0o700 });
   }
 }
 
-/**
- * Start OAuth login flow
- *
- * 1. Opens browser to auth endpoint
- * 2. Starts local HTTP server on random port to receive callback
- * 3. Exchanges auth code for token
- * 4. Stores token in ~/.edgework/token.json
- */
-export async function login(): Promise<{
-  success: boolean;
-  email?: string;
-  error?: string;
-}> {
-  const config = getEdgeworkConfig();
-  const callbackPort = 7340 + Math.floor(Math.random() * 100);
-  const redirectUri = `http://localhost:${callbackPort}/callback`;
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
 
-  return new Promise((resolve) => {
-    const server = createServer(async (req, res) => {
-      const url = new URL(req.url ?? '/', `http://localhost:${callbackPort}`);
+async function openBrowser(url: string): Promise<boolean> {
+  const bunRuntime = Bun as unknown as {
+    open?: (target: string) => unknown;
+  };
 
-      if (url.pathname === '/callback') {
-        const code = url.searchParams.get('code');
-        const error = url.searchParams.get('error');
+  if (typeof Bun === 'undefined' || typeof bunRuntime.open !== 'function') {
+    return false;
+  }
 
-        if (error) {
-          res.writeHead(200, { 'Content-Type': 'text/html' });
-          res.end(
-            '<html><body><h1>Login Failed</h1><p>You can close this window.</p></body></html>'
-          );
-          server.close();
-          resolve({ success: false, error });
-          return;
-        }
+  try {
+    await Promise.resolve(bunRuntime.open(url));
+    return true;
+  } catch {
+    return false;
+  }
+}
 
-        if (!code) {
-          res.writeHead(200, { 'Content-Type': 'text/html' });
-          res.end(
-            '<html><body><h1>No Auth Code</h1><p>You can close this window.</p></body></html>'
-          );
-          server.close();
-          resolve({ success: false, error: 'No auth code received' });
-          return;
-        }
+function saveAuthToken(
+  tokenData: DeviceTokenResponse,
+  user: UserInfoResponse
+): void {
+  const token: AuthToken = {
+    accessToken: tokenData.access_token,
+    refreshToken: tokenData.refresh_token,
+    expiresAt: Date.now() + tokenData.expires_in * 1000,
+    userId: user.id,
+    email: user.email,
+  };
 
-        // Exchange code for token
-        try {
-          const tokenResp = await fetch(`${config.apiBaseUrl}/auth/token`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              code,
-              redirect_uri: redirectUri,
-              grant_type: 'authorization_code',
-            }),
-          });
+  ensureConfigDir();
+  writeFileSync(TOKEN_FILE, JSON.stringify(token, null, 2), {
+    mode: 0o600,
+  });
+}
 
-          if (!tokenResp.ok) {
-            throw new Error(`Token exchange failed: ${tokenResp.status}`);
+async function fetchUserInfo(
+  baseUrl: string,
+  accessToken: string
+): Promise<UserInfoResponse> {
+  const response = await fetch(`${baseUrl}${USER_INFO_ENDPOINT}`, {
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+    },
+    signal: AbortSignal.timeout(10_000),
+  });
+
+  if (!response.ok) {
+    throw new Error(`Failed to fetch user info: ${response.status}`);
+  }
+
+  return (await response.json()) as UserInfoResponse;
+}
+
+function pendingLoginResult(
+  authorization: PendingDeviceAuthorization
+): LoginResult {
+  return {
+    success: false,
+    pending: true,
+    userCode: authorization.userCode,
+    verificationUri: authorization.verificationUri,
+    verificationUriComplete: authorization.verificationUriComplete,
+    expiresAt: authorization.expiresAt,
+    browserOpened: authorization.browserOpened,
+  };
+}
+
+async function pollForDeviceToken(
+  baseUrl: string,
+  authorization: PendingDeviceAuthorization
+): Promise<void> {
+  try {
+    while (Date.now() < authorization.expiresAt) {
+      await sleep(authorization.intervalMs);
+
+      try {
+        const tokenResponse = await fetch(`${baseUrl}${DEVICE_TOKEN_ENDPOINT}`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            client_id: 'zedge-companion',
+            device_code: authorization.deviceCode,
+            grant_type: 'urn:ietf:params:oauth:grant-type:device_code',
+          }),
+          signal: AbortSignal.timeout(15_000),
+        });
+
+        const tokenData =
+          (await tokenResponse.json()) as DeviceTokenResponse;
+
+        if (tokenData.error) {
+          if (tokenData.error === 'authorization_pending') {
+            continue;
+          }
+          if (tokenData.error === 'slow_down') {
+            await sleep(5_000);
+            continue;
+          }
+          if (
+            tokenData.error === 'expired_token' ||
+            tokenData.error === 'access_denied'
+          ) {
+            pendingDeviceAuthorization = null;
+            return;
           }
 
-          const tokenData = (await tokenResp.json()) as {
-            access_token: string;
-            refresh_token?: string;
-            expires_in: number;
-            user_id: string;
-            email: string;
-          };
-
-          const token: AuthToken = {
-            accessToken: tokenData.access_token,
-            refreshToken: tokenData.refresh_token,
-            expiresAt: Date.now() + tokenData.expires_in * 1000,
-            userId: tokenData.user_id,
-            email: tokenData.email,
-          };
-
-          ensureConfigDir();
-          writeFileSync(TOKEN_FILE, JSON.stringify(token, null, 2), {
-            mode: 0o600,
-          });
-
-          res.writeHead(200, { 'Content-Type': 'text/html' });
-          res.end(
-            `<html><body><h1>Login Successful</h1><p>Logged in as ${token.email}. You can close this window.</p></body></html>`
-          );
-          server.close();
-          resolve({ success: true, email: token.email });
-        } catch (err) {
-          res.writeHead(200, { 'Content-Type': 'text/html' });
-          res.end(
-            '<html><body><h1>Login Failed</h1><p>Token exchange error. You can close this window.</p></body></html>'
-          );
-          server.close();
-          resolve({
-            success: false,
-            error: err instanceof Error ? err.message : String(err),
-          });
+          continue;
         }
+
+        const user = await fetchUserInfo(baseUrl, tokenData.access_token);
+        saveAuthToken(tokenData, user);
+        pendingDeviceAuthorization = null;
+        return;
+      } catch {
+        continue;
       }
-    });
+    }
+  } finally {
+    if (
+      pendingDeviceAuthorization &&
+      pendingDeviceAuthorization.expiresAt <= Date.now()
+    ) {
+      pendingDeviceAuthorization = null;
+    }
+  }
+}
 
-    server.listen(callbackPort, () => {
-      const authUrl = `${
-        config.apiBaseUrl
-      }/auth/login?redirect_uri=${encodeURIComponent(
-        redirectUri
-      )}&client=zedge`;
+/**
+ * Start OAuth device login flow.
+ *
+ * Returns verification details immediately and completes token exchange
+ * asynchronously in the background once the user approves the browser prompt.
+ */
+export async function login(): Promise<LoginResult> {
+  const alreadyAuthenticated = whoami();
+  if (alreadyAuthenticated.authenticated) {
+    return {
+      success: true,
+      email: alreadyAuthenticated.email,
+    };
+  }
 
-      // Open browser
-      /* eslint-disable @typescript-eslint/no-require-imports */
-      const { exec } = require('child_process');
-      /* eslint-enable @typescript-eslint/no-require-imports */
-      const openCmd =
-        process.platform === 'darwin'
-          ? 'open'
-          : process.platform === 'win32'
-          ? 'start'
-          : 'xdg-open';
+  if (
+    pendingDeviceAuthorization &&
+    pendingDeviceAuthorization.expiresAt > Date.now()
+  ) {
+    return pendingLoginResult(pendingDeviceAuthorization);
+  }
 
-      exec(`${openCmd} "${authUrl}"`, (err: Error | null) => {
-        if (err) {
-          console.log(`[zedge] Open this URL in your browser:\n  ${authUrl}`);
-        } else {
-          console.log('[zedge] Browser opened for authentication...');
-        }
-      });
+  const config = getEdgeworkConfig();
+  const deviceCodeResponse = await fetch(
+    `${config.apiBaseUrl}${DEVICE_CODE_ENDPOINT}`,
+    {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        client_id: 'zedge-companion',
+      }),
+      signal: AbortSignal.timeout(15_000),
+    }
+  );
 
-      // Timeout after 5 minutes
-      setTimeout(() => {
-        server.close();
-        resolve({
-          success: false,
-          error: 'Login timed out after 5 minutes',
-        });
-      }, 300_000);
-    });
-  });
+  if (!deviceCodeResponse.ok) {
+    return {
+      success: false,
+      error: `Failed to initiate login: ${deviceCodeResponse.status}`,
+    };
+  }
+
+  const deviceCode = (await deviceCodeResponse.json()) as DeviceCodeResponse;
+  const browserOpened = await openBrowser(deviceCode.verification_uri_complete);
+  const authorization: PendingDeviceAuthorization = {
+    deviceCode: deviceCode.device_code,
+    userCode: deviceCode.user_code,
+    verificationUri: deviceCode.verification_uri,
+    verificationUriComplete: deviceCode.verification_uri_complete,
+    expiresAt: Date.now() + deviceCode.expires_in * 1000,
+    intervalMs: Math.max(1, deviceCode.interval ?? 5) * 1000,
+    browserOpened,
+  };
+
+  authorization.pollPromise = pollForDeviceToken(
+    config.apiBaseUrl,
+    authorization
+  );
+  pendingDeviceAuthorization = authorization;
+
+  return pendingLoginResult(authorization);
 }
 
 /**
  * Logout — clear tokens and API key
  */
 export function logout(): void {
+  pendingDeviceAuthorization = null;
   try {
     if (existsSync(TOKEN_FILE)) unlinkSync(TOKEN_FILE);
   } catch {
@@ -205,6 +309,13 @@ export function whoami(): {
   method?: 'token' | 'api-key';
   email?: string;
   expiresAt?: number;
+  pendingAuth?: {
+    userCode: string;
+    verificationUri: string;
+    verificationUriComplete: string;
+    expiresAt: number;
+    browserOpened: boolean;
+  };
 } {
   // Check token first
   try {
@@ -236,6 +347,23 @@ export function whoami(): {
     }
   } catch {
     // No key
+  }
+
+  if (
+    pendingDeviceAuthorization &&
+    pendingDeviceAuthorization.expiresAt > Date.now()
+  ) {
+    return {
+      authenticated: false,
+      pendingAuth: {
+        userCode: pendingDeviceAuthorization.userCode,
+        verificationUri: pendingDeviceAuthorization.verificationUri,
+        verificationUriComplete:
+          pendingDeviceAuthorization.verificationUriComplete,
+        expiresAt: pendingDeviceAuthorization.expiresAt,
+        browserOpened: pendingDeviceAuthorization.browserOpened,
+      },
+    };
   }
 
   return { authenticated: false };

@@ -20,6 +20,11 @@ pub struct ZedgeModel {
 /// Available models — mirrors the settings generator list
 pub const MODELS: &[ZedgeModel] = &[
     ZedgeModel {
+        id: "wasm-local",
+        display_name: "SmolLM2 360M (Local WASM)",
+        max_tokens: 2048,
+    },
+    ZedgeModel {
         id: "qwen-2.5-coder-7b",
         display_name: "Qwen 2.5 Coder 7B",
         max_tokens: 4096,
@@ -52,6 +57,11 @@ pub const MODELS: &[ZedgeModel] = &[
     ZedgeModel {
         id: "deepseek-r1",
         display_name: "DeepSeek R1",
+        max_tokens: 4096,
+    },
+    ZedgeModel {
+        id: "personaplex-7b",
+        display_name: "PersonaPlex 7B (Moshi)",
         max_tokens: 4096,
     },
     ZedgeModel {

@@ -6,7 +6,9 @@
  * Routes to the fastest healthy coordinator per model.
  */
 
-import { getApiBaseUrl, getAuthHeaders, getZedgeConfig } from './config';
+import { getApiBaseUrl, getAuthHeaders } from './config';
+import { CLOUD_RUN_COORDINATORS } from './coordinator-urls';
+import { buildCloudRunHealthUrls } from './cloudrun-auth';
 
 // --- Types ---
 
@@ -32,21 +34,63 @@ const probeCache = new Map<string, ProbeResult>();
 const PROBE_INTERVAL_MS = 60_000; // Re-probe every 60s
 const PROBE_TIMEOUT_MS = 5_000;
 
-// Cloud Run coordinator URLs
-const CLOUD_RUN_COORDINATORS: Record<string, string> = {
-  'tinyllama-1.1b':
-    'https://tinyllama-1-1b-coordinator-jqfuhpqhja-uc.a.run.app',
-  'mistral-7b': 'https://mistral-7b-coordinator-jqfuhpqhja-uc.a.run.app',
-  'qwen-2.5-coder-7b': 'https://qwen-edit-coordinator-jqfuhpqhja-uc.a.run.app',
-  'gemma3-4b-it': 'https://gemma3-4b-it-coordinator-jqfuhpqhja-uc.a.run.app',
-  'gemma3-1b-it': 'https://gemma3-1b-it-coordinator-jqfuhpqhja-uc.a.run.app',
-  'glm-4-9b': 'https://glm-4-9b-coordinator-jqfuhpqhja-uc.a.run.app',
-  'deepseek-r1': 'https://deepseek-r1-coordinator-jqfuhpqhja-uc.a.run.app',
-  'lfm2.5-1.2b-glm-4.7-flash-thinking':
-    'https://lfm-1-2b-coordinator-jqfuhpqhja-uc.a.run.app',
-};
+// Cloud Run coordinator URLs imported from coordinator-urls.ts (single source of truth)
 
 let probeInterval: ReturnType<typeof setInterval> | null = null;
+let probeAbortController: AbortController | null = null;
+
+export function isReachableCoordinatorHealthStatus(status: number): boolean {
+  // 2xx = healthy. 403 = service is alive but requires IAM auth we don't have
+  // locally -- still reachable for inference (which sends its own auth).
+  return (status >= 200 && status < 300) || status === 403;
+}
+
+export interface CloudRunHealthProbeResult {
+  url: string;
+  latencyMs: number;
+  healthy: boolean;
+  status: number;
+}
+
+export async function probeCloudRunHealth(
+  baseUrl: string,
+  timeoutMs = PROBE_TIMEOUT_MS
+): Promise<CloudRunHealthProbeResult> {
+  const candidateUrls = buildCloudRunHealthUrls(baseUrl);
+  const startedAt = Date.now();
+  let lastStatus = 0;
+  let lastUrl = candidateUrls[0] ?? baseUrl;
+
+  for (const url of candidateUrls) {
+    lastUrl = url;
+    const probeStartedAt = Date.now();
+    try {
+      const response = await fetch(url, {
+        method: 'GET',
+        headers: {},
+        signal: AbortSignal.timeout(timeoutMs),
+      });
+      lastStatus = response.status;
+      if (isReachableCoordinatorHealthStatus(response.status)) {
+        return {
+          url,
+          latencyMs: Date.now() - probeStartedAt,
+          healthy: true,
+          status: response.status,
+        };
+      }
+    } catch {
+      // Try the next canonical health path before marking the coordinator dead.
+    }
+  }
+
+  return {
+    url: lastUrl,
+    latencyMs: Date.now() - startedAt,
+    healthy: false,
+    status: lastStatus,
+  };
+}
 
 // --- Public API ---
 
@@ -55,6 +99,8 @@ let probeInterval: ReturnType<typeof setInterval> | null = null;
  */
 export function startProbing(): void {
   if (probeInterval) return;
+
+  probeAbortController = new AbortController();
 
   // Probe immediately (non-blocking)
   probeAll().catch(() => {});
@@ -71,6 +117,10 @@ export function startProbing(): void {
  * Stop latency probing
  */
 export function stopProbing(): void {
+  if (probeAbortController) {
+    probeAbortController.abort();
+    probeAbortController = null;
+  }
   if (probeInterval) {
     clearInterval(probeInterval);
     probeInterval = null;
@@ -161,10 +211,26 @@ async function probeAll(): Promise<void> {
 
   // Probe each Cloud Run coordinator
   for (const [model, url] of Object.entries(CLOUD_RUN_COORDINATORS)) {
-    promises.push(probeEndpoint('cloudrun', model, `${url}/health`));
+    promises.push(probeCloudRunEndpoint(model, url));
   }
 
   await Promise.allSettled(promises);
+}
+
+async function probeCloudRunEndpoint(
+  model: string,
+  baseUrl: string
+): Promise<void> {
+  const key = `cloudrun:${model}`;
+  const result = await probeCloudRunHealth(baseUrl);
+  probeCache.set(key, {
+    tier: 'cloudrun',
+    model,
+    url: result.url,
+    latencyMs: result.latencyMs,
+    healthy: result.healthy,
+    lastProbed: Date.now(),
+  });
 }
 
 /**
@@ -181,8 +247,14 @@ async function probeEndpoint(
   try {
     const resp = await fetch(url, {
       method: 'GET',
-      headers: tier === 'edge' ? getAuthHeaders() : {},
-      signal: AbortSignal.timeout(PROBE_TIMEOUT_MS),
+      headers:
+        tier === 'edge' || tier === 'cloudrun' ? getAuthHeaders() : {},
+      signal: probeAbortController
+        ? AbortSignal.any([
+            AbortSignal.timeout(PROBE_TIMEOUT_MS),
+            probeAbortController.signal,
+          ])
+        : AbortSignal.timeout(PROBE_TIMEOUT_MS),
     });
 
     const latencyMs = Date.now() - start;
@@ -191,7 +263,7 @@ async function probeEndpoint(
       model,
       url,
       latencyMs,
-      healthy: resp.ok || resp.status === 404, // 404 on /health is still "up"
+      healthy: isReachableCoordinatorHealthStatus(resp.status),
       lastProbed: Date.now(),
     });
   } catch {

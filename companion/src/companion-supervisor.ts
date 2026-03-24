@@ -1,0 +1,294 @@
+#!/usr/bin/env bun
+
+import { spawn, type ChildProcess } from 'child_process';
+import { dirname, resolve } from 'path';
+import { fileURLToPath } from 'url';
+import { getCompanionPort } from './config';
+import {
+  COMPANION_STOP_TIMEOUT_MS,
+  CONSECUTIVE_FAILURES_BEFORE_RESTART,
+  HEALTH_CHECK_INTERVAL_MS,
+  HEALTH_CHECK_TIMEOUT_MS,
+  decideCompanionRestart,
+} from './companion-restart-policy';
+import { resolveTypeScriptEntrypointCommand } from './runtime-command';
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
+const COMPANION_ENTRY = resolve(__dirname, 'index.ts');
+
+let childProc: ChildProcess | null = null;
+let supervisorTimer: ReturnType<typeof setInterval> | null = null;
+let childSpawnedAt = 0;
+let consecutiveHealthFailures = 0;
+let recentRestartTimestamps: number[] = [];
+let restartInFlight: Promise<boolean> | null = null;
+let suppressExitRestart = false;
+let shuttingDown = false;
+let healthCheckInFlight = false;
+
+function getCompanionBase(): string {
+  return `http://127.0.0.1:${getCompanionPort()}`;
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function isCompanionAlive(): Promise<boolean> {
+  try {
+    const response = await fetch(`${getCompanionBase()}/health`, {
+      signal: AbortSignal.timeout(HEALTH_CHECK_TIMEOUT_MS),
+    });
+    return response.ok;
+  } catch {
+    return false;
+  }
+}
+
+async function waitForCompanion(maxAttempts = 20): Promise<boolean> {
+  for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+    if (await isCompanionAlive()) {
+      return true;
+    }
+    await sleep(500);
+  }
+
+  return false;
+}
+
+function spawnCompanion(): void {
+  if (childProc && childProc.exitCode === null && childProc.signalCode === null) {
+    console.warn(
+      '[zedge:supervisor] Refusing duplicate companion spawn while owned child is still active'
+    );
+    return;
+  }
+
+  const runtimeCommand = resolveTypeScriptEntrypointCommand(COMPANION_ENTRY);
+  console.log(`[zedge:supervisor] Spawning companion: ${runtimeCommand.display}`);
+  const child = spawn(runtimeCommand.command, [...runtimeCommand.args], {
+    stdio: ['ignore', 'inherit', 'inherit'],
+    env: { ...process.env },
+  });
+  childProc = child;
+  childSpawnedAt = Date.now();
+  consecutiveHealthFailures = 0;
+
+  child.on('error', (error) => {
+    console.warn(`[zedge:supervisor] Failed to spawn companion: ${error.message}`);
+    if (childProc === child) {
+      childProc = null;
+    }
+  });
+
+  child.on('exit', (code, signal) => {
+    console.log(
+      `[zedge:supervisor] Companion exited with code ${code} signal ${signal ?? 'none'}`
+    );
+    if (childProc === child) {
+      childProc = null;
+    }
+    if (!shuttingDown && !suppressExitRestart) {
+      void restartCompanion('owned child exited unexpectedly', { force: true });
+    }
+  });
+}
+
+async function stopCompanion(): Promise<void> {
+  const child = childProc;
+  if (!child) {
+    return;
+  }
+
+  suppressExitRestart = true;
+  const exitPromise = new Promise<void>((resolve) => {
+    if (child.exitCode !== null || child.signalCode !== null) {
+      resolve();
+      return;
+    }
+    child.once('exit', () => resolve());
+  });
+
+  try {
+    child.kill('SIGTERM');
+  } catch {
+    // Best-effort shutdown only.
+  }
+
+  const exitedGracefully = await Promise.race([
+    exitPromise.then(() => true),
+    sleep(COMPANION_STOP_TIMEOUT_MS).then(() => false),
+  ]);
+
+  if (!exitedGracefully && child.exitCode === null && child.signalCode === null) {
+    try {
+      child.kill('SIGKILL');
+    } catch {
+      // Best-effort hard stop only.
+    }
+    await Promise.race([exitPromise, sleep(1_000)]);
+  }
+
+  if (childProc === child) {
+    childProc = null;
+  }
+  suppressExitRestart = false;
+}
+
+async function restartCompanion(
+  reason: string,
+  options: { force?: boolean } = {}
+): Promise<boolean> {
+  if (restartInFlight) {
+    return restartInFlight;
+  }
+
+  restartInFlight = (async () => {
+    const decision = decideCompanionRestart({
+      now: Date.now(),
+      companionSpawnedAt: childSpawnedAt,
+      consecutiveFailures: consecutiveHealthFailures,
+      restartTimestamps: recentRestartTimestamps,
+      force: options.force,
+    });
+    recentRestartTimestamps = decision.restartTimestamps;
+
+    if (!decision.shouldRestart) {
+      if (decision.reason === 'startup_grace') {
+        console.debug(
+          '[zedge:supervisor] Skipping restart during companion startup grace window'
+        );
+      } else if (decision.reason === 'rate_limited') {
+        console.warn(
+          `[zedge:supervisor] Restart suppressed after ${recentRestartTimestamps.length} restarts in the last 60s`
+        );
+      }
+      return false;
+    }
+
+    console.log(`[zedge:supervisor] Restarting companion: ${reason}`);
+    await stopCompanion();
+    spawnCompanion();
+
+    const alive = await waitForCompanion();
+    if (!alive) {
+      console.warn('[zedge:supervisor] Companion did not become healthy after restart');
+      return false;
+    }
+
+    consecutiveHealthFailures = 0;
+    console.log('[zedge:supervisor] Companion healthy after restart');
+    return true;
+  })().finally(() => {
+    restartInFlight = null;
+  });
+
+  return restartInFlight;
+}
+
+function startSupervisor(): void {
+  if (supervisorTimer) {
+    return;
+  }
+
+  supervisorTimer = setInterval(async () => {
+    if (healthCheckInFlight || restartInFlight) {
+      return;
+    }
+
+    healthCheckInFlight = true;
+    try {
+      const alive = await isCompanionAlive();
+      if (alive) {
+        consecutiveHealthFailures = 0;
+        return;
+      }
+
+      consecutiveHealthFailures += 1;
+      console.warn(
+        `[zedge:supervisor] Companion health check failed (${consecutiveHealthFailures}/${CONSECUTIVE_FAILURES_BEFORE_RESTART})`
+      );
+      await restartCompanion(
+        `health check failed ${consecutiveHealthFailures} consecutive times`
+      );
+    } finally {
+      healthCheckInFlight = false;
+    }
+  }, HEALTH_CHECK_INTERVAL_MS);
+}
+
+async function main(): Promise<void> {
+  if (await isCompanionAlive()) {
+    console.log(
+      `[zedge:supervisor] Companion already healthy at ${getCompanionBase()}; refusing to take over an existing listener`
+    );
+    return;
+  }
+
+  spawnCompanion();
+  const alive = await waitForCompanion();
+  if (!alive) {
+    throw new Error(`Companion sidecar did not become healthy at ${getCompanionBase()}`);
+  }
+
+  console.log('[zedge:supervisor] Companion sidecar is ready');
+  startSupervisor();
+}
+
+function registerShutdownHandlers(): void {
+  const shutdown = async (signal: string): Promise<void> => {
+    if (shuttingDown) {
+      return;
+    }
+    shuttingDown = true;
+    console.log(`[zedge:supervisor] Shutting down (${signal})`);
+    if (supervisorTimer) {
+      clearInterval(supervisorTimer);
+      supervisorTimer = null;
+    }
+    await stopCompanion();
+    process.exit(0);
+  };
+
+  process.on('SIGINT', () => {
+    void shutdown('SIGINT');
+  });
+  process.on('SIGTERM', () => {
+    void shutdown('SIGTERM');
+  });
+  process.on('exit', () => {
+    shuttingDown = true;
+    if (supervisorTimer) {
+      clearInterval(supervisorTimer);
+      supervisorTimer = null;
+    }
+    if (childProc && !childProc.killed) {
+      try {
+        childProc.kill('SIGTERM');
+      } catch {
+        // Best effort only.
+      }
+    }
+  });
+}
+
+function isExecutedDirectly(importMetaUrl: string): boolean {
+  const entryPath = process.argv[1];
+  if (!entryPath) {
+    return false;
+  }
+
+  return resolve(fileURLToPath(importMetaUrl)) === resolve(entryPath);
+}
+
+if (isExecutedDirectly(import.meta.url)) {
+  registerShutdownHandlers();
+  main().catch((error) => {
+    console.error(
+      `[zedge:supervisor] Fatal error: ${
+        error instanceof Error ? error.message : String(error)
+      }`
+    );
+    process.exit(1);
+  });
+}

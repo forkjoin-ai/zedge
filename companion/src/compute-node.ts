@@ -64,16 +64,10 @@ let poolState: {
  * Implements the BillingDaemon debt policy from the edge inference ebook
  */
 export function getBillingHeaders(): Record<string, string> {
-  const config = getZedgeConfig();
+  const isPremium = !!getApiKey();
   return {
-    'X-Edgework-Debt-Mode': 'free', // Default tier: free (0 debt cap)
-    'X-Edgework-Debt-Max': '0',
-    ...(getApiKey()
-      ? {
-          'X-Edgework-Debt-Mode': 'premium',
-          'X-Edgework-Debt-Max': '5',
-        }
-      : {}),
+    'X-Edgework-Debt-Mode': isPremium ? 'premium' : 'free',
+    'X-Edgework-Debt-Max': isPremium ? '5' : '0',
   };
 }
 

@@ -127,7 +127,10 @@ pub fn run_status(worktree: Option<&Worktree>) -> Result<SlashCommandOutput, Str
         }
         Err(e) => {
             parts.push(format!("**Companion offline**: {e}"));
-            parts.push("Start with: `pnpm gnode run open-source/zedge/companion/src/index.ts`".to_string());
+            parts.push(
+                "Start with: `bun run open-source/zedge/companion/src/companion-supervisor.ts`"
+                    .to_string(),
+            );
         }
     }
 
@@ -190,7 +193,32 @@ pub fn run_models() -> Result<SlashCommandOutput, String> {
 }
 
 /// /zedge-pool — compute pool status and earnings
-pub fn run_pool() -> Result<SlashCommandOutput, String> {
+pub fn run_pool(args: &[String]) -> Result<SlashCommandOutput, String> {
+    let subcommand = args
+        .first()
+        .map(|value| value.as_str())
+        .unwrap_or("status");
+
+    if subcommand == "join" {
+        return match companion_post("/compute-pool/join") {
+            Ok(body) => Ok(output_with_section(
+                format!("## Compute Pool Join\n\n```json\n{body}\n```"),
+                "Compute Pool",
+            )),
+            Err(e) => Ok(output_with_section(format!("**Error**: {e}"), "Compute Pool")),
+        };
+    }
+
+    if subcommand == "leave" {
+        return match companion_post("/compute-pool/leave") {
+            Ok(body) => Ok(output_with_section(
+                format!("## Compute Pool Leave\n\n```json\n{body}\n```"),
+                "Compute Pool",
+            )),
+            Err(e) => Ok(output_with_section(format!("**Error**: {e}"), "Compute Pool")),
+        };
+    }
+
     let mut parts: Vec<String> = Vec::new();
 
     match companion_get("/compute-pool/status") {
@@ -214,13 +242,7 @@ pub fn run_pool() -> Result<SlashCommandOutput, String> {
                     "**WASM bridge**: {}",
                     if wasm { "available" } else { "unavailable" }
                 ));
-                parts.push("\n**Commands**:".to_string());
-                parts.push(
-                    "- Join: `curl -X POST http://localhost:7331/compute-pool/join`".to_string(),
-                );
-                parts.push(
-                    "- Leave: `curl -X POST http://localhost:7331/compute-pool/leave`".to_string(),
-                );
+                parts.push("\n**Slash commands**: `/zedge-pool join`, `/zedge-pool leave`".to_string());
             } else {
                 parts.push(format!("```json\n{pool_json}\n```"));
             }
@@ -259,7 +281,7 @@ pub fn run_logs() -> Result<SlashCommandOutput, String> {
         }
         Err(e) => {
             Ok(output_with_section(
-                format!("**Companion offline**: {e}\n\nStart with: `pnpm gnode run open-source/zedge/companion/src/index.ts`"),
+                format!("**Companion offline**: {e}\n\nStart with: `bun run open-source/zedge/companion/src/companion-supervisor.ts`"),
                 "Inference Logs",
             ))
         }
@@ -290,6 +312,117 @@ pub fn run_restart() -> Result<SlashCommandOutput, String> {
         Err(e) => Ok(output_with_section(
             format!("**Companion offline**: {e}"),
             "Companion Restart",
+        )),
+    }
+}
+
+/// /zedge-selftest — live inference contract check
+pub fn run_selftest(args: &[String]) -> Result<SlashCommandOutput, String> {
+    let model = args
+        .first()
+        .map(|value| value.trim())
+        .filter(|value| !value.is_empty());
+    let path = match model {
+        Some(model_id) => format!("/selftest/inference?model={model_id}"),
+        None => "/selftest/inference".to_string(),
+    };
+
+    match companion_get(&path) {
+        Ok(body) => {
+            if let Ok(value) = serde_json::from_str::<serde_json::Value>(&body) {
+                let mut parts: Vec<String> = Vec::new();
+                let model_id = value["model"].as_str().unwrap_or("?");
+                parts.push("## Inference Self-Test\n".to_string());
+                parts.push(format!("**Model**: `{model_id}`"));
+
+                let edge_models = &value["edgeModels"];
+                parts.push(format!(
+                    "**Edge /v1/models**: {} ({})",
+                    edge_models["status"].as_i64().unwrap_or(0),
+                    if edge_models["ok"].as_bool().unwrap_or(false) {
+                        "ok"
+                    } else {
+                        "error"
+                    }
+                ));
+                if let Some(error) = edge_models["error"].as_str() {
+                    parts.push(format!("Edge error: `{error}`"));
+                }
+
+                if !value["cloudRunHealth"].is_null() {
+                    let cloudrun = &value["cloudRunHealth"];
+                    parts.push(format!(
+                        "**Cloud Run health**: {} via `{}` (healthy={}, {}ms)",
+                        cloudrun["status"].as_i64().unwrap_or(0),
+                        cloudrun["url"].as_str().unwrap_or("?"),
+                        cloudrun["healthy"].as_bool().unwrap_or(false),
+                        cloudrun["latencyMs"].as_u64().unwrap_or(0)
+                    ));
+                }
+
+                let companion = &value["companionStream"];
+                parts.push(format!(
+                    "**Companion stream**: {} content-type=`{}` prefill={} heartbeat={} data={} done={}",
+                    companion["status"].as_i64().unwrap_or(0),
+                    companion["contentType"].as_str().unwrap_or("?"),
+                    companion["sawPrefill"].as_bool().unwrap_or(false),
+                    companion["sawHeartbeat"].as_bool().unwrap_or(false),
+                    companion["sawData"].as_bool().unwrap_or(false),
+                    companion["sawDone"].as_bool().unwrap_or(false),
+                ));
+                if let Some(lines) = companion["sample"].as_array() {
+                    parts.push("\n### Companion SSE sample".to_string());
+                    parts.push("```".to_string());
+                    for line in lines.iter().filter_map(|line| line.as_str()) {
+                        parts.push(line.to_string());
+                    }
+                    parts.push("```".to_string());
+                }
+                if let Some(error) = companion["error"].as_str() {
+                    parts.push(format!("Companion stream error: `{error}`"));
+                }
+                if let Some(preview) = companion["bodyPreview"].as_str() {
+                    parts.push(format!("Companion body preview: ```\n{preview}\n```"));
+                }
+
+                if !value["directCloudRunStream"].is_null() {
+                    let direct = &value["directCloudRunStream"];
+                    parts.push(format!(
+                        "\n**Direct Cloud Run stream**: {} content-type=`{}` prefill={} heartbeat={} data={} done={}",
+                        direct["status"].as_i64().unwrap_or(0),
+                        direct["contentType"].as_str().unwrap_or("?"),
+                        direct["sawPrefill"].as_bool().unwrap_or(false),
+                        direct["sawHeartbeat"].as_bool().unwrap_or(false),
+                        direct["sawData"].as_bool().unwrap_or(false),
+                        direct["sawDone"].as_bool().unwrap_or(false),
+                    ));
+                    if let Some(lines) = direct["sample"].as_array() {
+                        parts.push("\n### Direct Cloud Run SSE sample".to_string());
+                        parts.push("```".to_string());
+                        for line in lines.iter().filter_map(|line| line.as_str()) {
+                            parts.push(line.to_string());
+                        }
+                        parts.push("```".to_string());
+                    }
+                    if let Some(error) = direct["error"].as_str() {
+                        parts.push(format!("Direct Cloud Run stream error: `{error}`"));
+                    }
+                    if let Some(preview) = direct["bodyPreview"].as_str() {
+                        parts.push(format!("Direct Cloud Run body preview: ```\n{preview}\n```"));
+                    }
+                }
+
+                Ok(output_with_section(parts.join("\n"), "Inference Self-Test"))
+            } else {
+                Ok(output_with_section(
+                    format!("```\n{body}\n```"),
+                    "Inference Self-Test",
+                ))
+            }
+        }
+        Err(error) => Ok(output_with_section(
+            format!("**Companion unavailable**: {error}"),
+            "Inference Self-Test",
         )),
     }
 }
@@ -969,7 +1102,7 @@ pub fn run_test(worktree: Option<&Worktree>) -> Result<SlashCommandOutput, Strin
     let wt = worktree.ok_or("No active workspace")?;
 
     // Path to the Gnosis isolation runner
-    let runner_path = "open-source/gnosis/isolation-tests.gg";
+    let runner_path = "open-source/gnosis/topologies/services/isolation-tests.gg";
     let runner_code = wt
         .read_text_file(runner_path)
         .map_err(|_| format!("Could not find Gnosis isolation runner at {}", runner_path))?;
@@ -1014,10 +1147,84 @@ pub fn run_test(worktree: Option<&Worktree>) -> Result<SlashCommandOutput, Strin
     }
 }
 
-/// /zedge-feedback — RLHF quality feedback
-pub fn run_feedback() -> Result<SlashCommandOutput, String> {
-    let text = "Feedback noted. Quality ratings help improve model routing.\n\nTo submit detailed feedback, POST to `http://localhost:7331/feedback` with:\n```json\n{\"model\": \"tinyllama-1.1b\", \"rating\": 4, \"comment\": \"Good response\"}\n```".to_string();
-    Ok(output_with_section(text, "Zedge Feedback"))
+/// /zedge-feedback — local RLHF quality feedback
+pub fn run_feedback(args: &[String]) -> Result<SlashCommandOutput, String> {
+    if args.is_empty() {
+        return match companion_get("/feedback?n=10") {
+            Ok(body) => {
+                if let Ok(value) = serde_json::from_str::<serde_json::Value>(&body) {
+                    let mut parts = vec![
+                        "## Zedge Feedback\n".to_string(),
+                        "Usage: `/zedge-feedback <rating 1-5> [comment]`\n".to_string(),
+                    ];
+                    let count = value["count"].as_u64().unwrap_or(0);
+                    parts.push(format!("**Recent entries**: {count}"));
+                    if let Some(entries) = value["entries"].as_array() {
+                        for entry in entries.iter().rev().take(10) {
+                            let rating = entry["rating"].as_i64().unwrap_or(0);
+                            let comment = entry["comment"].as_str().unwrap_or("");
+                            let timestamp = entry["timestamp"].as_str().unwrap_or("?");
+                            let model = entry["model"].as_str().unwrap_or("");
+                            let model_suffix = if model.is_empty() {
+                                String::new()
+                            } else {
+                                format!(" model=`{model}`")
+                            };
+                            parts.push(format!(
+                                "- `{timestamp}` rating={rating}{model_suffix} {comment}"
+                            ));
+                        }
+                    }
+                    Ok(output_with_section(parts.join("\n"), "Zedge Feedback"))
+                } else {
+                    Ok(output_with_section(format!("```\n{body}\n```"), "Zedge Feedback"))
+                }
+            }
+            Err(error) => Ok(output_with_section(
+                format!("**Companion unavailable**: {error}"),
+                "Zedge Feedback",
+            )),
+        };
+    }
+
+    let rating = match args[0].parse::<u8>() {
+        Ok(value) if (1..=5).contains(&value) => value,
+        _ => {
+            return Ok(output_with_section(
+                "Usage: `/zedge-feedback <rating 1-5> [comment]`".to_string(),
+                "Zedge Feedback",
+            ))
+        }
+    };
+
+    let comment = if args.len() > 1 {
+        Some(args[1..].join(" "))
+    } else {
+        None
+    };
+
+    let mut body = serde_json::json!({
+        "rating": rating,
+        "source": "zed-extension",
+    });
+    if let Some(comment_text) = comment
+        .as_ref()
+        .map(|value| value.trim())
+        .filter(|value| !value.is_empty())
+    {
+        body["comment"] = serde_json::Value::String(comment_text.to_string());
+    }
+
+    match companion_post_json("/feedback", body) {
+        Ok(response) => Ok(output_with_section(
+            format!("## Feedback Recorded\n\n```json\n{response}\n```"),
+            "Zedge Feedback",
+        )),
+        Err(error) => Ok(output_with_section(
+            format!("**Companion unavailable**: {error}"),
+            "Zedge Feedback",
+        )),
+    }
 }
 
 pub fn run_babelfish(
@@ -1343,6 +1550,88 @@ pub fn run_cera(args: &str) -> Result<SlashCommandOutput, String> {
         _ => Ok(output_with_section(
             "Unknown subcommand. Available: `status`, `mutations`, `accept <id>`, `reject <id>`, `history`, `daydream`".to_string(),
             "Zedge CERA",
+        )),
+    }
+}
+
+/// /zedge-review — Consensus code review via constructive superinference
+///
+/// Runs three models in parallel on the current file's git diff. Output shows
+/// where models agree (high confidence) and where they disagree (flagged for
+/// human review). This is something Cursor cannot do -- honest uncertainty
+/// signal from multiple models.
+pub fn run_review(worktree: Option<&Worktree>) -> Result<SlashCommandOutput, String> {
+    // Get git diff for context
+    let diff_context = match worktree {
+        Some(wt) => {
+            let entries = wt.read_text_file(".git/HEAD");
+            if entries.is_ok() {
+                match companion_get("/vfs/changes") {
+                    Ok(changes) => changes,
+                    Err(_) => "(no git changes available)".to_string(),
+                }
+            } else {
+                "(not a git repository)".to_string()
+            }
+        }
+        None => "(no worktree)".to_string(),
+    };
+
+    // Run constructive superinference on the diff
+    let body = serde_json::json!({
+        "messages": [
+            {
+                "role": "system",
+                "content": "You are a code reviewer. Review the following git diff. Be specific about:\n1. Potential bugs or logic errors\n2. Performance concerns\n3. Style/readability improvements\n4. Security considerations\nBe constructive and concise."
+            },
+            {
+                "role": "user",
+                "content": format!("Review this diff:\n\n```diff\n{}\n```", diff_context)
+            }
+        ],
+        "strategy": "constructive",
+        "timeout_ms": 60000
+    });
+
+    match companion_post_json("/v1/superinference", body) {
+        Ok(resp_body) => {
+            if let Ok(value) = serde_json::from_str::<serde_json::Value>(&resp_body) {
+                let content = value["content"].as_str().unwrap_or("(no review content)");
+                let winning_model = value["winningModel"].as_str().unwrap_or("unknown");
+                let confidence = value["confidence"].as_f64().unwrap_or(0.0);
+                let duration_ms = value["durationMs"].as_u64().unwrap_or(0);
+                let strategy = value["strategy"].as_str().unwrap_or("constructive");
+
+                let mut parts = vec![
+                    "## Consensus Code Review\n".to_string(),
+                    format!("**Strategy**: {} | **Confidence**: {:.0}% | **Duration**: {}ms | **Lead model**: {}\n",
+                        strategy, confidence * 100.0, duration_ms, winning_model),
+                ];
+
+                // Show per-model results if available
+                if let Some(models) = value["modelResults"].as_array() {
+                    parts.push("### Per-Model Results\n".to_string());
+                    for m in models {
+                        let model = m["model"].as_str().unwrap_or("?");
+                        let ms = m["durationMs"].as_u64().unwrap_or(0);
+                        let finished = m["finished"].as_bool().unwrap_or(false);
+                        let status = if finished { "completed" } else { "timed out" };
+                        parts.push(format!("- **{}** — {} ({}ms)", model, status, ms));
+                    }
+                    parts.push(String::new());
+                }
+
+                parts.push("### Review\n".to_string());
+                parts.push(content.to_string());
+
+                Ok(output_with_section(parts.join("\n"), "Consensus Code Review"))
+            } else {
+                Ok(output_with_section(format!("```\n{resp_body}\n```"), "Consensus Code Review"))
+            }
+        }
+        Err(e) => Ok(output_with_section(
+            format!("**Superinference unavailable**: {e}\n\nEnsure the companion sidecar is running."),
+            "Consensus Code Review",
         )),
     }
 }

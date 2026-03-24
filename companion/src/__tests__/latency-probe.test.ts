@@ -3,6 +3,8 @@ import {
   getTierHealth,
   getProbeResults,
   getFastestTier,
+  isReachableCoordinatorHealthStatus,
+  probeCloudRunHealth,
   stopProbing,
 } from '../latency-probe';
 
@@ -70,6 +72,66 @@ describe('Latency Probe', () => {
       expect(health.cloudRun[model]).toBeDefined();
       expect(typeof health.cloudRun[model].healthy).toBe('boolean');
       expect(typeof health.cloudRun[model].latencyMs).toBe('number');
+    }
+  });
+
+  test('treats reachable coordinator health statuses as healthy', () => {
+    expect(isReachableCoordinatorHealthStatus(200)).toBe(true);
+    expect(isReachableCoordinatorHealthStatus(204)).toBe(true);
+    // 403 = service is alive but requires IAM auth we don't have locally
+    expect(isReachableCoordinatorHealthStatus(403)).toBe(true);
+    expect(isReachableCoordinatorHealthStatus(404)).toBe(false);
+    expect(isReachableCoordinatorHealthStatus(500)).toBe(false);
+  });
+
+  test('probes canonical cloudrun health paths until one succeeds', async () => {
+    const originalFetch = global.fetch;
+    const calls: string[] = [];
+    global.fetch = (async (input: RequestInfo | URL) => {
+      const url = String(input);
+      calls.push(url);
+      if (url.endsWith('/api/v1/health')) {
+        return new Response('missing', { status: 404 });
+      }
+      if (url.endsWith('/health')) {
+        return new Response(JSON.stringify({ status: 'healthy' }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        });
+      }
+      return new Response('unexpected', { status: 500 });
+    }) as typeof fetch;
+
+    try {
+      const result = await probeCloudRunHealth('https://example.run.app');
+      expect(result.healthy).toBe(true);
+      expect(result.status).toBe(200);
+      expect(result.url).toBe('https://example.run.app/health');
+      expect(calls).toEqual([
+        'https://example.run.app/api/v1/health',
+        'https://example.run.app/health',
+      ]);
+    } finally {
+      global.fetch = originalFetch;
+    }
+  });
+
+  test('cloudrun health probe treats 403 as reachable (IAM auth required)', async () => {
+    const originalFetch = global.fetch;
+    global.fetch = (async () =>
+      new Response(JSON.stringify({ error: 'forbidden' }), {
+        status: 403,
+        headers: { 'Content-Type': 'application/json' },
+      })) as typeof fetch;
+
+    try {
+      const result = await probeCloudRunHealth('https://example.run.app');
+      // 403 means the service is alive but requires IAM auth we don't
+      // have locally -- still reachable for inference requests.
+      expect(result.healthy).toBe(true);
+      expect(result.status).toBe(403);
+    } finally {
+      global.fetch = originalFetch;
     }
   });
 });

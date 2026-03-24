@@ -68,6 +68,8 @@ export interface AgentResponse {
   content: string;
   toolCalls?: ToolCall[];
   toolResults?: ToolResult[];
+  /** Code blocks parsed from the response with file path annotations */
+  codeBlocks?: ParsedCodeBlock[];
   done: boolean;
 }
 
@@ -341,6 +343,7 @@ export async function agentTurn(
       content: finalContent,
       toolCalls,
       toolResults,
+      codeBlocks: parseCodeBlocks(finalContent),
       done: true,
     };
   }
@@ -353,6 +356,7 @@ export async function agentTurn(
 
   return {
     content: responseContent,
+    codeBlocks: parseCodeBlocks(responseContent),
     done: true,
   };
 }
@@ -487,6 +491,42 @@ ${context}
 }
 
 // --- Tool Parsing & Execution ---
+
+/**
+ * Parse annotated code blocks from model responses into AgentEdit objects.
+ *
+ * Detects patterns like:
+ *   ```typescript // path/to/file.ts
+ *   ...code...
+ *   ```
+ *
+ * Returns structured edits that can be applied via AgentParticipant.
+ */
+export interface ParsedCodeBlock {
+  filePath: string;
+  language: string;
+  content: string;
+}
+
+export function parseCodeBlocks(responseContent: string): ParsedCodeBlock[] {
+  const blocks: ParsedCodeBlock[] = [];
+  // Match fenced code blocks with optional language and file path annotation
+  // Supports: ```lang // path, ```lang <!-- path -->, ```lang path=..., ```lang (path)
+  const codeBlockRegex = /```(\w+)?(?:\s+(?:\/\/|<!--)\s*([^\n]+?)(?:\s*-->)?|\s+path=([^\n]+)|\s+\(([^\n)]+)\))?\n([\s\S]*?)```/g;
+  let match;
+
+  while ((match = codeBlockRegex.exec(responseContent)) !== null) {
+    const language = match[1] ?? 'text';
+    const filePath = (match[2] ?? match[3] ?? match[4] ?? '').trim();
+    const content = match[5] ?? '';
+
+    if (filePath && content.trim()) {
+      blocks.push({ filePath, language, content: content.trimEnd() });
+    }
+  }
+
+  return blocks;
+}
 
 function parseToolCalls(content: string): ToolCall[] {
   const calls: ToolCall[] = [];

@@ -5,24 +5,41 @@
  * 1. LAN Mesh — P2P inference via discovered companion nodes (fastest, free)
  * 2. Edge Coordinator (CF Workers) — via OpenAI-compat endpoint
  * 3. Cloud Run Coordinator — direct HTTP (bypasses CF 120s timeout)
- * 4. Local WASM — on-device inference via n-gram language model
+ * 4. Local WASM — on-device Aether-backed SmolLM2/MiniLM inference
  * 5. Echo fallback — guaranteed response acknowledging the message
  *
- * All inference is WASM/coordinator-based, zero paid AI.
+ * All inference is local/coordinator-based, zero paid AI.
  */
 
 import { getApiBaseUrl, getAuthHeaders, getZedgeConfig } from './config';
-import { appendFileSync, mkdirSync } from 'fs';
+import { CLOUD_RUN_COORDINATORS } from './coordinator-urls';
+import { appendFileSync, mkdirSync, writeFileSync } from 'fs';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
+import { getCloudRunAuthHeaders } from './cloudrun-auth';
+import { aetherLocalRuntime } from './aether-local-runtime';
 
 // --- Inference log file + in-memory ring buffer ---
 const __inference_dirname = dirname(fileURLToPath(import.meta.url));
-const LOG_DIR = join(__inference_dirname, '..', '..', '.edgework');
-try {
-  mkdirSync(LOG_DIR, { recursive: true });
-} catch {}
-const LOG_FILE = join(LOG_DIR, 'inference.log');
+const DEFAULT_LOG_DIR = join(__inference_dirname, '..', '..', '.edgework');
+
+function resolveInferenceLogFile(): string | null {
+  const explicitLogFile = process.env.ZEDGE_INFERENCE_LOG_FILE;
+  if (explicitLogFile === 'off') {
+    return null;
+  }
+
+  // Keep unit-test fixture traffic out of the shared runtime log by default.
+  if (!explicitLogFile && process.argv.includes('test')) {
+    return null;
+  }
+
+  const logFile = explicitLogFile ?? join(DEFAULT_LOG_DIR, 'inference.log');
+  try {
+    mkdirSync(dirname(logFile), { recursive: true });
+  } catch {}
+  return logFile;
+}
 
 const LOG_RING_MAX = 200;
 const logRing: string[] = [];
@@ -32,8 +49,12 @@ function logInference(line: string): void {
   const entry = `[${ts}] ${line}`;
   logRing.push(entry);
   if (logRing.length > LOG_RING_MAX) logRing.shift();
+  const logFile = resolveInferenceLogFile();
+  if (!logFile) {
+    return;
+  }
   try {
-    appendFileSync(LOG_FILE, entry + '\n');
+    appendFileSync(logFile, entry + '\n');
   } catch {}
 }
 
@@ -46,6 +67,13 @@ export function getRecentLogs(count?: number): string[] {
 /** Clear the in-memory log ring */
 export function clearLogs(): void {
   logRing.length = 0;
+  const logFile = resolveInferenceLogFile();
+  if (!logFile) {
+    return;
+  }
+  try {
+    writeFileSync(logFile, '');
+  } catch {}
 }
 
 export interface ChatMessage {
@@ -87,23 +115,7 @@ export interface ModelInfo {
   owned_by: string;
 }
 
-// Cloud Run coordinator URLs for direct access (bypasses CF 120s timeout)
-const CLOUD_RUN_COORDINATORS: Record<string, string> = {
-  'tinyllama-1.1b':
-    'https://inference-tinyllama-coordinator-6ptd7xm6fq-uc.a.run.app',
-  'mistral-7b': 'https://inference-7b-coordinator-6ptd7xm6fq-uc.a.run.app',
-  'qwen-2.5-coder-7b':
-    'https://inference-qwen-coordinator-6ptd7xm6fq-uc.a.run.app',
-  'gemma3-4b-it':
-    'https://inference-gemma3-4b-it-coordinator-6ptd7xm6fq-uc.a.run.app',
-  'gemma3-1b-it':
-    'https://inference-gemma3-1b-it-coordinator-6ptd7xm6fq-uc.a.run.app',
-  'glm-4-9b': 'https://inference-glm-4-9b-coordinator-6ptd7xm6fq-uc.a.run.app',
-  'personaplex-7b':
-    'https://inference-personaplex-7b-coordinator-6ptd7xm6fq-uc.a.run.app',
-  'lfm2.5-1.2b-glm-4.7-flash-thinking':
-    'https://inference-lfm2-5-coordinator-6ptd7xm6fq-uc.a.run.app',
-};
+// Cloud Run coordinator URLs imported from coordinator-urls.ts (single source of truth)
 
 const REMOTE_EMBEDDING_MODELS = new Set(['text-embedding-3-small']);
 
@@ -123,41 +135,6 @@ function shouldUseLocalEmbeddingFallback(model: string): boolean {
   );
 }
 
-/**
- * Speculative warm-up: fire /health pings to ALL Cloud Run coordinators
- * whenever any inference request arrives. This wakes coordinators from
- * cold sleep (min-instances=0) so they're ready for subsequent requests.
- * Fire-and-forget — never blocks the primary request.
- */
-let lastWarmupTime = 0;
-const WARMUP_INTERVAL_MS = 60_000; // At most once per minute
-
-function speculativeWarmup(excludeModel?: string): void {
-  const now = Date.now();
-  if (now - lastWarmupTime < WARMUP_INTERVAL_MS) return;
-  lastWarmupTime = now;
-
-  for (const [model, url] of Object.entries(CLOUD_RUN_COORDINATORS)) {
-    if (model === excludeModel) continue; // Already being hit by the real request
-    fetch(`${url}/health`, { signal: AbortSignal.timeout(10_000) })
-      .then((r) => {
-        logInference(`[warmup] ${model} → ${r.status} (${Date.now() - now}ms)`);
-      })
-      .catch((err) => {
-        logInference(
-          `[warmup] ${model} → ${
-            err instanceof Error ? err.message : 'error'
-          } (${Date.now() - now}ms)`
-        );
-      });
-  }
-  logInference(
-    `[warmup] pinged ${
-      Object.keys(CLOUD_RUN_COORDINATORS).length - (excludeModel ? 1 : 0)
-    } coordinators`
-  );
-}
-
 export interface TierAttempt {
   tier: InferenceTier;
   status: 'ok' | 'timeout' | 'error' | 'skipped' | 'http_error';
@@ -172,6 +149,31 @@ export interface TierResult {
   upstreamHeaders: Record<string, string>;
   /** Every tier attempted, in order, with timing + failure reason */
   attempts: TierAttempt[];
+}
+
+const LOCAL_WASM_TOTAL_TIMEOUT_MS = 45_000;
+
+function withTimeout<T>(
+  promise: Promise<T>,
+  timeoutMs: number,
+  label: string
+): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => {
+      reject(new Error(`${label} timed out after ${timeoutMs}ms`));
+    }, timeoutMs);
+
+    promise.then(
+      (value) => {
+        clearTimeout(timer);
+        resolve(value);
+      },
+      (error) => {
+        clearTimeout(timer);
+        reject(error);
+      }
+    );
+  });
 }
 
 /**
@@ -291,19 +293,28 @@ async function tryCloudRunCoordinator(
     if (signal?.aborted)
       throw new DOMException('The operation was aborted.', 'AbortError');
 
+    const authHeaders = await getCloudRunAuthHeaders(coordinatorUrl);
+
     if (attempt === 0) {
       logInference(
-        `[cloudrun] → ${coordinatorUrl}/v1/chat/completions model=${request.model}`
+        `[cloudrun] → ${coordinatorUrl}/v1/chat/completions model=${request.model} headers=${JSON.stringify(
+          Object.keys(authHeaders)
+        )}`
       );
     } else {
       logInference(
-        `[cloudrun] → retry ${attempt}/${MAX_RETRIES} model=${request.model}`
+        `[cloudrun] → retry ${attempt}/${MAX_RETRIES} model=${request.model} headers=${JSON.stringify(
+          Object.keys(authHeaders)
+        )}`
       );
     }
 
     const resp = await fetch(`${coordinatorUrl}/v1/chat/completions`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        ...authHeaders,
+      },
       body: JSON.stringify(request),
       signal,
     });
@@ -349,136 +360,73 @@ async function tryCloudRunCoordinator(
   throw new Error(`Cloud Run: exhausted ${MAX_RETRIES} retries`);
 }
 
-/**
- * Local WASM inference — on-device SmolLM2-360M via transformers.js
- *
- * Uses @xenova/transformers with ONNX Runtime to run a real LLM
- * entirely on-device. The model is downloaded and cached on first use
- * (~230MB for SmolLM2-360M quantized). Subsequent loads are instant
- * from the local HuggingFace cache.
- *
- * Model cascade:
- * 1. onnx-community/SmolLM2-360M-Instruct (360M params, fast)
- * 2. Xenova/TinyLlama-1.1B-Chat-v1.0 (1.1B params, proven fallback)
- */
+async function cancelResponseBody(response: Response): Promise<void> {
+  const body = response.body;
+  if (!body) return;
 
-// Dynamic import to avoid blocking startup — model loads lazily on first inference
-type TransformersPipeline = (
-  input: unknown,
-  options?: Record<string, unknown>
-) => Promise<unknown>;
-
-const LOCAL_MODEL_CASCADE = [
-  'onnx-community/SmolLM2-360M-Instruct',
-  'Xenova/TinyLlama-1.1B-Chat-v1.0',
-] as const;
-
-class LocalInferenceEngine {
-  private pipe: TransformersPipeline | null = null;
-  private loadingPromise: Promise<boolean> | null = null;
-  private loadedModelId: string | null = null;
-  private loadFailed = false;
-
-  /**
-   * Lazily load the model pipeline. Returns true if ready.
-   * First call downloads the model (~230MB); subsequent calls use cache.
-   */
-  async ensureReady(): Promise<boolean> {
-    if (this.pipe) return true;
-    if (this.loadFailed) return false;
-    if (this.loadingPromise) return this.loadingPromise;
-
-    this.loadingPromise = this.loadModel();
-    return this.loadingPromise;
-  }
-
-  private async loadModel(): Promise<boolean> {
-    try {
-      // Dynamic import so the module isn't loaded until needed
-      const { pipeline, env } = await import('@xenova/transformers');
-
-      // Configure for Node/Bun environment
-      env.allowLocalModels = false;
-      env.allowRemoteModels = true;
-      if (env.backends?.onnx?.wasm) {
-        env.backends.onnx.wasm.numThreads = 1;
-      }
-
-      // Try each model in cascade
-      for (const modelId of LOCAL_MODEL_CASCADE) {
-        try {
-          logInference(`[wasm] Loading ${modelId}...`);
-          const t0 = Date.now();
-          this.pipe = (await pipeline('text-generation', modelId, {
-            quantized: true,
-          })) as unknown as TransformersPipeline;
-          this.loadedModelId = modelId;
-          logInference(`[wasm] ${modelId} ready (${Date.now() - t0}ms)`);
-          return true;
-        } catch (err) {
-          logInference(
-            `[wasm] ${modelId} failed: ${
-              err instanceof Error ? err.message : String(err)
-            }`
-          );
-        }
-      }
-
-      logInference('[wasm] All model candidates failed');
-      this.loadFailed = true;
-      return false;
-    } catch (err) {
-      logInference(
-        `[wasm] transformers.js import failed: ${
-          err instanceof Error ? err.message : String(err)
-        }`
-      );
-      this.loadFailed = true;
-      return false;
-    }
-  }
-
-  /**
-   * Generate a response using the loaded transformer model.
-   * Formats messages in ChatML format and runs real inference.
-   */
-  async generate(
-    messages: ChatMessage[],
-    maxTokens: number,
-    temperature: number
-  ): Promise<string> {
-    if (!this.pipe) throw new Error('Model not loaded');
-
-    // ChatML format (works with SmolLM2 and TinyLlama)
-    const prompt =
-      messages
-        .map((m) => `<|im_start|>${m.role}\n${m.content}<|im_end|>`)
-        .join('\n') + '\n<|im_start|>assistant\n';
-
-    const result = await this.pipe(prompt, {
-      max_new_tokens: Math.min(maxTokens, 512),
-      temperature: Math.max(0.1, temperature),
-      do_sample: true,
-      return_full_text: false,
-    });
-
-    const generated = Array.isArray(result)
-      ? (result as Array<{ generated_text?: string }>)[0]?.generated_text ?? ''
-      : String(result);
-
-    // Strip any trailing ChatML tokens from the output
-    return generated
-      .replace(/<\|im_end\|>.*/s, '')
-      .replace(/<\|im_start\|>.*/s, '')
-      .trim();
-  }
-
-  get modelId(): string {
-    return this.loadedModelId ?? 'wasm-local';
+  try {
+    await body.cancel();
+  } catch {
+    // Best-effort cleanup only. The winner has already been returned.
   }
 }
 
-const localEngine = new LocalInferenceEngine();
+export interface RacedCoordinatorResponse {
+  tier: InferenceTier;
+  response: Response;
+}
+
+export interface RacedCoordinatorOutcome {
+  winner: RacedCoordinatorResponse | null;
+  backgroundCleanup: Promise<void>;
+}
+
+export async function raceCoordinatorResponses({
+  requestModel,
+  startMs,
+  edgePromise,
+  cloudRunPromise,
+  abortEdge,
+  abortCloudRun,
+}: {
+  requestModel: string;
+  startMs: number;
+  edgePromise: Promise<RacedCoordinatorResponse | null>;
+  cloudRunPromise: Promise<RacedCoordinatorResponse | null>;
+  abortEdge?: () => void;
+  abortCloudRun?: () => void;
+}): Promise<RacedCoordinatorOutcome> {
+  const winner = await raceForFirst([edgePromise, cloudRunPromise]);
+  if (!winner) {
+    return {
+      winner: null,
+      backgroundCleanup: Promise.resolve(),
+    };
+  }
+
+  const loserTier = winner.tier === 'edge' ? 'cloudrun' : 'edge';
+  const loserPromise = winner.tier === 'edge' ? cloudRunPromise : edgePromise;
+  const abortLoser = winner.tier === 'edge' ? abortCloudRun : abortEdge;
+  abortLoser?.();
+
+  const backgroundCleanup = loserPromise
+    .then(async (result) => {
+      if (!result) return;
+
+      logInference(
+        `model=${requestModel} [race-cleanup] canceled ${loserTier} after ${
+          Date.now() - startMs
+        }ms (winner was ${winner.tier})`
+      );
+      await cancelResponseBody(result.response);
+    })
+    .catch(() => {});
+
+  return {
+    winner,
+    backgroundCleanup,
+  };
+}
 
 /**
  * Race multiple promises, return the first non-null result.
@@ -507,25 +455,30 @@ async function raceForFirst<T>(
 }
 
 /**
- * Local WASM inference — generates a real response using on-device SmolLM2-360M
+ * Local WASM inference — generates a response using the Aether-backed local runtime
  */
 async function tryWasmFallback(
   request: ChatCompletionRequest
 ): Promise<Response> {
   const temperature = request.temperature ?? 0.7;
   const maxTokens = request.max_tokens ?? 128;
-
-  // Ensure model is loaded (lazy — first call downloads weights)
-  const ready = await localEngine.ensureReady();
+  const deadline = Date.now() + LOCAL_WASM_TOTAL_TIMEOUT_MS;
+  const remainingWarmupMs = Math.max(1, deadline - Date.now());
+  const ready = await withTimeout(
+    aetherLocalRuntime.ensureChatReady(),
+    remainingWarmupMs,
+    'Local model warm-up'
+  );
   if (!ready) {
     throw new Error('Local model failed to load');
   }
 
   const t0 = Date.now();
-  const content = await localEngine.generate(
-    request.messages,
-    maxTokens,
-    temperature
+  const remainingGenerateMs = Math.max(1, deadline - Date.now());
+  const content = await withTimeout(
+    aetherLocalRuntime.generate(request.messages, maxTokens, temperature),
+    remainingGenerateMs,
+    'Local model generation'
   );
   const inferenceMs = Date.now() - t0;
 
@@ -536,14 +489,14 @@ async function tryWasmFallback(
   const completionTokens = Math.ceil(content.length / 4);
 
   logInference(
-    `[wasm] generated ${completionTokens} tokens in ${inferenceMs}ms (${localEngine.modelId})`
+    `[wasm] generated ${completionTokens} tokens in ${inferenceMs}ms (${aetherLocalRuntime.modelId})`
   );
 
   const response: ChatCompletionResponse = {
     id: `chatcmpl-wasm-${Date.now()}`,
     object: 'chat.completion',
     created: Math.floor(Date.now() / 1000),
-    model: localEngine.modelId,
+    model: aetherLocalRuntime.modelId,
     choices: [
       {
         index: 0,
@@ -569,7 +522,7 @@ async function tryWasmFallback(
  */
 function echoFallback(request: ChatCompletionRequest): Response {
   const lastMessage = request.messages[request.messages.length - 1];
-  const content = `I received your message. All inference tiers are currently unavailable. Your message was: "${
+  const content = `I received your message, but Zedge could not start a usable inference tier. The local fallback also failed to start cleanly. Your message was: "${
     lastMessage?.content?.slice(0, 200) ?? ''
   }"`;
 
@@ -949,6 +902,224 @@ export function createSSEProxyStream(
   });
 }
 
+// ---------------------------------------------------------------------------
+// FIM (Fill-in-Middle) Fast Path
+// ---------------------------------------------------------------------------
+
+/** Known FIM token formats per model family */
+const FIM_TOKENS: Record<string, { prefix: string; suffix: string; middle: string }> = {
+  qwen: { prefix: '<|fim_prefix|>', suffix: '<|fim_suffix|>', middle: '<|fim_middle|>' },
+  starcoder: { prefix: '<fim_prefix>', suffix: '<fim_suffix>', middle: '<fim_middle>' },
+  codellama: { prefix: '<PRE>', suffix: '<SUF>', middle: '<MID>' },
+  deepseek: { prefix: '<｜fim▁begin｜>', suffix: '<｜fim▁hole｜>', middle: '<｜fim▁end｜>' },
+};
+
+function getFimTokens(model: string): { prefix: string; suffix: string; middle: string } {
+  // Check more specific patterns first to avoid false matches on 'coder'
+  if (model.includes('starcoder')) return FIM_TOKENS.starcoder;
+  if (model.includes('codellama')) return FIM_TOKENS.codellama;
+  if (model.includes('deepseek')) return FIM_TOKENS.deepseek;
+  if (model.includes('qwen') || model.includes('coder')) return FIM_TOKENS.qwen;
+  return FIM_TOKENS.qwen; // Default to Qwen FIM format
+}
+
+/** Build a native FIM prompt from prefix/suffix context */
+export function buildFimPrompt(
+  prefix: string,
+  suffix: string,
+  model: string
+): string {
+  const tokens = getFimTokens(model);
+  return `${tokens.prefix}${prefix}${tokens.suffix}${suffix}${tokens.middle}`;
+}
+
+export interface FimResult {
+  completion: string;
+  tier: InferenceTier;
+  model: string;
+  attempts: TierAttempt[];
+  durationMs: number;
+}
+
+/**
+ * FIM inference -- optimized fast path for tab completions.
+ *
+ * Skips the edge tier (latency penalty, no quality gain for short completions)
+ * and races Cloud Run against local WASM in parallel. WASM gives instant ghost
+ * text; Cloud Run upgrades quality if it arrives within the race window.
+ */
+export async function inferFim(
+  prefix: string,
+  suffix: string,
+  model: string,
+  maxTokens = 128,
+  temperature = 0.2
+): Promise<FimResult> {
+  const t0 = Date.now();
+  const attempts: TierAttempt[] = [];
+  const fimPrompt = buildFimPrompt(prefix, suffix, model);
+
+  logInference(
+    `--- FIM model=${model} prefix=${prefix.length}c suffix=${suffix.length}c`
+  );
+
+  // Tier 0: Try LAN mesh first (100ms timeout -- if no peer responds, fall through)
+  {
+    const meshT0 = Date.now();
+    try {
+      const { meshInfer, getMeshStatus } = await import('./p2p-mesh');
+      const status = getMeshStatus();
+      if (status.running && status.peers.length > 0) {
+        const meshResult = await Promise.race([
+          meshInfer({
+            model,
+            messages: [
+              { role: 'system', content: 'Complete the code. Output ONLY the completion.' },
+              { role: 'user', content: fimPrompt },
+            ],
+            max_tokens: maxTokens,
+            temperature,
+          }),
+          new Promise<null>((resolve) => setTimeout(() => resolve(null), 100)),
+        ]);
+        if (meshResult && meshResult.content) {
+          attempts.push({ tier: 'mesh', status: 'ok', ms: Date.now() - meshT0 });
+          logInference(`[fim:mesh] ${meshResult.content.length}c in ${Date.now() - meshT0}ms`);
+          return {
+            completion: meshResult.content,
+            tier: 'mesh',
+            model,
+            attempts,
+            durationMs: Date.now() - t0,
+          };
+        }
+      }
+      attempts.push({ tier: 'mesh', status: 'skipped', ms: Date.now() - meshT0, detail: 'no peers or timeout' });
+    } catch {
+      attempts.push({ tier: 'mesh', status: 'skipped', ms: Date.now() - meshT0, detail: 'mesh unavailable' });
+    }
+  }
+
+  // Skip edge for FIM -- go straight to Cloud Run + WASM race
+  attempts.push({
+    tier: 'edge',
+    status: 'skipped',
+    ms: 0,
+    detail: 'FIM fast path bypasses edge',
+  });
+
+  // Race Cloud Run vs WASM in parallel
+  const cloudRunUrl = CLOUD_RUN_COORDINATORS[model];
+
+  const wasmPromise = (async (): Promise<{ completion: string; tier: InferenceTier } | null> => {
+    const wt0 = Date.now();
+    try {
+      const ready = await aetherLocalRuntime.ensureChatReady();
+      if (!ready) return null;
+      const content = await aetherLocalRuntime.generate(
+        [
+          { role: 'system', content: 'Complete the code. Output ONLY the completion, no explanation.' },
+          { role: 'user', content: fimPrompt },
+        ],
+        Math.min(maxTokens, 256),
+        temperature
+      );
+      attempts.push({ tier: 'wasm', status: 'ok', ms: Date.now() - wt0 });
+      logInference(`[fim:wasm] ${content.length}c in ${Date.now() - wt0}ms`);
+      return { completion: content, tier: 'wasm' };
+    } catch (err) {
+      attempts.push({ tier: 'wasm', status: 'error', ms: Date.now() - wt0, detail: String(err) });
+      return null;
+    }
+  })();
+
+  const cloudRunPromise = cloudRunUrl
+    ? (async (): Promise<{ completion: string; tier: InferenceTier } | null> => {
+        const ct0 = Date.now();
+        try {
+          const authHeaders = await getCloudRunAuthHeaders(cloudRunUrl);
+          const resp = await fetch(`${cloudRunUrl}/v1/chat/completions`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              ...authHeaders,
+            },
+            body: JSON.stringify({
+              model,
+              messages: [
+                { role: 'system', content: 'Complete the code. Output ONLY the completion.' },
+                { role: 'user', content: fimPrompt },
+              ],
+              max_tokens: maxTokens,
+              temperature,
+              stream: false,
+            }),
+            signal: AbortSignal.timeout(15_000),
+          });
+
+          if (!resp.ok) {
+            attempts.push({ tier: 'cloudrun', status: 'http_error', ms: Date.now() - ct0, detail: `${resp.status}` });
+            return null;
+          }
+
+          const data = await resp.json() as ChatCompletionResponse;
+          const content = data.choices?.[0]?.message?.content ?? '';
+          attempts.push({ tier: 'cloudrun', status: 'ok', ms: Date.now() - ct0 });
+          logInference(`[fim:cloudrun] ${content.length}c in ${Date.now() - ct0}ms`);
+          return { completion: content, tier: 'cloudrun' };
+        } catch (err) {
+          attempts.push({
+            tier: 'cloudrun',
+            status: 'error',
+            ms: Date.now() - ct0,
+            detail: err instanceof Error ? err.message : String(err),
+          });
+          return null;
+        }
+      })()
+    : (async () => {
+        attempts.push({ tier: 'cloudrun', status: 'skipped', ms: 0, detail: 'no coordinator URL' });
+        return null;
+      })();
+
+  // Race: first non-null wins
+  const results = await Promise.allSettled([wasmPromise, cloudRunPromise]);
+  let winner: { completion: string; tier: InferenceTier } | null = null;
+
+  for (const result of results) {
+    if (result.status === 'fulfilled' && result.value !== null) {
+      // Prefer Cloud Run if both succeeded (higher quality)
+      if (!winner || result.value.tier === 'cloudrun') {
+        winner = result.value;
+      }
+    }
+  }
+
+  if (!winner) {
+    // Echo fallback for FIM
+    attempts.push({ tier: 'echo', status: 'ok', ms: 0, detail: 'FIM all tiers failed' });
+    return {
+      completion: '',
+      tier: 'echo',
+      model,
+      attempts,
+      durationMs: Date.now() - t0,
+    };
+  }
+
+  logInference(
+    `--- FIM DONE tier=${winner.tier} ${winner.completion.length}c ${Date.now() - t0}ms`
+  );
+
+  return {
+    completion: winner.completion,
+    tier: winner.tier,
+    model,
+    attempts,
+    durationMs: Date.now() - t0,
+  };
+}
+
 /**
  * Execute the 5-tier inference chain
  *
@@ -1033,9 +1204,6 @@ export async function infer(
     }
   }
 
-  // Speculatively warm all other coordinators while this request is in flight
-  speculativeWarmup(request.model);
-
   function attempt(
     tier: InferenceTier,
     startMs: number,
@@ -1070,7 +1238,8 @@ export async function infer(
 
   // Tier 2: Race Edge + Cloud Run in parallel
   // Edge consistently takes 30s to timeout — racing both eliminates the waste.
-  // First successful (200 OK) response wins; loser is aborted.
+  // First successful (200 OK) response wins. Large coordinators can take a long
+  // time to cold-start, so elapsed time alone is not a failure condition here.
   //
   // STREAMING EXCEPTION: When stream=true and Cloud Run is available, prefer
   // Cloud Run directly. The edge CF Worker doesn't forward per-token SSE —
@@ -1078,29 +1247,25 @@ export async function infer(
   // coordinators stream real per-token deltas via TransformStream.
   //
   // Large models can take minutes to cold-start and load weights from GCS FUSE.
-  // The race between edge + cloudrun means whichever responds first wins —
-  // the deadline is just a safety net before falling to WASM.
-  const RACE_DEADLINE_MS = 15_000; // 15 seconds
+  // The race between edge + cloudrun means whichever responds first wins.
   const canCloudRun =
     config.cloudRunDirect && !!CLOUD_RUN_COORDINATORS[request.model];
   const preferCloudRunForStreaming = request.stream && canCloudRun;
   {
     const t0 = Date.now();
-    const edgeAbort = new AbortController();
-    const cloudRunAbort = new AbortController();
+    const edgeController = new AbortController();
+    const cloudRunController = new AbortController();
 
     // Edge attempt: skip when streaming + Cloud Run available (edge doesn't stream tokens)
     let edgePromise: Promise<{
       tier: InferenceTier;
       response: Response;
     } | null>;
-    let edgeTimeout: ReturnType<typeof setTimeout> | undefined;
     if (preferCloudRunForStreaming) {
       attempt('edge', t0, 'skipped', 'streaming prefers cloudrun direct');
       edgePromise = Promise.resolve(null);
     } else {
-      edgeTimeout = setTimeout(() => edgeAbort.abort(), 150_000);
-      edgePromise = tryEdgeCoordinator(request, edgeAbort.signal)
+      edgePromise = tryEdgeCoordinator(request, edgeController.signal)
         .then(
           (response): { tier: InferenceTier; response: Response } | null => {
             if (response.ok) return { tier: 'edge', response };
@@ -1121,14 +1286,13 @@ export async function infer(
         });
     }
 
-    // Cloud Run attempt (only if available): 15 min timeout for cold starts
+    // Cloud Run attempt (only if available)
     let cloudRunPromise: Promise<{
       tier: InferenceTier;
       response: Response;
     } | null>;
     if (canCloudRun) {
-      const cloudRunTimeout = setTimeout(() => cloudRunAbort.abort(), 900_000);
-      cloudRunPromise = tryCloudRunCoordinator(request, cloudRunAbort.signal)
+      cloudRunPromise = tryCloudRunCoordinator(request, cloudRunController.signal)
         .then(
           (response): { tier: InferenceTier; response: Response } | null => {
             if (response.ok) return { tier: 'cloudrun', response };
@@ -1146,8 +1310,7 @@ export async function infer(
             err instanceof DOMException && err.name === 'AbortError';
           attempt('cloudrun', t0, isTimeout ? 'timeout' : 'error', String(err));
           return null;
-        })
-        .finally(() => clearTimeout(cloudRunTimeout));
+        });
     } else {
       attempts.push({
         tier: 'cloudrun',
@@ -1160,56 +1323,17 @@ export async function infer(
       cloudRunPromise = Promise.resolve(null);
     }
 
-    // Race with a deadline — if neither responds in time, fall to WASM so the
-    // client (Zed) gets an immediate response. CRITICALLY: do NOT abort the
-    // coordinator requests — let them continue in the background so Cold Start
-    // completes and the coordinator is warm for the next request.
-    const deadlinePromise = new Promise<null>((resolve) =>
-      setTimeout(() => {
-        attempt('edge', t0, 'timeout', `race deadline ${RACE_DEADLINE_MS}ms`);
-        if (canCloudRun) {
-          attempt(
-            'cloudrun',
-            t0,
-            'timeout',
-            `race deadline ${RACE_DEADLINE_MS}ms`
-          );
-        }
-        resolve(null);
-      }, RACE_DEADLINE_MS)
-    );
-
-    const winner = await Promise.race([
-      raceForFirst([edgePromise, cloudRunPromise]),
-      deadlinePromise.then(
-        () => null as { tier: InferenceTier; response: Response } | null
-      ),
-    ]);
-    if (edgeTimeout) clearTimeout(edgeTimeout);
+    const { winner, backgroundCleanup } = await raceCoordinatorResponses({
+      requestModel: request.model,
+      startMs: t0,
+      edgePromise,
+      cloudRunPromise,
+      abortEdge: () => edgeController.abort(),
+      abortCloudRun: () => cloudRunController.abort(),
+    });
 
     if (winner) {
-      // Don't abort the loser — let it complete in the background so it
-      // warms the coordinator cache (loads weights from GCS FUSE, etc.).
-      // This is especially important for large models where cold start +
-      // weight loading can take minutes.
-      const loserTier = winner.tier === 'edge' ? 'cloudrun' : 'edge';
-      const loserPromise =
-        winner.tier === 'edge' ? cloudRunPromise : edgePromise;
-      loserPromise
-        .then((result) => {
-          if (result) {
-            logInference(
-              `model=${
-                request.model
-              } [background-warm] ${loserTier} completed after ${
-                Date.now() - t0
-              }ms (winner was ${winner.tier})`
-            );
-            // Consume body to avoid leak, but let the request complete on the server
-            result.response.body?.cancel().catch(() => {});
-          }
-        })
-        .catch(() => {});
+      void backgroundCleanup;
 
       attempt(winner.tier, t0, 'ok');
       const xHeaders = extractUpstreamDebugHeaders(winner.response);
@@ -1225,30 +1349,6 @@ export async function infer(
         attempts,
       };
     }
-
-    // Deadline hit — fall to WASM immediately but DO NOT abort coordinators.
-    // Let edge/cloudrun continue warming up in the background. Log when they finish.
-    logInference(
-      `model=${request.model} edge+cloudrun race: no winner within ${RACE_DEADLINE_MS}ms, falling to WASM (coordinators still warming)`
-    );
-
-    // Fire-and-forget: track when coordinators eventually respond (for diagnostics)
-    raceForFirst([edgePromise, cloudRunPromise])
-      .then((lateWinner) => {
-        if (lateWinner) {
-          const warmMs = Date.now() - t0;
-          logInference(
-            `model=${request.model} [background-warm] ${lateWinner.tier} responded after ${warmMs}ms (was past ${RACE_DEADLINE_MS}ms deadline)`
-          );
-          // Consume the response body to avoid memory leaks
-          lateWinner.response.body?.cancel().catch(() => {});
-        } else {
-          logInference(
-            `model=${request.model} [background-warm] both tiers failed even after waiting`
-          );
-        }
-      })
-      .catch(() => {});
   }
 
   // Tier 4: Local WASM inference (real on-device generation)
@@ -1368,8 +1468,8 @@ export async function getModels(): Promise<ModelInfo[]> {
 /**
  * Generate embeddings via edge with local fallback
  *
- * If the edge endpoint is unavailable, generates a simple bag-of-words
- * embedding locally using character n-gram hashing.
+ * If the edge endpoint is unavailable, generates embeddings locally using
+ * an Aether-backed MiniLM runtime with a hash fallback.
  */
 export async function embed(
   input: string | string[],
@@ -1395,11 +1495,13 @@ export async function embed(
     }
   }
 
-  // Local fallback: character n-gram hash embedding
   const inputs = Array.isArray(input) ? input : [input];
-  const data = inputs.map((text, index) => ({
+  const embeddings = await Promise.all(
+    inputs.map((text) => aetherLocalRuntime.embed(text))
+  );
+  const data = embeddings.map((embedding, index) => ({
     object: 'embedding',
-    embedding: localEmbed(text),
+    embedding,
     index,
   }));
 
@@ -1407,7 +1509,7 @@ export async function embed(
     JSON.stringify({
       object: 'list',
       data,
-      model: 'local-ngram-hash',
+      model: aetherLocalRuntime.localEmbeddingModelId,
       usage: {
         prompt_tokens: inputs.reduce((a, t) => a + Math.ceil(t.length / 4), 0),
         total_tokens: inputs.reduce((a, t) => a + Math.ceil(t.length / 4), 0),
@@ -1415,38 +1517,4 @@ export async function embed(
     }),
     { headers: { 'Content-Type': 'application/json' } }
   );
-}
-
-/**
- * Generate a local embedding using character n-gram hashing
- * Projects text into a 384-dimensional vector via hash bucketing
- */
-function localEmbed(text: string, dims = 384): number[] {
-  const vec = new Float32Array(dims);
-  const normalized = text.toLowerCase();
-
-  // Character 3-grams hashed into buckets
-  for (let i = 0; i <= normalized.length - 3; i++) {
-    const trigram = normalized.slice(i, i + 3);
-    let hash = 0;
-    for (let j = 0; j < trigram.length; j++) {
-      hash = ((hash << 5) - hash + trigram.charCodeAt(j)) | 0;
-    }
-    const bucket = ((hash % dims) + dims) % dims;
-    vec[bucket] += 1;
-  }
-
-  // L2 normalize
-  let norm = 0;
-  for (let i = 0; i < dims; i++) {
-    norm += vec[i] * vec[i];
-  }
-  norm = Math.sqrt(norm);
-  if (norm > 0) {
-    for (let i = 0; i < dims; i++) {
-      vec[i] /= norm;
-    }
-  }
-
-  return Array.from(vec);
 }

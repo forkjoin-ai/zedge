@@ -2,9 +2,22 @@ mod context_server;
 mod provider;
 mod slash_commands;
 
-use zed_extension_api::{self as zed, *};
+use zed_extension_api::{
+    self as zed,
+    http_client::{HttpMethod, HttpRequest, RedirectPolicy},
+    *,
+};
 
 struct ZedgeExtension;
+const TS_ENTRY_LAUNCHER: &str = "open-source/zedge/scripts/run-ts-entry.sh";
+
+fn ts_entry_command(entry: &str) -> Command {
+    Command {
+        command: "/bin/sh".to_string(),
+        args: vec![TS_ENTRY_LAUNCHER.to_string(), entry.to_string()],
+        env: Vec::new(),
+    }
+}
 
 fn fetch_babelfish_capabilities() -> Option<serde_json::Value> {
     let url = format!("{}/babelfish/capabilities", provider::COMPANION_URL);
@@ -70,10 +83,11 @@ impl zed::Extension for ZedgeExtension {
         match command.name.as_str() {
             "zedge-status" => slash_commands::run_status(worktree),
             "zedge-models" => slash_commands::run_models(),
-            "zedge-pool" => slash_commands::run_pool(),
+            "zedge-pool" => slash_commands::run_pool(&_args),
             "zedge-logs" => slash_commands::run_logs(),
             "zedge-clear" => slash_commands::run_clear(),
             "zedge-restart" => slash_commands::run_restart(),
+            "zedge-selftest" => slash_commands::run_selftest(&_args),
             "zedgework" => slash_commands::run_edgework(&_args),
             "zedge-admin" => slash_commands::run_admin(&_args),
             "zedge-mesh" => slash_commands::run_mesh(&_args),
@@ -85,8 +99,9 @@ impl zed::Extension for ZedgeExtension {
             "zedge-gnosis-run" => slash_commands::run_gnosis_run(worktree),
             "zedge-gnosis-viz" => slash_commands::run_gnosis_viz(worktree),
             "zedge-test" => slash_commands::run_test(worktree),
-            "zedge-feedback" => slash_commands::run_feedback(),
+            "zedge-feedback" => slash_commands::run_feedback(&_args),
             "zedge-babelfish" => slash_commands::run_babelfish(&_args, worktree),
+            "zedge-review" => slash_commands::run_review(worktree),
             _ => Err(format!("Unknown command: {}", command.name)),
         }
     }
@@ -163,6 +178,13 @@ impl zed::Extension for ZedgeExtension {
                     SlashCommandArgumentCompletion { label: "stop — Stop P2P mesh".into(), new_text: "stop".into(), run_command: true },
                 ])
             }
+            "zedge-pool" => {
+                Ok(vec![
+                    SlashCommandArgumentCompletion { label: "status — Show compute pool status".into(), new_text: "status".into(), run_command: true },
+                    SlashCommandArgumentCompletion { label: "join — Join the compute pool".into(), new_text: "join".into(), run_command: true },
+                    SlashCommandArgumentCompletion { label: "leave — Leave the compute pool".into(), new_text: "leave".into(), run_command: true },
+                ])
+            }
             "zedge-crdt" => {
                 Ok(vec![
                     SlashCommandArgumentCompletion { label: "status — CRDT overview".into(), new_text: "status".into(), run_command: true },
@@ -220,6 +242,15 @@ impl zed::Extension for ZedgeExtension {
                     }
                 }
             }
+            "zedge-feedback" => {
+                Ok(vec![
+                    SlashCommandArgumentCompletion { label: "1 — Poor response".into(), new_text: "1 ".into(), run_command: false },
+                    SlashCommandArgumentCompletion { label: "2 — Weak response".into(), new_text: "2 ".into(), run_command: false },
+                    SlashCommandArgumentCompletion { label: "3 — Mixed response".into(), new_text: "3 ".into(), run_command: false },
+                    SlashCommandArgumentCompletion { label: "4 — Good response".into(), new_text: "4 ".into(), run_command: false },
+                    SlashCommandArgumentCompletion { label: "5 — Excellent response".into(), new_text: "5 ".into(), run_command: false },
+                ])
+            }
             _ => Ok(Vec::new()),
         }
     }
@@ -230,15 +261,7 @@ impl zed::Extension for ZedgeExtension {
         _worktree: &Worktree,
     ) -> Result<Command> {
         if language_server_id.as_ref() == "gnosis-lsp" {
-            Ok(Command {
-                command: "node".to_string(),
-                args: vec![
-                    "--import".to_string(),
-                    "tsx".to_string(),
-                    "open-source/zedge/companion/src/gnosis-lsp.ts".to_string(),
-                ],
-                env: Vec::new(),
-            })
+            Ok(ts_entry_command("open-source/zedge/companion/src/gnosis-lsp.ts"))
         } else {
             Err(format!("Unknown language server: {language_server_id}"))
         }
@@ -250,15 +273,7 @@ impl zed::Extension for ZedgeExtension {
         _project: &Project,
     ) -> Result<Command> {
         if context_server_id.as_ref() == "zedge-companion" {
-            Ok(Command {
-                command: "node".to_string(),
-                args: vec![
-                    "--import".to_string(),
-                    "tsx".to_string(),
-                    "open-source/zedge/companion/src/mcp-stdio.ts".to_string(),
-                ],
-                env: Vec::new(),
-            })
+            Ok(ts_entry_command("open-source/zedge/companion/src/mcp-stdio.ts"))
         } else {
             Err(format!("Unknown context server: {context_server_id}"))
         }
@@ -271,12 +286,12 @@ impl zed::Extension for ZedgeExtension {
     ) -> Result<Option<ContextServerConfiguration>> {
         if context_server_id.as_ref() == "zedge-companion" {
             Ok(Some(ContextServerConfiguration {
-                installation_instructions: "The companion sidecar starts automatically when the context server launches.\n\nTo start manually:\n\n```\npnpm gnode run open-source/zedge/companion/src/index.ts\n```\n\nThe sidecar runs on localhost:7331. The MCP context server bridge babysits it and restarts if needed.".to_string(),
+                installation_instructions: "The companion sidecar starts automatically through the checked-in Bun launcher when the context server launches.\n\nTo start manually with the same guarded restart policy:\n\n```\nbun run open-source/zedge/companion/src/companion-supervisor.ts\n```\n\nThe sidecar runs on localhost:7331. The MCP context server bridge and the manual supervisor both poll health and restart their owned child when needed.".to_string(),
                 settings_schema: serde_json::json!({
                     "type": "object",
                     "properties": {
                         "port": { "type": "number", "default": 7331 },
-                        "preferredModel": { "type": "string", "default": "tinyllama-1.1b" },
+                        "preferredModel": { "type": "string", "default": "wasm-local" },
                         "cloudRunDirect": { "type": "boolean", "default": true },
                         "babelfish": {
                             "type": "object",
@@ -291,7 +306,7 @@ impl zed::Extension for ZedgeExtension {
                 }).to_string(),
                 default_settings: serde_json::json!({
                     "port": 7331,
-                    "preferredModel": "tinyllama-1.1b",
+                    "preferredModel": "wasm-local",
                     "cloudRunDirect": true,
                     "babelfish": {
                         "enabled": true,

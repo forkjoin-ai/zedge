@@ -49,7 +49,7 @@ function getApiKey(): string | null {
 
 // Models available via edge inference coordinators
 // Derived from EXTERNAL_COORDINATOR_ALIAS_CANDIDATES in apps/edge-workers/src/lib/model-urls.ts
-const AVAILABLE_MODELS = [
+const REMOTE_AVAILABLE_MODELS = [
   {
     name: 'qwen-2.5-coder-7b',
     display_name: 'Qwen 2.5 Coder 7B',
@@ -92,6 +92,15 @@ const AVAILABLE_MODELS = [
   },
 ];
 
+const COMPANION_AVAILABLE_MODELS = [
+  {
+    name: 'wasm-local',
+    display_name: 'SmolLM2 360M (Local WASM)',
+    max_tokens: 2048,
+  },
+  ...REMOTE_AVAILABLE_MODELS,
+];
+
 function generateSettings(): void {
   const config = getConfig();
   const apiKey = getApiKey();
@@ -102,7 +111,7 @@ function generateSettings(): void {
       openai_compatible: {
         Zedge: {
           api_url: apiUrl,
-          available_models: AVAILABLE_MODELS,
+          available_models: REMOTE_AVAILABLE_MODELS,
         },
       },
     },
@@ -129,10 +138,29 @@ function generateSettings(): void {
   console.log('#');
   console.log(JSON.stringify(settings, null, 2));
 
-  // Also output companion config hint
-  console.log('\n# For local inference bridge (optional):');
-  console.log('#   pnpm gnode run open-source/zedge/companion/src/index.ts');
-  console.log('#   Then change api_url to: http://localhost:7331/v1');
+  // Companion settings with edit predictions (tab completions)
+  const companionSettings = {
+    language_models: {
+      openai_compatible: {
+        Zedge: {
+          api_url: 'http://localhost:7331/v1',
+          available_models: COMPANION_AVAILABLE_MODELS,
+        },
+      },
+    },
+    edit_predictions: {
+      copilot: {
+        api_url: 'http://localhost:7331/v1/completions',
+      },
+    },
+  };
+
+  console.log('\n# ---- Companion Mode (local inference + tab completions) ----');
+  console.log('# Start the companion sidecar:');
+  console.log('#   bun run open-source/zedge/companion/src/companion-supervisor.ts');
+  console.log('# Then use these settings for local inference + FIM tab completions:');
+  console.log('#');
+  console.log(JSON.stringify(companionSettings, null, 2));
 }
 
 generateSettings();

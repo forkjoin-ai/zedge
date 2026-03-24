@@ -363,7 +363,8 @@ export class CapacitorBridge {
     if (/fetch|http|api/i.test(content)) topics.push('networking');
     if (/sql|query|database/i.test(content)) topics.push('database');
 
-    return {
+    // Compute embedding asynchronously -- fire-and-forget to avoid blocking indexBlock()
+    const entry: HippocampusEntry = {
       blockId: block.id,
       embedding: [],
       entities,
@@ -371,5 +372,36 @@ export class CapacitorBridge {
       temporalContext: new Date().toISOString(),
       indexedAt: Date.now(),
     };
+
+    // Background embedding computation via the local inference bridge
+    this.computeBlockEmbedding(block.id, content.slice(0, 512), entry);
+
+    return entry;
+  }
+
+  /**
+   * Compute embedding for a code block in the background.
+   * Updates the hippocampus entry in-place when the embedding is ready.
+   */
+  private computeBlockEmbedding(
+    blockId: string,
+    text: string,
+    entry: HippocampusEntry
+  ): void {
+    import('./inference-bridge')
+      .then(({ embed }) =>
+        embed(text, 'local').then(async (resp) => {
+          const data = (await resp.json()) as {
+            data?: Array<{ embedding?: number[] }>;
+          };
+          const vec = data?.data?.[0]?.embedding;
+          if (vec && vec.length > 0) {
+            entry.embedding = vec;
+          }
+        })
+      )
+      .catch(() => {
+        // Embedding computation is best-effort -- index still works without it
+      });
   }
 }

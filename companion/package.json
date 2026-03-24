@@ -5,16 +5,19 @@
   "type": "module",
   "main": "src/index.ts",
   "scripts": {
-    "start": "bun run src/index.ts",
+    "start": "bun run src/companion-supervisor.ts",
+    "direct": "bun run src/index.ts",
     "dev": "bun run --watch src/index.ts",
     "mcp": "bun run src/mcp-stdio.ts",
-    "build": "bun build src/index.ts --outdir dist --target bun --minify",
-    "build:mcp": "bun build src/mcp-stdio.ts --outdir dist --target bun --minify"
+    "build": "pnpm exec esbuild src/index.ts --bundle --outdir=dist --platform=node --format=esm --minify --packages=external",
+    "build:mcp": "pnpm exec esbuild src/mcp-stdio.ts --bundle --outdir=dist --platform=node --format=esm --minify --packages=external"
   },
   "dependencies": {
     "yjs": "^13.6.0",
     "@dashrelay/client": "workspace:*",
     "@affectively/auth": "workspace:*",
+    "@affectively/shared-utils": "workspace:*",
+    "@a0n/x-gnosis": "workspace:*",
     "@xenova/transformers": "^2.17.2",
     "onnxruntime-node": "^1.23.2"
   },

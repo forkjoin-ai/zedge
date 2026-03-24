@@ -15,7 +15,7 @@ description = "List available models with latency tier and readiness"
 requires_argument = false
 
 [slash_commands.zedge-pool]
-description = "Toggle compute pool participation and show earnings dashboard"
+description = "Show compute pool status or use join/leave to change participation"
 requires_argument = false
 
 [slash_commands.zedge-logs]
@@ -28,6 +28,10 @@ requires_argument = false
 
 [slash_commands.zedge-restart]
 description = "Restart the companion sidecar"
+requires_argument = false
+
+[slash_commands.zedge-selftest]
+description = "Run a live inference self-test for health and SSE progress"
 requires_argument = false
 
 [slash_commands.zedgework]
@@ -75,12 +79,16 @@ description = "Run isolated tests via Gnosis topological pipeline"
 requires_argument = false
 
 [slash_commands.zedge-feedback]
-description = "Submit RLHF feedback on response quality"
+description = "Inspect or submit local RLHF feedback on response quality"
 requires_argument = false
 
 [slash_commands.zedge-babelfish]
 description = "Babelfish over Gnosis: capabilities, explain, translate, generate, and preview/apply rewrites"
 requires_argument = true
+
+[slash_commands.zedge-review]
+description = "Consensus code review — three models race on your diff, agreements and disagreements highlighted"
+requires_argument = false
 
 [context_servers.zedge-companion]
 

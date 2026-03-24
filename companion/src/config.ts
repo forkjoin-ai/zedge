@@ -24,6 +24,13 @@ export interface EdgeworkConfig {
 
 export interface ZedgeConfig {
   port: number;
+  listener: {
+    mode: 'bun' | 'gnosis-uring-proxy';
+    threads: number;
+    useUring: boolean;
+    internalPort?: number;
+    flowPort?: number;
+  };
   computePool: {
     enabled: boolean;
     maxCpuPercent: number;
@@ -61,14 +68,19 @@ const DEFAULT_EDGEWORK_CONFIG: EdgeworkConfig = {
 
 const DEFAULT_ZEDGE_CONFIG: ZedgeConfig = {
   port: 7331,
+  listener: {
+    mode: 'bun',
+    threads: 1,
+    useUring: false,
+  },
   computePool: {
     enabled: false,
     maxCpuPercent: 50,
     maxMemoryMb: 2048,
     allowedModels: ['tinyllama-1.1b', 'gemma3-1b-it'],
   },
-  preferredModel: 'tinyllama-1.1b',
-  cloudRunDirect: true,
+  preferredModel: 'wasm-local',
+  cloudRunDirect: false,
   babelfish: {
     enabled: true,
     ambientSuggestions: true,
@@ -77,10 +89,48 @@ const DEFAULT_ZEDGE_CONFIG: ZedgeConfig = {
   },
 };
 
+function parsePortOverride(value: string | undefined): number | undefined {
+  if (!value) return undefined;
+
+  const parsed = Number(value);
+  if (!Number.isInteger(parsed) || parsed < 1 || parsed > 65_535) {
+    return undefined;
+  }
+
+  return parsed;
+}
+
+function parseListenerModeOverride(
+  value: string | undefined
+): ZedgeConfig['listener']['mode'] | undefined {
+  if (value === 'bun' || value === 'gnosis-uring-proxy') {
+    return value;
+  }
+
+  return undefined;
+}
+
+function deriveInternalPort(port: number): number {
+  return port <= 55_535 ? port + 10_000 : Math.max(1_024, port - 1_000);
+}
+
+function deriveFlowPort(port: number): number {
+  return port <= 64_535 ? port + 1_000 : Math.max(1_024, port - 100);
+}
+
 function mergeZedgeConfig(config: Partial<ZedgeConfig> | undefined): ZedgeConfig {
+  const port = config?.port ?? DEFAULT_ZEDGE_CONFIG.port;
   return {
     ...DEFAULT_ZEDGE_CONFIG,
     ...config,
+    port,
+    listener: {
+      ...DEFAULT_ZEDGE_CONFIG.listener,
+      ...(config?.listener ?? {}),
+      internalPort:
+        config?.listener?.internalPort ?? deriveInternalPort(port),
+      flowPort: config?.listener?.flowPort ?? deriveFlowPort(port),
+    },
     computePool: {
       ...DEFAULT_ZEDGE_CONFIG.computePool,
       ...(config?.computePool ?? {}),
@@ -117,9 +167,22 @@ export function getEdgeworkConfig(): EdgeworkConfig {
 }
 
 export function getZedgeConfig(): ZedgeConfig {
-  return mergeZedgeConfig(
+  const fileConfig = mergeZedgeConfig(
     readJsonFile<Partial<ZedgeConfig>>(ZEDGE_CONFIG_FILE, DEFAULT_ZEDGE_CONFIG)
   );
+  const portOverride = parsePortOverride(process.env.ZEDGE_COMPANION_PORT);
+  const listenerModeOverride = parseListenerModeOverride(
+    process.env.ZEDGE_LISTENER_MODE
+  );
+
+  return mergeZedgeConfig({
+    ...fileConfig,
+    port: portOverride ?? fileConfig.port,
+    listener: {
+      ...fileConfig.listener,
+      mode: listenerModeOverride ?? fileConfig.listener.mode,
+    },
+  });
 }
 
 export function saveZedgeConfig(config: Partial<ZedgeConfig>): ZedgeConfig {
@@ -127,6 +190,10 @@ export function saveZedgeConfig(config: Partial<ZedgeConfig>): ZedgeConfig {
   const updated = mergeZedgeConfig({
     ...current,
     ...config,
+    listener: {
+      ...current.listener,
+      ...(config.listener ?? {}),
+    },
     computePool: {
       ...current.computePool,
       ...(config.computePool ?? {}),

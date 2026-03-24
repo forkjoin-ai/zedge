@@ -7,13 +7,13 @@
     "build": {
       "executor": "a0:run-commands",
       "options": {
-        "command": "echo 'zedge: Rust extension built via cargo, companion via gnode'"
+        "command": "echo 'zedge: Rust extension built via cargo, companion hosted on x-gnosis + Bun launcher'"
       }
     },
     "build:companion": {
       "executor": "a0:run-commands",
       "options": {
-        "command": "pnpm exec esbuild open-source/zedge/companion/src/index.ts --bundle --outdir=open-source/zedge/companion/dist --platform=node --format=esm --minify"
+        "command": "pnpm exec esbuild open-source/zedge/companion/src/index.ts --bundle --outdir=open-source/zedge/companion/dist --platform=node --format=esm --minify --packages=external"
       }
     },
     "test": {

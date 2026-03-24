@@ -2,7 +2,9 @@
 
 Parent: [Open Source](../README.md)
 
-Child: [Companion Sidecar](./companion/README.md)
+Children:
+- [Companion Sidecar](./companion/README.md)
+- [Scripts](./scripts/README.md)
 
 Zedge brings AI-assisted coding to [Zed](https://zed.dev) through a local extension and a local companion sidecar.
 
@@ -13,11 +15,12 @@ The fair brag is architectural honesty: the extension is real, the sidecar is re
 1. **Zed extension** in `src/`
    - Rust/WASM extension
    - registers Zedge as a language-model provider
-   - adds slash commands to Zed
+   - adds slash commands to Zed and mirrors that command catalog into Zed Agent through the companion MCP prompt surface
 
 2. **Companion sidecar** in `companion/`
-   - Bun HTTP server on `localhost:7331`
+   - public listener on `localhost:7331` now defaults to a native `gnosis-uring` proxy, with the x-gnosis app shell bound on loopback behind it
    - handles inference routing, collaboration bridges, compute pooling, and local integration work
+   - defaults `preferredModel` to the selectable `wasm-local` path and runs an Aether-backed local fallback path for SmolLM2 chat generation and MiniLM embeddings before dropping to echo
    - now exposes Babelfish polyglot translation/explanation over the Gnosis language registry
 
 ## Babelfish
@@ -64,19 +67,20 @@ The quickest way to try Zedge is to run only the companion and point Zed's OpenA
 
 ```bash
 pnpm install
-pnpm gnode run open-source/zedge/companion/src/index.ts
+bun run open-source/zedge/companion/src/companion-supervisor.ts
 ```
 
 ### Then point Zed at:
 
 - `http://localhost:7331/v1`
 
-That gives you a working local provider path without compiling the extension first.
+That gives you a working local provider path without compiling the extension first. In companion mode the generated Zed settings now include a selectable `wasm-local` model so you can force the Aether-backed on-device path from the model picker.
 
 ## What People May Like
 
 - the sidecar is OpenAI-compatible enough to plug into Zed quickly
 - the extension adds native slash-command affordances when you want the full experience
+- Zed Agent sees the same Zedge command names through MCP prompts instead of a separate ad hoc command list
 - the companion is more than an inference proxy; it also handles collaboration and compute-pool responsibilities
 - the architecture keeps local and edge-oriented routing options open
 

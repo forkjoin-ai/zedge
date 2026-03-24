@@ -36,18 +36,21 @@ type QText = Text;
  * Used instead of Y.UndoManager to avoid module resolution issues.
  */
 class SimpleUndoManager {
-  private scope: any;
-  private trackedOrigins: Set<any>;
+  private scope: Text;
+  private trackedOrigins: Set<string | number>;
   private undoStack: { content: string }[] = [];
   private redoStack: { content: string }[] = [];
 
-  constructor(scope: any, options?: { trackedOrigins?: Set<any> }) {
+  constructor(scope: Text, options?: { trackedOrigins?: Set<string | number> }) {
     this.scope = scope;
     this.trackedOrigins = options?.trackedOrigins ?? new Set();
-    const doc = scope._doc;
+    const doc = (scope as unknown as { _doc?: Doc })._doc;
     if (doc?.on) {
-      doc.on('update', (_update: Uint8Array, origin: any) => {
-        if (this.trackedOrigins.has(origin)) {
+      doc.on('update', (_update: Uint8Array, origin: unknown) => {
+        if (
+          (typeof origin === 'string' || typeof origin === 'number') &&
+          this.trackedOrigins.has(origin)
+        ) {
           this.undoStack.push({ content: scope.toString() });
           this.redoStack.length = 0;
         }
@@ -61,7 +64,7 @@ class SimpleUndoManager {
       this.redoStack.push({ content: this.scope.toString() });
       const text = this.scope;
       if (text.delete && text.insert) {
-        text.delete(0, text.length ?? text._content?.length ?? 0);
+        text.delete(0, text.length);
         if (this.undoStack.length > 0) {
           const prev = this.undoStack[this.undoStack.length - 1]!;
           text.insert(0, prev.content);
@@ -76,7 +79,7 @@ class SimpleUndoManager {
       this.undoStack.push({ content: this.scope.toString() });
       const text = this.scope;
       if (text.delete && text.insert) {
-        text.delete(0, text.length ?? text._content?.length ?? 0);
+        text.delete(0, text.length);
         text.insert(0, item.content);
       }
     }

@@ -9,6 +9,7 @@
 import { join } from 'node:path';
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { spawn as nodeSpawn } from 'node:child_process';
+import { resolveTypeScriptEntrypointCommand } from './runtime-command';
 
 /** Run a shell command and collect output */
 function execShellForge(
@@ -265,7 +266,8 @@ export class ForgeBridge {
       }
 
       try {
-        nodeSpawn('node', ['--import', 'tsx', entryPoint], {
+        const runtimeCommand = resolveTypeScriptEntrypointCommand(entryPoint);
+        nodeSpawn(runtimeCommand.command, [...runtimeCommand.args], {
           cwd: workDir,
           stdio: ['ignore', 'pipe', 'pipe'],
           env: {

@@ -1,5 +1,8 @@
 import { describe, test, expect } from 'bun:test';
-import { getModels, embed } from '../inference-bridge';
+import { mkdtempSync, readFileSync, writeFileSync } from 'fs';
+import { join } from 'path';
+import { tmpdir } from 'os';
+import { clearLogs, getModels, embed, infer } from '../inference-bridge';
 import type {
   InferenceTier,
   ChatCompletionResponse,
@@ -51,7 +54,6 @@ describe('Inference Bridge', () => {
   });
 
   test('infer with wasm-local returns real response', async () => {
-    const { infer } = await import('../inference-bridge');
     // Force WASM tier by using a model name that won't match any remote
     const result = await infer({
       model: 'wasm-local-only-test',
@@ -70,9 +72,48 @@ describe('Inference Bridge', () => {
     expect(data.choices.length).toBeGreaterThan(0);
     expect(data.choices[0].message.role).toBe('assistant');
     expect(typeof data.choices[0].message.content).toBe('string');
-    // WASM n-gram and echo tiers may return empty content strings
+    // Local Aether and echo tiers may return empty content strings under mocks
     expect(data.choices[0].message.content.length).toBeGreaterThanOrEqual(0);
-  }, 20_000);
+  }, 30_000);
+
+  test('infer falls back to local wasm when the remote tiers miss', async () => {
+    const originalFetch = global.fetch;
+    global.fetch = (async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith('/v1/chat/completions')) {
+        return new Response('remote unavailable', {
+          status: 503,
+          statusText: 'Service Unavailable',
+        });
+      }
+      return new Response('unexpected', { status: 500 });
+    }) as typeof fetch;
+
+    try {
+      const result = await infer({
+        model: 'remote-fallback-test',
+        messages: [{ role: 'user', content: 'Fallback to local please.' }],
+        max_tokens: 64,
+      });
+
+      expect(result.tier).toBe('wasm');
+      expect(result.attempts.some((attempt) => attempt.tier === 'edge')).toBe(
+        true
+      );
+      expect(
+        result.attempts.some(
+          (attempt) => attempt.tier === 'wasm' && attempt.status === 'ok'
+        )
+      ).toBe(true);
+
+      const data = (await result.response.json()) as ChatCompletionResponse;
+      expect(data.model).not.toBe('echo-fallback');
+      expect(data.choices[0]?.message.role).toBe('assistant');
+      expect(typeof data.choices[0]?.message.content).toBe('string');
+    } finally {
+      global.fetch = originalFetch;
+    }
+  }, 45_000);
 
   test('embed with local fallback returns embedding', async () => {
     // Use a bogus model to force local fallback
@@ -121,4 +162,24 @@ describe('Inference Bridge', () => {
     }
     expect(identical).toBe(false);
   }, 15_000);
+
+  test('clearLogs truncates the configured inference log file', () => {
+    const tempDir = mkdtempSync(join(tmpdir(), 'zedge-inference-log-'));
+    const logFile = join(tempDir, 'inference.log');
+    const previousLogFile = process.env.ZEDGE_INFERENCE_LOG_FILE;
+
+    process.env.ZEDGE_INFERENCE_LOG_FILE = logFile;
+    writeFileSync(logFile, 'stale log line\n');
+
+    try {
+      clearLogs();
+      expect(readFileSync(logFile, 'utf-8')).toBe('');
+    } finally {
+      if (previousLogFile === undefined) {
+        delete process.env.ZEDGE_INFERENCE_LOG_FILE;
+      } else {
+        process.env.ZEDGE_INFERENCE_LOG_FILE = previousLogFile;
+      }
+    }
+  });
 });

@@ -159,23 +159,24 @@ export class CeraBridge {
    */
   createSseStream(): ReadableStream {
     const encoder = new TextEncoder();
+    let heartbeat: ReturnType<typeof setInterval> | null = null;
 
     return new ReadableStream({
       start: (controller) => {
         this.sseClients.add(controller);
         controller.enqueue(encoder.encode('data: {"type":"connected"}\n\n'));
 
-        const interval = setInterval(() => {
+        heartbeat = setInterval(() => {
           try {
             controller.enqueue(encoder.encode(': heartbeat\n\n'));
           } catch {
-            clearInterval(interval);
+            if (heartbeat) clearInterval(heartbeat);
             this.sseClients.delete(controller);
           }
         }, 15_000);
       },
       cancel: () => {
-        // Cleanup handled by error in enqueue
+        if (heartbeat) clearInterval(heartbeat);
       },
     });
   }

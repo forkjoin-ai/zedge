@@ -461,7 +461,7 @@ async function extractResponseData(
 
 // --- Request Handler ---
 
-async function handleWebRequest(req: Request): Promise<Response> {
+export async function handleWebRequest(req: Request): Promise<Response> {
   const url = new URL(req.url);
   const path = url.pathname;
 
