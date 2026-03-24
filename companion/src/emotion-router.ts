@@ -279,3 +279,135 @@ export function analyzeCodeEmotionWithFallback(
   }
   return analyzeCodeEmotion(content);
 }
+
+// ---------------------------------------------------------------------------
+// Void Boundary Model -- Buleyean complement routing
+// ---------------------------------------------------------------------------
+
+/**
+ * Buleyean weight: w = R - min(v, R) + 1
+ * Emotions rejected fewer times get higher weight (the sliver guarantees
+ * every emotion keeps w >= 1, so nothing is ever fully suppressed).
+ */
+function buleyeanWeight(rounds: number, rejections: number): number {
+  return rounds - Math.min(rejections, rounds) + 1;
+}
+
+/**
+ * Void boundary over code-emotion analyses.
+ * `rounds` counts total analyses observed.
+ * `entries` maps each emotion label to its rejection count.
+ */
+export interface CodeEmotionVoidBoundary {
+  rounds: number;
+  entries: Map<string, number>;
+}
+
+/**
+ * Build a void boundary from a history of emotional profiles.
+ *
+ * For each profile the dominant emotion is selected; every other emotion
+ * that appeared in that profile is recorded as a rejection. Emotions that
+ * never appeared in a profile are not penalised -- the boundary only
+ * tracks what was observed and not chosen.
+ */
+export function buildCodeVoidBoundary(
+  analyses: EmotionalProfile[]
+): CodeEmotionVoidBoundary {
+  const entries = new Map<string, number>();
+  let rounds = 0;
+
+  for (const profile of analyses) {
+    const emotions = Object.keys(profile.emotionCounts);
+    if (emotions.length === 0) continue;
+    rounds++;
+
+    // Initialise any new emotions we haven't seen before
+    for (const emotion of emotions) {
+      if (!entries.has(emotion)) {
+        entries.set(emotion, 0);
+      }
+    }
+
+    // Everything that appeared but was NOT dominant is a rejection
+    for (const emotion of emotions) {
+      if (emotion !== profile.dominantEmotion) {
+        entries.set(emotion, (entries.get(emotion) ?? 0) + 1);
+      }
+    }
+  }
+
+  return { rounds, entries };
+}
+
+/**
+ * Route by complement distribution derived from the void boundary.
+ *
+ * - High dominant weight (novel / first encounter) -> `consensus`
+ *   Unknown emotional territory -- proceed carefully with multi-model agreement.
+ * - Low dominant weight (habituated / seen many times) -> `fastest`
+ *   Routine emotional state -- speed is fine, we know this territory.
+ * - Distributed weights (mixed emotional state) -> `constructive`
+ *   No single emotion dominates the complement -- diverse perspectives help.
+ */
+export function routeByComplement(
+  boundary: CodeEmotionVoidBoundary
+): { strategy: CollapseStrategy; reason: string } {
+  const { rounds, entries } = boundary;
+
+  if (rounds === 0 || entries.size === 0) {
+    return {
+      strategy: 'fastest',
+      reason: 'Empty void boundary -- no emotional history, defaulting to fastest.',
+    };
+  }
+
+  // Compute Buleyean weights for every tracked emotion
+  const weights = new Map<string, number>();
+  let maxWeight = -Infinity;
+  let totalWeight = 0;
+
+  for (const [emotion, rejections] of entries) {
+    const w = buleyeanWeight(rounds, rejections);
+    weights.set(emotion, w);
+    if (w > maxWeight) maxWeight = w;
+    totalWeight += w;
+  }
+
+  // Normalised entropy of the weight distribution (0 = concentrated, 1 = uniform)
+  const n = weights.size;
+  let entropy = 0;
+  if (n > 1 && totalWeight > 0) {
+    for (const w of weights.values()) {
+      const p = w / totalWeight;
+      if (p > 0) entropy -= p * Math.log2(p);
+    }
+    entropy /= Math.log2(n); // normalise to [0, 1]
+  }
+
+  // Thresholds -- tuned by the ratio of max weight to the total
+  const dominanceRatio = maxWeight / totalWeight;
+
+  if (dominanceRatio > 0.6) {
+    // One emotion has very high complement weight -- it was rarely rejected,
+    // meaning it is novel or uncommon. Proceed with caution.
+    return {
+      strategy: 'consensus',
+      reason: `Dominant complement weight ratio ${dominanceRatio.toFixed(2)} indicates novel emotional territory -- using consensus for safety.`,
+    };
+  }
+
+  if (dominanceRatio < 0.35 || entropy > 0.85) {
+    // Weights are spread across emotions -- mixed state needs diverse models.
+    return {
+      strategy: 'constructive',
+      reason: `Distributed complement weights (entropy=${entropy.toFixed(2)}, dominance=${dominanceRatio.toFixed(2)}) -- using constructive for diverse perspectives.`,
+    };
+  }
+
+  // Middle ground: habituated, known territory.
+  return {
+    strategy: 'fastest',
+    reason: `Habituated emotional state (dominance=${dominanceRatio.toFixed(2)}, entropy=${entropy.toFixed(2)}) -- using fastest for routine work.`,
+  };
+}
