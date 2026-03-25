@@ -246,16 +246,29 @@ async function tryEdgeCoordinator(
 
   const MAX_RETRIES = 2;
   for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+    // Use /ai/communicate -- handles ALL 14 models via Glossolalia MOA.
+    // /v1/chat/completions gates model access and returns 503 for non-edge models.
+    const edgeEndpoint = `${baseUrl}/ai/communicate`;
     logInference(
-      `[edge] → ${baseUrl}/v1/chat/completions model=${request.model} stream=${
+      `[edge] → ${edgeEndpoint} model=${request.model} stream=${
         request.stream
       } attempt=${attempt}`
     );
 
-    const resp = await fetch(`${baseUrl}/v1/chat/completions`, {
+    // Convert OpenAI format to communicate format
+    const lastMsg = request.messages[request.messages.length - 1];
+    const prompt = typeof lastMsg.content === 'string' ? lastMsg.content : '';
+
+    const resp = await fetch(edgeEndpoint, {
       method: 'POST',
       headers,
-      body: JSON.stringify(request),
+      body: JSON.stringify({
+        prompt,
+        model: request.model,
+        max_tokens: request.max_tokens ?? 256,
+        temperature: request.temperature ?? 0.7,
+        stream: request.stream,
+      }),
       signal,
     });
 
@@ -277,6 +290,33 @@ async function tryEdgeCoordinator(
       logInference(`[edge] 503 auth warming, retrying in ${delayMs}ms...`);
       await new Promise((resolve) => setTimeout(resolve, delayMs));
       continue;
+    }
+
+    // Convert communicate response to OpenAI format for Zed compatibility
+    if (resp.ok && !request.stream) {
+      try {
+        const commBody = await resp.json() as { response?: string; topology?: unknown };
+        if (commBody.response) {
+          const openaiResp = {
+            id: `chatcmpl-edge-${Date.now()}`,
+            object: 'chat.completion',
+            created: Math.floor(Date.now() / 1000),
+            model: request.model,
+            choices: [{
+              index: 0,
+              message: { role: 'assistant', content: commBody.response },
+              finish_reason: 'stop',
+            }],
+            usage: { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 },
+          };
+          return new Response(JSON.stringify(openaiResp), {
+            status: 200,
+            headers: { 'Content-Type': 'application/json', 'X-Glossolalia': 'true' },
+          });
+        }
+      } catch {
+        // If JSON parse fails, return raw response
+      }
     }
 
     return resp;
