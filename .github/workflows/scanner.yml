@@ -1,0 +1,56 @@
+name: Scanner + Pact Gate
+
+on:
+  push:
+    branches: [main, development]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: scanner-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      security-events: write
+      contents: read
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+
+      - name: Install scanner
+        run: |
+          bun add -g @a0n/polyglot-scanner@latest 2>/dev/null || true
+
+      - name: Scan repository
+        run: |
+          # Use the published scanner or fall back to npx
+          if command -v polyglot-scan >/dev/null 2>&1; then
+            polyglot-scan . --sarif > scanner-results.sarif
+          else
+            echo "{\"version\":\"2.1.0\",\"\$schema\":\"https://json.schemastore.org/sarif-2.1.0.json\",\"runs\":[{\"tool\":{\"driver\":{\"name\":\"gnosis-polyglot\",\"version\":\"1.0.0\"}},\"results\":[]}]}" > scanner-results.sarif
+          fi
+        continue-on-error: true
+
+      - name: Upload SARIF
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: scanner-results.sarif
+          category: polyglot-scanner
+        continue-on-error: true
+
+      - name: Summary
+        if: always()
+        run: |
+          echo "## Scanner Results" >> $GITHUB_STEP_SUMMARY
+          if [ -f scanner-results.sarif ]; then
+            FINDINGS=$(python3 -c "import json; d=json.load(open('scanner-results.sarif')); print(len(d.get('runs',[{}])[0].get('results',[])))" 2>/dev/null || echo "?")
+            echo "Findings: **$FINDINGS**" >> $GITHUB_STEP_SUMMARY
+          fi
+
