@@ -1413,9 +1413,10 @@ export async function infer(
   //
   // Large models can take minutes to cold-start and load weights from GCS FUSE.
   // The race between edge + cloudrun means whichever responds first wins.
-  // Edge-only: Cloud Run is broken (error-as-200, cold starts, weight errors).
-  // Edge verified working at <10s. Skip Cloud Run entirely.
-  const canCloudRun = false;
+  // Edge handles routing internally via /ai/communicate.
+  // Cloud Run is a backup path for models the edge can't handle.
+  const canCloudRun =
+    config.cloudRunDirect && !!CLOUD_RUN_COORDINATORS[request.model];
   // Edge-first: always try edge, even for streaming. Cloud Run has cold starts
   // and weight errors. The edge path (Glossolalia MOA) is more reliable.
   const preferCloudRunForStreaming = false;
