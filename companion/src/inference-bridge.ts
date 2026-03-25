@@ -347,6 +347,19 @@ async function tryCloudRunCoordinator(
       )}`
     );
 
+    // Reject small responses that are likely error messages disguised as 200 OK.
+    // Real SSE streams are chunked (no content-length). Error responses are tiny
+    // (e.g., 114 bytes with {"error": "Range out of bounds"}).
+    const contentLength = resp.headers.get('content-length');
+    if (resp.ok && contentLength && parseInt(contentLength) < 200) {
+      logInference(`[cloudrun] Rejecting small 200 response (${contentLength}B) -- likely error`);
+      if (attempt < MAX_RETRIES) {
+        await new Promise(r => setTimeout(r, 1000));
+        continue;
+      }
+      throw new Error(`Cloud Run returned error-sized response (${contentLength}B)`);
+    }
+
     // 503 = container cold-starting, retry with backoff
     if (resp.status === 503 && attempt < MAX_RETRIES) {
       const backoff = Math.min(
