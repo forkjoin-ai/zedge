@@ -388,7 +388,7 @@ describe('Zedge slash commands end to end', () => {
   test('companion launches through gnode', async () => {
     const health = await fetchCompanionHealth(companionPort);
     expect(health.runtime.hostRuntime).toBe('gnode');
-    expect(health.preferredModel).toBe('wasm-local');
+    expect(health.preferredModel).toBe('cog-360m');
     expect(health.inference.localRuntime.pid).toBeGreaterThan(0);
   }, 20_000);
 

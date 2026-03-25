@@ -244,7 +244,7 @@ describe('companion supervisor end to end', () => {
     const firstHealth = await waitForCompanionHealth(companionPort);
     const firstPid = firstHealth.inference.localRuntime.pid;
 
-    expect(firstHealth.preferredModel).toBe('wasm-local');
+    expect(firstHealth.preferredModel).toBe('cog-360m');
     expect(firstHealth.runtime.hostRuntime).toBe('gnode');
     expect(firstPid).toBeGreaterThan(0);
 
