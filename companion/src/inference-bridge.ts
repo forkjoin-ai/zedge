@@ -246,9 +246,9 @@ async function tryEdgeCoordinator(
 
   const MAX_RETRIES = 2;
   for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
-    // Use /ai/communicate -- handles ALL 14 models via Glossolalia MOA.
-    // /v1/chat/completions gates model access and returns 503 for non-edge models.
-    const edgeEndpoint = `${baseUrl}/ai/communicate`;
+    // Use /ai/communicate on edge.affectively.ai -- handles ALL 14 models via Glossolalia MOA.
+    // api.edgework.ai only routes /v1/* endpoints, not /ai/*.
+    const edgeEndpoint = 'https://edge.affectively.ai/ai/communicate';
     logInference(
       `[edge] → ${edgeEndpoint} model=${request.model} stream=${
         request.stream
