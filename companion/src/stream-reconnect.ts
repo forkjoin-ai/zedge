@@ -191,7 +191,7 @@ async function readSSEStream(
   controller: ReadableStreamDefaultController<Uint8Array>
 ): Promise<void> {
   const reader = body.getReader();
-  const decoder = new TextDecoder();
+  const decoder = new TextDecoder('utf-8', { fatal: true });
   let buffer = '';
 
   while (true) {

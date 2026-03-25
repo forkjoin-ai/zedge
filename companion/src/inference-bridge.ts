@@ -623,7 +623,7 @@ export function createSSEProxyStream(
   modelName?: string
 ): ReadableStream<Uint8Array> {
   const encoder = new TextEncoder();
-  const decoder = new TextDecoder();
+  const decoder = new TextDecoder('utf-8', { fatal: true });
 
   // Log all debug info to inference log — not to the SSE stream.
   // Zed's OpenAI-compatible provider can't handle SSE comments.

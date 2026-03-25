@@ -68,7 +68,7 @@ export async function collectSseSample(
   }
 
   const reader = response.body.getReader();
-  const decoder = new TextDecoder();
+  const decoder = new TextDecoder('utf-8', { fatal: true });
   const deadline = Date.now() + timeoutMs;
   const sample: string[] = [];
   let buffer = '';

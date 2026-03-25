@@ -1728,7 +1728,7 @@ export async function handleToolCall(
         });
         const data = await resp.json();
         const content =
-          (data as any)?.choices?.[0]?.message?.content ?? JSON.stringify(data);
+          (data as unknown)?.choices?.[0]?.message?.content ?? JSON.stringify(data);
         return {
           content: [{ type: 'text', text: content }],
         };
