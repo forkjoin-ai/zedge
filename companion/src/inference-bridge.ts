@@ -1362,7 +1362,9 @@ export async function infer(
   // The race between edge + cloudrun means whichever responds first wins.
   const canCloudRun =
     config.cloudRunDirect && !!CLOUD_RUN_COORDINATORS[request.model];
-  const preferCloudRunForStreaming = request.stream && canCloudRun;
+  // Edge-first: always try edge, even for streaming. Cloud Run has cold starts
+  // and weight errors. The edge path (Glossolalia MOA) is more reliable.
+  const preferCloudRunForStreaming = false;
   {
     const t0 = Date.now();
     const edgeController = new AbortController();
