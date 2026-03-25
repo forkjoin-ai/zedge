@@ -290,7 +290,7 @@ function startBabysitter(): void {
     shuttingDown = true;
     if (babysitterTimer) clearInterval(babysitterTimer);
     if (companionProc && !companionProc.killed) {
-      try { companionProc.kill('SIGTERM'); } catch {}
+      try { companionProc.kill('SIGTERM'); } catch { /* Process may already be terminated */ }
     }
   });
 }

@@ -38,7 +38,7 @@ function resolveInferenceLogFile(): string | null {
   const logFile = explicitLogFile ?? join(DEFAULT_LOG_DIR, 'inference.log');
   try {
     mkdirSync(dirname(logFile), { recursive: true });
-  } catch {}
+  } catch { /* Directory may already exist or be unwritable -- best-effort */ }
   return logFile;
 }
 
@@ -56,7 +56,7 @@ function logInference(line: string): void {
   }
   try {
     appendFileSync(logFile, entry + '\n');
-  } catch {}
+  } catch { /* Log file may be unwritable -- best-effort logging */ }
 }
 
 /** Get recent inference logs (most recent last) */
@@ -74,7 +74,7 @@ export function clearLogs(): void {
   }
   try {
     writeFileSync(logFile, '');
-  } catch {}
+  } catch { /* Log file may be unwritable -- best-effort cleanup */ }
 }
 
 export interface ChatMessage {
