@@ -20,8 +20,18 @@ pub struct ZedgeModel {
 /// Available models — mirrors the settings generator list
 pub const MODELS: &[ZedgeModel] = &[
     ZedgeModel {
-        id: "wasm-local",
-        display_name: "SmolLM2 360M (Local WASM)",
+        id: "cog-360m",
+        display_name: "Cog 360M (Edge)",
+        max_tokens: 2048,
+    },
+    ZedgeModel {
+        id: "cyrano-360m",
+        display_name: "Cyrano 360M (Edge)",
+        max_tokens: 2048,
+    },
+    ZedgeModel {
+        id: "mistral-7b-edge",
+        display_name: "Mistral 7B (Edge, 10 layers)",
         max_tokens: 2048,
     },
     ZedgeModel {
