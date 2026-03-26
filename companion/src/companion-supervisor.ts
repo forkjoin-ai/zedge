@@ -25,10 +25,10 @@ let shuttingDown = false;
 let healthCheckInFlight = false;
 
 function getCompanionEntry(): string {
-  return resolve(
-    process.env.AEON_ROOT ?? process.cwd(),
-    'open-source/zedge/companion/src/index.ts'
-  );
+  // When running from companion/ dir, __dirname is companion/src/
+  // so go up one level to get companion/, then resolve src/index.ts
+  const thisDir = dirname(fileURLToPath(import.meta.url));
+  return resolve(thisDir, 'index.ts');
 }
 
 function getCompanionBase(): string {
