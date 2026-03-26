@@ -156,6 +156,19 @@ const LOCAL_WASM_TOTAL_TIMEOUT_MS = 45_000;
 const LOCAL_WASM_BUSY_BUFFER_MS = 15_000;
 const LOCAL_WASM_PREWARM_BUSY_MS = 5 * 60_000;
 
+function isOpenAiSsePayload(payload: string): boolean {
+  if (payload === '[DONE]') {
+    return true;
+  }
+
+  try {
+    const parsed = JSON.parse(payload) as { choices?: unknown };
+    return Array.isArray(parsed.choices);
+  } catch {
+    return false;
+  }
+}
+
 function withTimeout<T>(
   promise: Promise<T>,
   timeoutMs: number,
@@ -194,6 +207,204 @@ export function extractUpstreamDebugHeaders(
     }
   });
   return headers;
+}
+
+function createJsonChatCompletionResponse(
+  model: string,
+  content: string,
+  options: {
+    id?: string;
+    created?: number;
+    completionTokens?: number;
+    headers?: Record<string, string>;
+    status?: number;
+  } = {}
+): Response {
+  const completionTokens =
+    options.completionTokens ?? Math.ceil(content.length / 4);
+  const response: ChatCompletionResponse = {
+    id: options.id ?? `chatcmpl-edge-${Date.now()}`,
+    object: 'chat.completion',
+    created: options.created ?? Math.floor(Date.now() / 1000),
+    model,
+    choices: [
+      {
+        index: 0,
+        message: { role: 'assistant', content },
+        finish_reason: 'stop',
+      },
+    ],
+    usage: {
+      prompt_tokens: 0,
+      completion_tokens: completionTokens,
+      total_tokens: completionTokens,
+    },
+  };
+
+  return new Response(JSON.stringify(response), {
+    status: options.status ?? 200,
+    headers: {
+      'Content-Type': 'application/json',
+      ...(options.headers ?? {}),
+    },
+  });
+}
+
+async function collapseEdgeStreamingResponse(
+  response: Response,
+  fallbackModel: string
+): Promise<Response> {
+  const upstreamHeaders = extractUpstreamDebugHeaders(response);
+  const contentType = response.headers.get('content-type') ?? '';
+
+  if (
+    contentType.includes('text/event-stream') ||
+    contentType.includes('text/plain')
+  ) {
+    if (!response.body) {
+      return createJsonChatCompletionResponse(fallbackModel, '', {
+        headers: upstreamHeaders,
+        status: response.status,
+      });
+    }
+
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder('utf-8', { fatal: true });
+    let buffer = '';
+    let content = '';
+    let model = fallbackModel;
+    let id = `chatcmpl-edge-${Date.now()}`;
+    let created = Math.floor(Date.now() / 1000);
+    let sawCompletion = false;
+    let pendingDataLines: string[] = [];
+
+    const processEvent = (): boolean => {
+      if (pendingDataLines.length === 0) {
+        return false;
+      }
+
+      const payload = pendingDataLines.join('\n').trim();
+      pendingDataLines = [];
+      if (!payload) {
+        return false;
+      }
+      if (payload === '[DONE]') {
+        sawCompletion = true;
+        return true;
+      }
+
+      try {
+        const chunk = JSON.parse(payload) as {
+          id?: string;
+          created?: number;
+          model?: string;
+          choices?: Array<{
+            delta?: { content?: string };
+            message?: { content?: string };
+            finish_reason?: string | null;
+          }>;
+        };
+        const choice = chunk.choices?.[0];
+        content += choice?.delta?.content ?? choice?.message?.content ?? '';
+        if (typeof chunk.model === 'string') {
+          model = chunk.model;
+        }
+        if (typeof chunk.id === 'string') {
+          id = chunk.id;
+        }
+        if (typeof chunk.created === 'number') {
+          created = chunk.created;
+        }
+        if (choice?.finish_reason != null) {
+          sawCompletion = true;
+          return true;
+        }
+      } catch {
+        // Ignore non-JSON SSE lines.
+      }
+
+      return false;
+    };
+
+    try {
+      while (!sawCompletion) {
+        const { done, value } = await reader.read();
+        if (done) {
+          buffer += decoder.decode();
+          break;
+        }
+
+        buffer += decoder.decode(value, { stream: true });
+
+        let newlineIndex = buffer.indexOf('\n');
+        while (newlineIndex !== -1) {
+          const rawLine = buffer.slice(0, newlineIndex).replace(/\r$/, '');
+          buffer = buffer.slice(newlineIndex + 1);
+
+          if (rawLine.length === 0) {
+            if (processEvent()) {
+              break;
+            }
+          } else if (rawLine.startsWith('data: ')) {
+            pendingDataLines.push(rawLine.slice(6));
+          }
+
+          newlineIndex = buffer.indexOf('\n');
+        }
+      }
+    } finally {
+      try {
+        await reader.cancel();
+      } catch {
+        // Best-effort cleanup only.
+      }
+      reader.releaseLock();
+    }
+
+    if (!sawCompletion && pendingDataLines.length > 0) {
+      processEvent();
+    }
+
+    return createJsonChatCompletionResponse(model, content, {
+      id,
+      created,
+      headers: upstreamHeaders,
+      status: response.status,
+    });
+  }
+
+  const data = (await response.json()) as Record<string, unknown> & {
+    response?: string;
+    token_count?: number;
+    choices?: ChatCompletionResponse['choices'];
+    usage?: ChatCompletionResponse['usage'];
+    created?: number;
+    id?: string;
+    model?: string;
+  };
+
+  if (Array.isArray(data.choices)) {
+    return new Response(JSON.stringify(data), {
+      status: response.status,
+      headers: {
+        'Content-Type': 'application/json',
+        ...upstreamHeaders,
+      },
+    });
+  }
+
+  return createJsonChatCompletionResponse(
+    fallbackModel,
+    data.response ?? '',
+    {
+      id: typeof data.id === 'string' ? data.id : undefined,
+      created: typeof data.created === 'number' ? data.created : undefined,
+      completionTokens:
+        typeof data.token_count === 'number' ? data.token_count : undefined,
+      headers: upstreamHeaders,
+      status: response.status,
+    }
+  );
 }
 
 /**
@@ -242,7 +453,7 @@ async function tryEdgeCoordinator(
   const headers = {
     'Content-Type': 'application/json',
     'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
-    'Accept': 'application/json, text/event-stream',
+    'Accept': 'text/event-stream, application/json',
     'Origin': 'https://edge.affectively.ai',
     ...authHeaders,
   };
@@ -267,7 +478,7 @@ async function tryEdgeCoordinator(
         model: request.model,
         max_tokens: request.max_tokens ?? 128,
         temperature: request.temperature ?? 0.7,
-        stream: request.stream ?? false,
+        stream: true,
       };
       logInference(
         `[edge] → ${url} model=${request.model} stream=${
@@ -305,33 +516,14 @@ async function tryEdgeCoordinator(
 
       if (!resp.ok) break; // Try next EDGE_URL
 
-      // If streaming, pass through SSE directly (already in OpenAI chunk format)
-      if (communicateBody.stream) {
+      if (request.stream) {
         return resp;
       }
 
-      // Batch mode: convert /ai/communicate JSON to OpenAI format
+      // Batch mode: normalize either JSON or unexpected SSE to OpenAI JSON.
       try {
-        const data = await resp.json() as Record<string, unknown>;
-        const text = (data.response as string) || '';
-        const openaiResponse = {
-          id: `chatcmpl-edge-${Date.now()}`,
-          object: 'chat.completion',
-          created: Math.floor(Date.now() / 1000),
-          model: request.model,
-          choices: [{
-            index: 0,
-            message: { role: 'assistant', content: text },
-            finish_reason: 'stop',
-          }],
-          usage: { prompt_tokens: 0, completion_tokens: data.token_count ?? 0, total_tokens: 0 },
-        };
-        return new Response(JSON.stringify(openaiResponse), {
-          status: 200,
-          headers: { 'Content-Type': 'application/json' },
-        });
+        return await collapseEdgeStreamingResponse(resp, request.model);
       } catch {
-        // If JSON parse fails, pass through raw
         return resp;
       }
     }
@@ -386,6 +578,7 @@ async function tryCloudRunCoordinator(
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
+        Accept: request.stream === true ? 'text/event-stream' : 'application/json',
         ...authHeaders,
       },
       body: JSON.stringify(request),
@@ -777,6 +970,212 @@ export function createSSEProxyStream(
       const progressId = `chatcmpl-progress-${Date.now()}`;
       const progressCreated = Math.floor(Date.now() / 1000);
 
+      const handleLine = (
+        rawLine: string,
+        options: { terminateEvent?: boolean } = {}
+      ) => {
+        const line = rawLine.endsWith('\r')
+          ? rawLine.slice(0, -1)
+          : rawLine;
+
+        if (line.startsWith('data: ')) {
+          const payload = line.slice(6).trim();
+          const isForwardable = isOpenAiSsePayload(payload);
+
+          if (isForwardable) {
+            dataEventCount++;
+            if (payload === '[DONE]') {
+              sawDone = true;
+            } else if (!firstDataLogged) {
+              firstDataLogged = true;
+              logInference(
+                `[sse-proxy] tier=${tier} first-data: ${payload.slice(
+                  0,
+                  200
+                )}`
+              );
+              // Emit chain debug info before first real token
+              const chainInfo = attempts?.length
+                ? attempts
+                    .map((a) => `${a.tier}:${a.status}(${a.ms}ms)`)
+                    .join(' > ')
+                : tier;
+              if (useReasoning) {
+                // reasoning_content goes into Zed's thinking UI (when supported)
+                const debugChunk = {
+                  id: progressId,
+                  object: 'chat.completion.chunk',
+                  created: progressCreated,
+                  model: modelName ?? tier,
+                  choices: [
+                    {
+                      index: 0,
+                      delta: { reasoning_content: `[${chainInfo}]\n` },
+                      finish_reason: null,
+                    },
+                  ],
+                };
+                enqueue(
+                  encoder.encode(`data: ${JSON.stringify(debugChunk)}\n\n`)
+                );
+              } else if (emittedProgress) {
+                // Close the sparkline with stats and italic marker
+                const prefillMs = Date.now() - prefillStartMs;
+                const avgTokSec =
+                  prefillMs > 0 && lastPrefillPos > 0
+                    ? Math.round((lastPrefillPos / prefillMs) * 1000)
+                    : 0;
+                const closingText = ` ${avgTokSec}t/s | ${chainInfo}*\n\n`;
+                if (useReasoning) {
+                  const sep = {
+                    id: progressId,
+                    object: 'chat.completion.chunk',
+                    created: progressCreated,
+                    model: modelName ?? tier,
+                    choices: [
+                      {
+                        index: 0,
+                        delta: { reasoning_content: closingText },
+                        finish_reason: null,
+                      },
+                    ],
+                  };
+                  enqueue(encoder.encode(`data: ${JSON.stringify(sep)}\n\n`));
+                } else {
+                  const sep = {
+                    id: progressId,
+                    object: 'chat.completion.chunk',
+                    created: progressCreated,
+                    model: modelName ?? tier,
+                    choices: [
+                      {
+                        index: 0,
+                        delta: { content: closingText },
+                        finish_reason: null,
+                      },
+                    ],
+                  };
+                  enqueue(encoder.encode(`data: ${JSON.stringify(sep)}\n\n`));
+                }
+              }
+            }
+
+            enqueue(
+              encoder.encode(
+                line + (options.terminateEvent === true ? '\n\n' : '\n')
+              )
+            );
+          } else {
+            logInference(
+              `[sse-proxy] tier=${tier} filtered non-OpenAI data: ${payload.slice(0, 100)}`
+            );
+          }
+        } else if (line === '') {
+          enqueue(encoder.encode('\n'));
+        } else if (line.startsWith(':')) {
+          // Log upstream comments (heartbeat, prefill) but don't forward raw
+          logInference(
+            `[sse-proxy] tier=${tier} upstream: ${line.slice(0, 100)}`
+          );
+
+          // Convert prefill progress into an append-friendly sparkline.
+          // Each tick emits ONE character — the sparkline grows naturally
+          // as SSE content deltas append. No replacement needed.
+          // Result: `*⠿ ▁▃▅▇████▇▅ 450t/s*`
+          const prefillMatch = line.match(/^: prefill (\d+)\/(\d+)/);
+          if (prefillMatch && !firstDataLogged) {
+            const sparks =
+              '\u2581\u2582\u2583\u2584\u2585\u2586\u2587\u2588';
+            const pos = parseInt(prefillMatch[1], 10);
+            const total = parseInt(prefillMatch[2], 10);
+            const isStart = !emittedProgress;
+            const now = Date.now();
+            if (isStart) {
+              prefillStartMs = now;
+              lastPrefillMs = now;
+              lastPrefillPos = 0;
+            }
+            // Compute segment tok/s for this tick's spark height
+            const segmentMs = now - lastPrefillMs;
+            const segmentToks = pos - lastPrefillPos;
+            let sparkChar = sparks[0]; // default lowest
+            if (segmentMs > 0 && segmentToks > 0) {
+              const tokSec = Math.round((segmentToks / segmentMs) * 1000);
+              prefillTokSec.push(tokSec);
+              // Scale spark: 0-500 t/s range mapped to spark index
+              const idx = Math.min(
+                sparks.length - 1,
+                Math.round((tokSec / 500) * (sparks.length - 1))
+              );
+              sparkChar = sparks[idx];
+            }
+            lastPrefillMs = now;
+            lastPrefillPos = pos;
+            lastPrefillPct = Math.floor((pos / total) * 100);
+            emittedProgress = true;
+
+            // Build the delta content for this tick
+            let tickContent: string;
+            if (isStart) {
+              // Open italic, braille spinner, first spark
+              tickContent = `*\u28FF ` + sparkChar;
+            } else {
+              // Just append one more spark character
+              tickContent = sparkChar;
+            }
+
+            const tickDelta = isStart
+              ? { role: 'assistant' as const, content: tickContent }
+              : { content: tickContent };
+
+            if (useReasoning) {
+              const progressChunk = {
+                id: progressId,
+                object: 'chat.completion.chunk',
+                created: progressCreated,
+                model: modelName ?? tier,
+                choices: [
+                  {
+                    index: 0,
+                    delta: { reasoning_content: tickContent },
+                    finish_reason: null,
+                  },
+                ],
+              };
+              enqueue(
+                encoder.encode(`data: ${JSON.stringify(progressChunk)}\n\n`)
+              );
+            } else {
+              const progressChunk = {
+                id: progressId,
+                object: 'chat.completion.chunk',
+                created: progressCreated,
+                model: modelName ?? tier,
+                choices: [
+                  {
+                    index: 0,
+                    delta: tickDelta,
+                    finish_reason: null,
+                  },
+                ],
+              };
+              enqueue(
+                encoder.encode(`data: ${JSON.stringify(progressChunk)}\n\n`)
+              );
+            }
+          }
+        }
+      };
+
+      const flushLineBuf = () => {
+        if (lineBuf.trim().length === 0) {
+          lineBuf = '';
+          return;
+        }
+        handleLine(lineBuf, { terminateEvent: true });
+        lineBuf = '';
+      };
+
       try {
         const reader = upstreamBody.getReader();
         while (true) {
@@ -794,199 +1193,13 @@ export function createSSEProxyStream(
           lineBuf = lines.pop() ?? '';
 
           for (const line of lines) {
-            if (line.startsWith('data: ')) {
-              dataEventCount++;
-              const payload = line.slice(6).trim();
-              if (payload === '[DONE]') {
-                sawDone = true;
-              } else if (!firstDataLogged) {
-                firstDataLogged = true;
-                logInference(
-                  `[sse-proxy] tier=${tier} first-data: ${payload.slice(
-                    0,
-                    200
-                  )}`
-                );
-                // Emit chain debug info before first real token
-                const chainInfo = attempts?.length
-                  ? attempts
-                      .map((a) => `${a.tier}:${a.status}(${a.ms}ms)`)
-                      .join(' > ')
-                  : tier;
-                if (useReasoning) {
-                  // reasoning_content goes into Zed's thinking UI (when supported)
-                  const debugChunk = {
-                    id: progressId,
-                    object: 'chat.completion.chunk',
-                    created: progressCreated,
-                    model: modelName ?? tier,
-                    choices: [
-                      {
-                        index: 0,
-                        delta: { reasoning_content: `[${chainInfo}]\n` },
-                        finish_reason: null,
-                      },
-                    ],
-                  };
-                  enqueue(
-                    encoder.encode(`data: ${JSON.stringify(debugChunk)}\n\n`)
-                  );
-                } else if (emittedProgress) {
-                  // Close the sparkline with stats and italic marker
-                  const prefillMs = Date.now() - prefillStartMs;
-                  const avgTokSec =
-                    prefillMs > 0 && lastPrefillPos > 0
-                      ? Math.round((lastPrefillPos / prefillMs) * 1000)
-                      : 0;
-                  const closingText = ` ${avgTokSec}t/s | ${chainInfo}*\n\n`;
-                  if (useReasoning) {
-                    const sep = {
-                      id: progressId,
-                      object: 'chat.completion.chunk',
-                      created: progressCreated,
-                      model: modelName ?? tier,
-                      choices: [
-                        {
-                          index: 0,
-                          delta: { reasoning_content: closingText },
-                          finish_reason: null,
-                        },
-                      ],
-                    };
-                    enqueue(encoder.encode(`data: ${JSON.stringify(sep)}\n\n`));
-                  } else {
-                    const sep = {
-                      id: progressId,
-                      object: 'chat.completion.chunk',
-                      created: progressCreated,
-                      model: modelName ?? tier,
-                      choices: [
-                        {
-                          index: 0,
-                          delta: { content: closingText },
-                          finish_reason: null,
-                        },
-                      ],
-                    };
-                    enqueue(encoder.encode(`data: ${JSON.stringify(sep)}\n\n`));
-                  }
-                }
-              }
-              // Only forward valid OpenAI SSE data lines (chunks with "choices" or [DONE])
-              // Filter out non-standard upstream payloads like {"status":"ready"}
-              if (payload === '[DONE]' || payload.includes('"choices"')) {
-                enqueue(encoder.encode(line + '\n'));
-              } else {
-                logInference(
-                  `[sse-proxy] tier=${tier} filtered non-OpenAI data: ${payload.slice(0, 100)}`
-                );
-              }
-            } else if (line === '') {
-              enqueue(encoder.encode('\n'));
-            } else if (line.startsWith(':')) {
-              // Log upstream comments (heartbeat, prefill) but don't forward raw
-              logInference(
-                `[sse-proxy] tier=${tier} upstream: ${line.slice(0, 100)}`
-              );
-
-              // Convert prefill progress into an append-friendly sparkline.
-              // Each tick emits ONE character — the sparkline grows naturally
-              // as SSE content deltas append. No replacement needed.
-              // Result: `*⠿ ▁▃▅▇████▇▅ 450t/s*`
-              const prefillMatch = line.match(/^: prefill (\d+)\/(\d+)/);
-              if (prefillMatch && !firstDataLogged) {
-                const sparks =
-                  '\u2581\u2582\u2583\u2584\u2585\u2586\u2587\u2588';
-                const pos = parseInt(prefillMatch[1], 10);
-                const total = parseInt(prefillMatch[2], 10);
-                const isStart = !emittedProgress;
-                const now = Date.now();
-                if (isStart) {
-                  prefillStartMs = now;
-                  lastPrefillMs = now;
-                  lastPrefillPos = 0;
-                }
-                // Compute segment tok/s for this tick's spark height
-                const segmentMs = now - lastPrefillMs;
-                const segmentToks = pos - lastPrefillPos;
-                let sparkChar = sparks[0]; // default lowest
-                if (segmentMs > 0 && segmentToks > 0) {
-                  const tokSec = Math.round((segmentToks / segmentMs) * 1000);
-                  prefillTokSec.push(tokSec);
-                  // Scale spark: 0-500 t/s range mapped to spark index
-                  const idx = Math.min(
-                    sparks.length - 1,
-                    Math.round((tokSec / 500) * (sparks.length - 1))
-                  );
-                  sparkChar = sparks[idx];
-                }
-                lastPrefillMs = now;
-                lastPrefillPos = pos;
-                lastPrefillPct = Math.floor((pos / total) * 100);
-                emittedProgress = true;
-
-                // Build the delta content for this tick
-                let tickContent: string;
-                if (isStart) {
-                  // Open italic, braille spinner, first spark
-                  tickContent = `*\u28FF ` + sparkChar;
-                } else {
-                  // Just append one more spark character
-                  tickContent = sparkChar;
-                }
-
-                const tickDelta = isStart
-                  ? { role: 'assistant' as const, content: tickContent }
-                  : { content: tickContent };
-
-                if (useReasoning) {
-                  const progressChunk = {
-                    id: progressId,
-                    object: 'chat.completion.chunk',
-                    created: progressCreated,
-                    model: modelName ?? tier,
-                    choices: [
-                      {
-                        index: 0,
-                        delta: { reasoning_content: tickContent },
-                        finish_reason: null,
-                      },
-                    ],
-                  };
-                  enqueue(
-                    encoder.encode(`data: ${JSON.stringify(progressChunk)}\n\n`)
-                  );
-                } else {
-                  const progressChunk = {
-                    id: progressId,
-                    object: 'chat.completion.chunk',
-                    created: progressCreated,
-                    model: modelName ?? tier,
-                    choices: [
-                      {
-                        index: 0,
-                        delta: tickDelta,
-                        finish_reason: null,
-                      },
-                    ],
-                  };
-                  enqueue(
-                    encoder.encode(`data: ${JSON.stringify(progressChunk)}\n\n`)
-                  );
-                }
-              }
-            }
+            handleLine(line);
           }
         }
 
-        // Flush remaining buffer
-        if (lineBuf.startsWith('data: ')) {
-          enqueue(encoder.encode(lineBuf + '\n\n'));
-          const payload = lineBuf.slice(6).trim();
-          if (payload === '[DONE]') sawDone = true;
-          else dataEventCount++;
-        }
+        flushLineBuf();
       } catch (err) {
+        flushLineBuf();
         const errMsg = err instanceof Error ? err.message : 'Stream error';
         logInference(`[sse-proxy] tier=${tier} stream-error: ${errMsg}`);
         enqueue(

@@ -115,6 +115,215 @@ describe('Inference Bridge', () => {
     }
   }, 45_000);
 
+  test('infer requests streaming from edge and collapses SSE for JSON callers', async () => {
+    const originalFetch = global.fetch;
+    const requestBodies: Array<Record<string, unknown>> = [];
+    const requestHeaders: Array<Headers> = [];
+
+    global.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url.includes('/ai/communicate')) {
+        requestBodies.push(JSON.parse(String(init?.body ?? '{}')) as Record<string, unknown>);
+        requestHeaders.push(new Headers(init?.headers));
+        const firstChunk = JSON.stringify({
+          id: 'chatcmpl-edge-stream',
+          object: 'chat.completion.chunk',
+          created: 1000,
+          model: 'tinyllama-1.1b',
+          choices: [
+            {
+              index: 0,
+              delta: { content: 'Hello' },
+              finish_reason: null,
+            },
+          ],
+        });
+        const secondChunk = JSON.stringify({
+          id: 'chatcmpl-edge-stream',
+          object: 'chat.completion.chunk',
+          created: 1000,
+          model: 'tinyllama-1.1b',
+          choices: [
+            {
+              index: 0,
+              delta: { content: ' world' },
+              finish_reason: null,
+            },
+          ],
+        });
+
+        return new Response(
+          `: heartbeat\n\ndata: ${firstChunk}\n\ndata: ${secondChunk}\n\ndata: [DONE]\n\n`,
+          {
+            status: 200,
+            headers: {
+              'Content-Type': 'text/event-stream',
+              'X-Inference-Type': 'full-transformer-moa-sse',
+            },
+          }
+        );
+      }
+
+      return new Response('unexpected', { status: 500 });
+    }) as typeof fetch;
+
+    try {
+      const result = await infer({
+        model: 'tinyllama-1.1b',
+        messages: [{ role: 'user', content: 'hello' }],
+        stream: false,
+        max_tokens: 32,
+      });
+
+      expect(result.tier).toBe('edge');
+      expect(requestBodies).toHaveLength(1);
+      expect(requestBodies[0]?.stream).toBe(true);
+      expect(requestHeaders[0]?.get('accept')).toContain('text/event-stream');
+      expect(result.response.headers.get('content-type')).toContain(
+        'application/json'
+      );
+
+      const data = (await result.response.json()) as ChatCompletionResponse;
+      expect(data.choices[0]?.message.content).toBe('Hello world');
+    } finally {
+      global.fetch = originalFetch;
+    }
+  });
+
+  test(
+    'infer collapses edge SSE once finish_reason arrives even if upstream stays open',
+    async () => {
+      const originalFetch = global.fetch;
+
+      global.fetch = (async (input: RequestInfo | URL) => {
+        const url = String(input);
+        if (!url.includes('/ai/communicate')) {
+          return new Response('unexpected', { status: 500 });
+        }
+
+        const encoder = new TextEncoder();
+        return new Response(
+          new ReadableStream<Uint8Array>({
+            start(controller) {
+              controller.enqueue(
+                encoder.encode(
+                  `data: ${JSON.stringify({
+                    id: 'chatcmpl-edge-open',
+                    object: 'chat.completion.chunk',
+                    created: 1000,
+                    model: 'tinyllama-1.1b',
+                    choices: [
+                      {
+                        index: 0,
+                        delta: { content: 'LIVE_OK' },
+                        finish_reason: null,
+                      },
+                    ],
+                  })}\n\n`
+                )
+              );
+              controller.enqueue(
+                encoder.encode(
+                  `data: ${JSON.stringify({
+                    id: 'chatcmpl-edge-open',
+                    object: 'chat.completion.chunk',
+                    created: 1000,
+                    model: 'tinyllama-1.1b',
+                    choices: [
+                      {
+                        index: 0,
+                        delta: {},
+                        finish_reason: 'stop',
+                      },
+                    ],
+                  })}\n\n`
+                )
+              );
+              // Leave the connection open after the logical completion.
+            },
+          }),
+          {
+            status: 200,
+            headers: { 'Content-Type': 'text/event-stream' },
+          }
+        );
+      }) as typeof fetch;
+
+      try {
+        const result = await infer({
+          model: 'tinyllama-1.1b',
+          messages: [{ role: 'user', content: 'Reply with exactly: LIVE_OK' }],
+          stream: false,
+          max_tokens: 8,
+          temperature: 0,
+        });
+
+        const data = (await result.response.json()) as ChatCompletionResponse;
+        expect(data.choices[0]?.message.content).toBe('LIVE_OK');
+      } finally {
+        global.fetch = originalFetch;
+      }
+    },
+    2_000
+  );
+
+  test('infer requests SSE from edge for streaming callers', async () => {
+    const originalFetch = global.fetch;
+    const requestBodies: Array<Record<string, unknown>> = [];
+    const requestHeaders: Array<Headers> = [];
+
+    global.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url.includes('/ai/communicate')) {
+        requestBodies.push(
+          JSON.parse(String(init?.body ?? '{}')) as Record<string, unknown>
+        );
+        requestHeaders.push(new Headers(init?.headers));
+
+        const chunk = JSON.stringify({
+          id: 'chatcmpl-edge-streaming',
+          object: 'chat.completion.chunk',
+          created: 1000,
+          model: 'tinyllama-1.1b',
+          choices: [
+            {
+              index: 0,
+              delta: { content: 'stream token' },
+              finish_reason: null,
+            },
+          ],
+        });
+
+        return new Response(`data: ${chunk}\n\ndata: [DONE]\n\n`, {
+          status: 200,
+          headers: { 'Content-Type': 'text/event-stream' },
+        });
+      }
+
+      return new Response('unexpected', { status: 500 });
+    }) as typeof fetch;
+
+    try {
+      const result = await infer({
+        model: 'tinyllama-1.1b',
+        messages: [{ role: 'user', content: 'hello' }],
+        stream: true,
+        max_tokens: 32,
+      });
+
+      expect(result.tier).toBe('edge');
+      expect(requestBodies).toHaveLength(1);
+      expect(requestBodies[0]?.stream).toBe(true);
+      expect(requestHeaders[0]?.get('accept')).toContain('text/event-stream');
+      expect(result.response.headers.get('content-type')).toContain(
+        'text/event-stream'
+      );
+      expect(await result.response.text()).toContain('stream token');
+    } finally {
+      global.fetch = originalFetch;
+    }
+  });
+
   test('embed with local fallback returns embedding', async () => {
     // Use a bogus model to force local fallback
     const resp = await embed('test text for embedding', 'nonexistent-model');

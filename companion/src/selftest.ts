@@ -3,7 +3,7 @@ import { CLOUD_RUN_COORDINATORS } from "./coordinator-urls.ts";
 import { getCloudRunAuthHeaders } from "./cloudrun-auth.ts";
 import { probeCloudRunHealth } from "./latency-probe.ts";
 
-const STREAM_CONNECT_TIMEOUT_MS = 30_000;
+const STREAM_CONNECT_TIMEOUT_MS = 120_000;
 const STREAM_SAMPLE_TIMEOUT_MS = 120_000;
 const STREAM_SAMPLE_MAX_LINES = 16;
 

@@ -71,6 +71,7 @@ import {
   getCompositionPreset,
   COMPOSITION_PRESETS,
 } from "./superinference.ts";
+import { shouldStreamChatCompletion } from "./chat-request.ts";
 // Gnosis modules -- lazy-loaded to avoid blocking the event loop at startup.
 // The file watcher, incremental checker, and betty compiler are CPU-heavy, and
 // scanning the entire workspace directory on import would delay the companion
@@ -1190,7 +1191,10 @@ export async function handleWebRequest(req: Request): Promise<Response> {
     const request: ChatCompletionRequest = {
       model: body.model ?? getZedgeConfig().preferredModel,
       messages,
-      stream: body.stream ?? false,
+      stream: shouldStreamChatCompletion(
+        body.stream,
+        req.headers.get('accept')
+      ),
       temperature: body.temperature,
       max_tokens: body.max_tokens,
       top_p: body.top_p,

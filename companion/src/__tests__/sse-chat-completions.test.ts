@@ -161,6 +161,26 @@ describe('SSE Chat Completions (createSSEProxyStream)', () => {
     expect(dataObjects.length).toBeGreaterThanOrEqual(1);
   });
 
+  test('handles CRLF-delimited SSE frames', async () => {
+    const chunk = JSON.stringify({
+      id: 'chatcmpl-crlf',
+      object: 'chat.completion.chunk',
+      created: 1000,
+      model: 'test-model',
+      choices: [{ index: 0, delta: { content: 'CRLF' }, finish_reason: null }],
+    });
+    const upstream = sseStream(`data: ${chunk}\r\n\r\ndata: [DONE]\r\n\r\n`);
+
+    const proxy = createSSEProxyStream(upstream, 'edge');
+    const output = await consumeStream(proxy);
+
+    const dataObjects = parseSSEDataObjects(output) as Array<{
+      choices: Array<{ delta: { content: string } }>;
+    }>;
+    expect(dataObjects[0]?.choices[0]?.delta.content).toBe('CRLF');
+    expect(parseSSEEvents(output)).toContain('[DONE]');
+  });
+
   test('handles multi-chunk streaming correctly', async () => {
     const makeChunk = (content: string, i: number) =>
       JSON.stringify({
@@ -234,6 +254,52 @@ describe('SSE Chat Completions (createSSEProxyStream)', () => {
       (d) => (d as Record<string, unknown>).error
     );
     expect(errorEvents.length).toBeGreaterThanOrEqual(1);
+  });
+
+  test('flushes a buffered final data line before reporting stream errors', async () => {
+    const encoder = new TextEncoder();
+    let sent = false;
+    const chunk = JSON.stringify({
+      id: 'chatcmpl-partial',
+      object: 'chat.completion.chunk',
+      created: 1000,
+      model: 'test-model',
+      choices: [{ index: 0, delta: { content: 'Tail' }, finish_reason: null }],
+    });
+
+    const upstream = new ReadableStream<Uint8Array>({
+      pull(controller) {
+        if (sent) {
+          controller.error(new Error('connection reset'));
+          return;
+        }
+
+        sent = true;
+        controller.enqueue(encoder.encode(`data: ${chunk}`));
+      },
+    });
+
+    const proxy = createSSEProxyStream(upstream, 'edge');
+    const output = await consumeStream(proxy);
+
+    const dataObjects = parseSSEDataObjects(output).filter(
+      (payload) =>
+        (payload as { choices?: unknown[] }).choices ||
+        (payload as Record<string, unknown>).error
+    ) as Array<{
+      choices?: Array<{ delta?: { content?: string } }>;
+      error?: string;
+    }>;
+
+    expect(
+      dataObjects.some(
+        (payload) => payload.choices?.[0]?.delta?.content === 'Tail'
+      )
+    ).toBe(true);
+    expect(
+      dataObjects.some((payload) => payload.error === 'connection reset')
+    ).toBe(true);
+    expect(parseSSEEvents(output)).toContain('[DONE]');
   });
 
   test('passes tier attempt info to logs (not to stream)', async () => {
