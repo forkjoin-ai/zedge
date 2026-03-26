@@ -1196,27 +1196,8 @@ export async function handleWebRequest(req: Request): Promise<Response> {
       top_p: body.top_p,
     };
 
-    // ── Browser Fleet inference (DeepSeek R1 1.5B / TinyLlama via transformers.js) ──
-    // Real instruction-following models running in headless Chromium.
-    // The browser fleet is already deployed and handles /v1/chat/completions.
-    const browserFleetUrl = (getZedgeConfig() as any).browserFleetUrl
-      ?? process.env.BROWSER_FLEET_URL
-      ?? 'https://cf-browser-fleet.taylorbuley.workers.dev';
-    try {
-      const fleetResp = await fetch(`${browserFleetUrl}/v1/chat/completions`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(request),
-        signal: AbortSignal.timeout(60000),
-      });
-      if (fleetResp.ok) {
-        console.log(`[zedge] Browser fleet inference: OK (${request.model} → DeepSeek R1 1.5B)`);
-        return fleetResp;
-      }
-      console.log(`[zedge] Browser fleet returned ${fleetResp.status}`);
-    } catch (fleetErr) {
-      console.log(`[zedge] Browser fleet unavailable: ${fleetErr instanceof Error ? fleetErr.message : fleetErr}`);
-    }
+    // All inference routes through the edge tier via infer() below.
+    // Edge handles routing to the right coordinator per model.
 
     if (request.stream) {
       const result = await infer(request);

@@ -17,22 +17,12 @@ pub struct ZedgeModel {
     pub max_tokens: u32,
 }
 
-/// Available models — mirrors the settings generator list
+/// Available models — real 7B+ models via edge coordinators
 pub const MODELS: &[ZedgeModel] = &[
     ZedgeModel {
-        id: "cog-360m",
-        display_name: "Cog 360M (Edge)",
-        max_tokens: 2048,
-    },
-    ZedgeModel {
-        id: "cyrano-360m",
-        display_name: "Cyrano 360M (Edge)",
-        max_tokens: 2048,
-    },
-    ZedgeModel {
-        id: "mistral-7b-edge",
-        display_name: "Mistral 7B (Edge, 10 layers)",
-        max_tokens: 2048,
+        id: "mistral-7b",
+        display_name: "Mistral 7B",
+        max_tokens: 4096,
     },
     ZedgeModel {
         id: "qwen-2.5-coder-7b",
@@ -40,14 +30,14 @@ pub const MODELS: &[ZedgeModel] = &[
         max_tokens: 4096,
     },
     ZedgeModel {
+        id: "deepseek-r1-distill-qwen-7b",
+        display_name: "DeepSeek R1 7B",
+        max_tokens: 4096,
+    },
+    ZedgeModel {
         id: "tinyllama-1.1b",
         display_name: "TinyLlama 1.1B (Fast)",
         max_tokens: 2048,
-    },
-    ZedgeModel {
-        id: "mistral-7b",
-        display_name: "Mistral 7B",
-        max_tokens: 4096,
     },
     ZedgeModel {
         id: "gemma3-4b-it",
