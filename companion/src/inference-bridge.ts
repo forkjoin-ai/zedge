@@ -255,7 +255,7 @@ async function tryEdgeCoordinator(
     baseUrl, // api.edgework.ai
   ];
 
-  const MAX_RETRIES = 2;
+  const MAX_RETRIES = 4;
   for (const edgeBase of EDGE_URLS) {
     for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
       // Use /ai/communicate -- this is the Glossolalia MOA endpoint with full
@@ -293,12 +293,13 @@ async function tryEdgeCoordinator(
         )}`
       );
 
-      // 503 with Retry-After: auth backend is warming up, retry after delay
+      // 503: engine cold start or bot challenge. Retry with backoff.
+      // GGUF engine takes ~14s to init on cold start, so retry 4 times
+      // with exponential backoff up to 15s between attempts.
       if (resp.status === 503 && attempt < MAX_RETRIES) {
-        const retryAfter = parseInt(resp.headers.get('Retry-After') || '2', 10);
-        const delayMs = Math.min(retryAfter * 1000, 5000);
-        logInference(`[edge] 503 auth warming, retrying in ${delayMs}ms...`);
-        await new Promise((resolve) => setTimeout(resolve, delayMs));
+        const baseDelay = Math.min(2000 * Math.pow(2, attempt), 15000);
+        logInference(`[edge] 503 engine cold start, retrying in ${baseDelay}ms (attempt ${attempt + 1}/${MAX_RETRIES})...`);
+        await new Promise((resolve) => setTimeout(resolve, baseDelay));
         continue;
       }
 
