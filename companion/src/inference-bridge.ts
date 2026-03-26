@@ -241,8 +241,9 @@ async function tryEdgeCoordinator(
   const authHeaders = getAuthHeaders();
   const headers = {
     'Content-Type': 'application/json',
-    'User-Agent': 'ZedgeCompanion/1.0 (Edgework; inference-bridge)',
+    'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
     'Accept': 'application/json, text/event-stream',
+    'Origin': 'https://edge.affectively.ai',
     ...authHeaders,
   };
 
