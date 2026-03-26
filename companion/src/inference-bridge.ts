@@ -267,7 +267,9 @@ async function tryEdgeCoordinator(
         model: request.model,
         max_tokens: request.max_tokens ?? 256,
         temperature: request.temperature ?? 0.7,
-        stream: request.stream,
+        // Always batch -- /ai/communicate doesn't support SSE streaming.
+        // The companion converts the batch response to SSE for Zed.
+        stream: false,
       }),
       signal,
     });
