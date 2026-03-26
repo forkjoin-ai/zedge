@@ -246,31 +246,18 @@ async function tryEdgeCoordinator(
 
   const MAX_RETRIES = 2;
   for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
-    // Use /ai/communicate on edge.affectively.ai -- handles ALL 14 models via Glossolalia MOA.
-    // api.edgework.ai only routes /v1/* endpoints, not /ai/*.
-    const edgeEndpoint = 'https://edge.affectively.ai/ai/communicate';
+    // Use /v1/chat/completions on edge -- has tools, MCP, streaming, full agentic loop.
+    // All models route through Glossolalia on edge.
     logInference(
-      `[edge] → ${edgeEndpoint} model=${request.model} stream=${
+      `[edge] → ${baseUrl}/v1/chat/completions model=${request.model} stream=${
         request.stream
       } attempt=${attempt}`
     );
 
-    // Convert OpenAI format to communicate format
-    const lastMsg = request.messages[request.messages.length - 1];
-    const prompt = typeof lastMsg.content === 'string' ? lastMsg.content : '';
-
-    const resp = await fetch(edgeEndpoint, {
+    const resp = await fetch(`${baseUrl}/v1/chat/completions`, {
       method: 'POST',
       headers,
-      body: JSON.stringify({
-        prompt,
-        model: request.model,
-        max_tokens: request.max_tokens ?? 256,
-        temperature: request.temperature ?? 0.7,
-        // Always batch -- /ai/communicate doesn't support SSE streaming.
-        // The companion converts the batch response to SSE for Zed.
-        stream: false,
-      }),
+      body: JSON.stringify(request),
       signal,
     });
 
@@ -294,33 +281,7 @@ async function tryEdgeCoordinator(
       continue;
     }
 
-    // Convert communicate response to OpenAI format for Zed compatibility
-    if (resp.ok && !request.stream) {
-      try {
-        const commBody = await resp.json() as { response?: string; topology?: unknown };
-        if (commBody.response) {
-          const openaiResp = {
-            id: `chatcmpl-edge-${Date.now()}`,
-            object: 'chat.completion',
-            created: Math.floor(Date.now() / 1000),
-            model: request.model,
-            choices: [{
-              index: 0,
-              message: { role: 'assistant', content: commBody.response },
-              finish_reason: 'stop',
-            }],
-            usage: { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 },
-          };
-          return new Response(JSON.stringify(openaiResp), {
-            status: 200,
-            headers: { 'Content-Type': 'application/json', 'X-Glossolalia': 'true' },
-          });
-        }
-      } catch {
-        // If JSON parse fails, return raw response
-      }
-    }
-
+    // /v1/chat/completions already returns OpenAI format -- pass through directly
     return resp;
   }
 
