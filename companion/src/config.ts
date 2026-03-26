@@ -79,7 +79,7 @@ const DEFAULT_ZEDGE_CONFIG: ZedgeConfig = {
     maxMemoryMb: 2048,
     allowedModels: ['tinyllama-1.1b', 'gemma3-1b-it'],
   },
-  preferredModel: 'mistral-7b',
+  preferredModel: 'qwen-2.5-coder-7b',
   cloudRunDirect: true,
   babelfish: {
     enabled: true,
