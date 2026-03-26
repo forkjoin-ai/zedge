@@ -295,7 +295,7 @@ function getEdgeworkPrompt(): string {
     // Fall through to default
   }
   _edgeworkPrompt =
-    'You are a coding assistant for an Nx/TypeScript monorepo. Be concise and code-focused.';
+    'You are a coding assistant for a repository with project-specific orchestration. Prefer repo-owned task runners and documented workflows over raw tool invocations. Be concise and code-focused.';
   return _edgeworkPrompt;
 }
 
@@ -1195,6 +1195,28 @@ export async function handleWebRequest(req: Request): Promise<Response> {
       max_tokens: body.max_tokens,
       top_p: body.top_p,
     };
+
+    // ── Local x-gnosis inference (in-process, zero network) ──
+    // Try to run inference locally before falling back to edge.
+    // Requires weights on disk at WEIGHTS_DIR.
+    try {
+      const { handleChatCompletions } = await import(
+        '../../../x-gnosis/src/handlers/inference-complete'
+      );
+      const localReq = new Request('http://local/v1/chat/completions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(request),
+      });
+      const localResp = await handleChatCompletions(localReq);
+      if (localResp.ok) {
+        console.log('[zedge] Local x-gnosis inference: OK');
+        return localResp;
+      }
+    } catch (localErr) {
+      // Weights not on disk or handler failed -- fall through to edge
+      console.log(`[zedge] Local inference unavailable: ${localErr instanceof Error ? localErr.message : localErr}`);
+    }
 
     if (request.stream) {
       const result = await infer(request);
