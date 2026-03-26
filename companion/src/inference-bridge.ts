@@ -241,48 +241,98 @@ async function tryEdgeCoordinator(
   const authHeaders = getAuthHeaders();
   const headers = {
     'Content-Type': 'application/json',
+    'User-Agent': 'ZedgeCompanion/1.0 (Edgework; inference-bridge)',
+    'Accept': 'application/json, text/event-stream',
     ...authHeaders,
   };
 
+  // Try both edge domains: affectively.ai is primary, edgework.ai is fallback.
+  // Use /ai/communicate (Glossolalia MOA with GGUF streaming transformer).
+  // Supports stream=true for real per-token SSE.
+  const EDGE_URLS = [
+    'https://edge.affectively.ai',
+    baseUrl, // api.edgework.ai
+  ];
+
   const MAX_RETRIES = 2;
-  for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
-    // Use /v1/chat/completions on edge -- has tools, MCP, streaming, full agentic loop.
-    // All models route through Glossolalia on edge.
-    logInference(
-      `[edge] → ${baseUrl}/v1/chat/completions model=${request.model} stream=${
-        request.stream
-      } attempt=${attempt}`
-    );
+  for (const edgeBase of EDGE_URLS) {
+    for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+      // Use /ai/communicate -- this is the Glossolalia MOA endpoint with full
+      // GGUF transformer inference. Supports stream=true for real per-token SSE.
+      const url = `${edgeBase}/ai/communicate`;
+      const lastMsg = request.messages[request.messages.length - 1]?.content ?? '';
+      const communicateBody = {
+        prompt: lastMsg,
+        model: request.model,
+        max_tokens: request.max_tokens ?? 128,
+        temperature: request.temperature ?? 0.7,
+        stream: request.stream ?? false,
+      };
+      logInference(
+        `[edge] → ${url} model=${request.model} stream=${
+          communicateBody.stream
+        } attempt=${attempt}`
+      );
 
-    const resp = await fetch(`${baseUrl}/v1/chat/completions`, {
-      method: 'POST',
-      headers,
-      body: JSON.stringify(request),
-      signal,
-    });
+      const resp = await fetch(url, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify(communicateBody),
+        signal,
+      });
 
-    // Log response
-    const respHeaders: Record<string, string> = {};
-    resp.headers.forEach((v, k) => {
-      respHeaders[k] = v;
-    });
-    logInference(
-      `[edge] ← ${resp.status} ${resp.statusText} headers=${JSON.stringify(
-        respHeaders
-      )}`
-    );
+      // Log response
+      const respHeaders: Record<string, string> = {};
+      resp.headers.forEach((v, k) => {
+        respHeaders[k] = v;
+      });
+      logInference(
+        `[edge] ← ${resp.status} ${resp.statusText} headers=${JSON.stringify(
+          respHeaders
+        )}`
+      );
 
-    // 503 with Retry-After: auth backend is warming up, retry after delay
-    if (resp.status === 503 && attempt < MAX_RETRIES) {
-      const retryAfter = parseInt(resp.headers.get('Retry-After') || '2', 10);
-      const delayMs = Math.min(retryAfter * 1000, 5000);
-      logInference(`[edge] 503 auth warming, retrying in ${delayMs}ms...`);
-      await new Promise((resolve) => setTimeout(resolve, delayMs));
-      continue;
+      // 503 with Retry-After: auth backend is warming up, retry after delay
+      if (resp.status === 503 && attempt < MAX_RETRIES) {
+        const retryAfter = parseInt(resp.headers.get('Retry-After') || '2', 10);
+        const delayMs = Math.min(retryAfter * 1000, 5000);
+        logInference(`[edge] 503 auth warming, retrying in ${delayMs}ms...`);
+        await new Promise((resolve) => setTimeout(resolve, delayMs));
+        continue;
+      }
+
+      if (!resp.ok) break; // Try next EDGE_URL
+
+      // If streaming, pass through SSE directly (already in OpenAI chunk format)
+      if (communicateBody.stream) {
+        return resp;
+      }
+
+      // Batch mode: convert /ai/communicate JSON to OpenAI format
+      try {
+        const data = await resp.json() as Record<string, unknown>;
+        const text = (data.response as string) || '';
+        const openaiResponse = {
+          id: `chatcmpl-edge-${Date.now()}`,
+          object: 'chat.completion',
+          created: Math.floor(Date.now() / 1000),
+          model: request.model,
+          choices: [{
+            index: 0,
+            message: { role: 'assistant', content: text },
+            finish_reason: 'stop',
+          }],
+          usage: { prompt_tokens: 0, completion_tokens: data.token_count ?? 0, total_tokens: 0 },
+        };
+        return new Response(JSON.stringify(openaiResponse), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        });
+      } catch {
+        // If JSON parse fails, pass through raw
+        return resp;
+      }
     }
-
-    // /v1/chat/completions already returns OpenAI format -- pass through directly
-    return resp;
   }
 
   // Shouldn't reach here, but return the last response
