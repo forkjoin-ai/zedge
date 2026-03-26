@@ -1663,30 +1663,34 @@ export async function getModels(): Promise<ModelInfo[]> {
   const models: ModelInfo[] = [];
   const seen = new Set<string>();
 
-  // Try to fetch remote model list
-  try {
-    const baseUrl = getApiBaseUrl();
-    const resp = await fetch(`${baseUrl}/v1/models`, {
-      headers: {
-        ...getAuthHeaders(),
-        'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
-        'Origin': 'https://edge.affectively.ai',
-      },
-      signal: AbortSignal.timeout(5_000),
-    });
-    if (resp.ok) {
-      const data = (await resp.json()) as { data?: ModelInfo[] };
-      if (data.data) {
-        for (const m of data.data) {
-          if (!seen.has(m.id)) {
-            seen.add(m.id);
-            models.push(m);
+  // Try to fetch remote model list from Edgework edge
+  // Use edge.affectively.ai directly with browser headers to bypass CF bot protection
+  for (const edgeBase of ['https://edge.affectively.ai', getApiBaseUrl()]) {
+    try {
+      const resp = await fetch(`${edgeBase}/v1/models`, {
+        headers: {
+          ...getAuthHeaders(),
+          'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+          'Accept': 'application/json',
+          'Origin': 'https://edge.affectively.ai',
+        },
+        signal: AbortSignal.timeout(5_000),
+      });
+      if (resp.ok) {
+        const data = (await resp.json()) as { data?: ModelInfo[] };
+        if (data.data) {
+          for (const m of data.data) {
+            if (!seen.has(m.id)) {
+              seen.add(m.id);
+              models.push(m);
+            }
           }
         }
+        break; // Got models from edge, no need to try fallback URL
       }
+    } catch {
+      // This edge URL unavailable -- try next
     }
-  } catch {
-    // Remote unavailable -- fall through to hardcoded list
   }
 
   // Always include all Edgework edge models (canonical list)
