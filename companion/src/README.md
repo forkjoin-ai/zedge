@@ -15,6 +15,8 @@ Runtime entrypoints, HTTP server surfaces, Babelfish routes, and the sidecar-onl
 - `server.ts` now includes the local companion PID plus the host runtime in `/health`, which gives operators and the end-to-end tests a precise way to verify both restarts and the `gnode` launch path.
 - `config.ts` reads `~/.edgework/zedge.json` and honors `ZEDGE_COMPANION_PORT` plus `ZEDGE_LISTENER_MODE` overrides so tests and local launches can isolate the companion without mutating user config.
 - `config.ts` now defaults `preferredModel` to `wasm-local`, so unconfigured companion chat, selftest, and resilient streaming surfaces start local-first.
+- `model-catalog.ts` is the shared model metadata source that drives live Zed settings regeneration, the companion catalog fallback, and the settings generator output.
+- `zed-settings.ts` rewrites the local `openai_compatible.Zedge.available_models` block from the live companion model IDs so the Zed picker updates on companion load.
 - `companion-activity.ts` records when the owned companion sidecar is intentionally busy with local WASM warmup or generation so the parent watchdogs can distinguish "busy" from "dead".
 - `companion-restart-policy.ts` centralizes the bounded restart thresholds so the manual supervisor and the MCP bridge make the same restart decisions, including skipping health-driven restarts while the child has marked itself busy with local inference work.
 - `mcp-stdio.ts` exposes the MCP stdio bridge that Zed launches as the context-server process, including the prompt catalog that mirrors the extension slash commands for Zed Agent and the guarded supervisor that polls companion health and performs bounded auto-restarts for the owned sidecar process.

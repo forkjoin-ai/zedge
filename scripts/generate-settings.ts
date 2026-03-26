@@ -12,6 +12,11 @@
 import { homedir } from 'os';
 import { join } from 'path';
 import { existsSync, readFileSync } from 'fs';
+import {
+  buildZedAvailableModels,
+  getKnownRemoteZedgeModels,
+  type ZedAvailableModel,
+} from '../companion/src/model-catalog.ts';
 
 // Reuse edgework-cli config pattern
 const CONFIG_DIR = join(homedir(), '.edgework');
@@ -24,6 +29,11 @@ interface EdgeworkConfig {
 }
 
 const DEFAULT_API_URL = 'https://api.edgework.ai';
+const COMPANION_SETTINGS_API_URL = 'http://localhost:7331/v1';
+const COMPANION_CATALOG_URLS = [
+  'http://127.0.0.1:7331/v1/models',
+  'http://localhost:7331/v1/models',
+];
 
 function getConfig(): EdgeworkConfig {
   try {
@@ -47,71 +57,95 @@ function getApiKey(): string | null {
   return null;
 }
 
-// Models available via edge inference coordinators
-// Derived from EXTERNAL_COORDINATOR_ALIAS_CANDIDATES in apps/edge-workers/src/lib/model-urls.ts
-const REMOTE_AVAILABLE_MODELS = [
-  {
-    name: 'qwen-2.5-coder-7b',
-    display_name: 'Qwen 2.5 Coder 7B',
-    max_tokens: 4096,
-  },
-  {
-    name: 'tinyllama-1.1b',
-    display_name: 'TinyLlama 1.1B (Fast)',
-    max_tokens: 2048,
-  },
-  {
-    name: 'mistral-7b',
-    display_name: 'Mistral 7B',
-    max_tokens: 4096,
-  },
-  {
-    name: 'gemma3-4b-it',
-    display_name: 'Gemma3 4B IT',
-    max_tokens: 4096,
-  },
-  {
-    name: 'gemma3-1b-it',
-    display_name: 'Gemma3 1B IT',
-    max_tokens: 2048,
-  },
-  {
-    name: 'glm-4-9b',
-    display_name: 'GLM-4 9B',
-    max_tokens: 4096,
-  },
-  {
-    name: 'deepseek-r1',
-    display_name: 'DeepSeek R1',
-    max_tokens: 4096,
-  },
-  {
-    name: 'lfm2.5-1.2b-glm-4.7-flash-thinking',
-    display_name: 'LFM 2.5 1.2B (Thinking)',
-    max_tokens: 2048,
-  },
-];
+function getAuthHeaders(apiKey: string | null): Record<string, string> {
+  if (!apiKey) {
+    return {};
+  }
 
-const COMPANION_AVAILABLE_MODELS = [
-  {
-    name: 'wasm-local',
-    display_name: 'SmolLM2 360M (Local WASM)',
-    max_tokens: 2048,
-  },
-  ...REMOTE_AVAILABLE_MODELS,
-];
+  return {
+    Authorization: `Bearer ${apiKey}`,
+    'X-API-Key': apiKey,
+  };
+}
 
-function generateSettings(): void {
+async function fetchModelIds(
+  url: string,
+  headers: Record<string, string>
+): Promise<string[] | null> {
+  try {
+    const response = await fetch(url, {
+      headers: {
+        Accept: 'application/json',
+        ...headers,
+      },
+      signal: AbortSignal.timeout(5_000),
+    });
+    if (!response.ok) {
+      return null;
+    }
+
+    const payload = (await response.json()) as {
+      data?: Array<{ id?: string }>;
+    };
+    const ids =
+      payload.data
+        ?.map((model) => model.id)
+        .filter((id): id is string => typeof id === 'string') ?? [];
+    return ids.length > 0 ? ids : null;
+  } catch {
+    return null;
+  }
+}
+
+async function fetchFirstModelIds(
+  urls: string[],
+  headers: Record<string, string>
+): Promise<string[] | null> {
+  for (const url of urls) {
+    const ids = await fetchModelIds(url, headers);
+    if (ids !== null) {
+      return ids;
+    }
+  }
+  return null;
+}
+
+async function resolveRemoteAvailableModels(
+  apiUrl: string,
+  apiKey: string | null
+): Promise<ZedAvailableModel[]> {
+  const remoteIds =
+    (await fetchModelIds(`${apiUrl}/v1/models`, getAuthHeaders(apiKey))) ??
+    getKnownRemoteZedgeModels().map((model) => model.id);
+  return buildZedAvailableModels(remoteIds);
+}
+
+async function resolveCompanionAvailableModels(
+  remoteModels: ZedAvailableModel[]
+): Promise<ZedAvailableModel[]> {
+  const companionIds =
+    (await fetchFirstModelIds(COMPANION_CATALOG_URLS, {})) ??
+    remoteModels.map((model) => model.name);
+  return buildZedAvailableModels(companionIds, { includeLocalWasm: true });
+}
+
+export async function main(): Promise<void> {
   const config = getConfig();
   const apiKey = getApiKey();
   const apiUrl = `${config.apiBaseUrl}/v1`;
+  const remoteAvailableModels = await resolveRemoteAvailableModels(
+    config.apiBaseUrl,
+    apiKey
+  );
+  const companionAvailableModels =
+    await resolveCompanionAvailableModels(remoteAvailableModels);
 
   const settings = {
     language_models: {
       openai_compatible: {
         Zedge: {
           api_url: apiUrl,
-          available_models: REMOTE_AVAILABLE_MODELS,
+          available_models: remoteAvailableModels,
         },
       },
     },
@@ -143,8 +177,8 @@ function generateSettings(): void {
     language_models: {
       openai_compatible: {
         Zedge: {
-          api_url: 'http://localhost:7331/v1',
-          available_models: COMPANION_AVAILABLE_MODELS,
+          api_url: COMPANION_SETTINGS_API_URL,
+          available_models: companionAvailableModels,
         },
       },
     },
@@ -164,5 +198,3 @@ function generateSettings(): void {
   console.log('#');
   console.log(JSON.stringify(companionSettings, null, 2));
 }
-
-generateSettings();

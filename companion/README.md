@@ -12,6 +12,8 @@ The HTTP shell now rides on `x-gnosis`, and the default public listener path is 
 
 For local inference, the companion now routes its on-device fallback through Aether prompt/runtime helpers: SmolLM2 chat generation stays local-first, `wasm-local` is exposed as an explicit selectable model and now ships as the default `preferredModel`, and local embedding fallback upgrades from pure hash vectors to a MiniLM model path when the cache is available.
 
+The companion also now syncs the `language_models.openai_compatible.Zedge.available_models` block in local Zed settings from the live model catalog at startup, so model picker entries track current edge and local availability instead of drifting behind a hardcoded snippet.
+
 ## What It Helps You Do
 
 - run the local Zedge companion service

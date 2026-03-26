@@ -20,6 +20,7 @@ The fair brag is architectural honesty: the extension is real, the sidecar is re
 2. **Companion sidecar** in `companion/`
    - public listener on `localhost:7331` now defaults to a native `gnosis-uring` proxy, with the x-gnosis app shell bound on loopback behind it
    - handles inference routing, collaboration bridges, compute pooling, and local integration work
+   - syncs Zed's `openai_compatible.Zedge.available_models` list from the live companion catalog at startup so the picker tracks current edge and local models
    - defaults `preferredModel` to the selectable `wasm-local` path and runs an Aether-backed local fallback path for SmolLM2 chat generation and MiniLM embeddings before dropping to echo
    - now exposes Babelfish polyglot translation/explanation over the Gnosis language registry
 
@@ -74,7 +75,7 @@ pnpm run gnode -- run open-source/zedge/companion/src/companion-supervisor.ts --
 
 - `http://localhost:7331/v1`
 
-That gives you a working local provider path without compiling the extension first. In companion mode the generated Zed settings now include a selectable `wasm-local` model so you can force the Aether-backed on-device path from the model picker.
+That gives you a working local provider path without compiling the extension first. In companion mode the generated Zed settings are built from the live model catalog and include a selectable `wasm-local` model so you can force the Aether-backed on-device path from the model picker.
 
 ## What People May Like
 

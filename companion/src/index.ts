@@ -28,6 +28,10 @@ async function verifyKeyTier(
   }
 }
 
+function getErrorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
 export async function main(): Promise<void> {
   console.log('[zedge] Starting companion sidecar v2.0...');
 
@@ -41,6 +45,27 @@ async function runCompanionBootstrap(): Promise<void> {
     await serverMod.startServer();
 
     console.log('[zedge] Companion sidecar v2.0 ready');
+
+    void Promise.all([
+      import("./inference-bridge.ts"),
+      import("./zed-settings.ts"),
+    ])
+      .then(async ([{ getModels }, { syncZedSettingsModelCatalog }]) => {
+        const models = await getModels();
+        const syncResult = syncZedSettingsModelCatalog(
+          models.map((model) => model.id)
+        );
+        if (syncResult.updatedPaths.length > 0) {
+          console.log(
+            `[zedge] Synced ${models.length} models into Zed settings: ${syncResult.updatedPaths.join(', ')}`
+          );
+        }
+      })
+      .catch((error) => {
+        console.warn(
+          `[zedge] Zed settings sync skipped: ${getErrorMessage(error)}`
+        );
+      });
 
     const { whoami } = await import("./auth.ts");
     const { getZedgeConfig, getApiBaseUrl, getAuthHeaders } = await import(
