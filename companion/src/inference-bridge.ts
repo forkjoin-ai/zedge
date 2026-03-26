@@ -1641,33 +1641,62 @@ export function autoLearnFromInference(
 /**
  * Get merged model list from remote + local + mesh peers
  */
+// All Edgework edge models available via Glossolalia MOA
+const EDGEWORK_MODELS: Array<{ id: string; name: string }> = [
+  { id: 'qwen-2.5-coder-7b', name: 'Qwen 2.5 Coder 7B' },
+  { id: 'mistral-7b', name: 'Mistral 7B' },
+  { id: 'deepseek-r1-distill-qwen-7b', name: 'DeepSeek R1 7B' },
+  { id: 'llama-70b', name: 'LLaMA 2 70B' },
+  { id: 'glm-4-9b', name: 'GLM-4 9B' },
+  { id: 'step-3.5-flash', name: 'Step 3.5 Flash' },
+  { id: 'gemma3-4b-it', name: 'Gemma 3 4B IT' },
+  { id: 'nanbeige-3b', name: 'Nanbeige 3B' },
+  { id: 'gemma3-1b-it', name: 'Gemma 3 1B IT' },
+  { id: 'deepseek-r1-distill-qwen-1.5b', name: 'DeepSeek R1 1.5B' },
+  { id: 'tinyllama-1.1b', name: 'TinyLlama 1.1B' },
+  { id: 'cog-360m', name: 'Cog 360M' },
+  { id: 'cyrano-360m', name: 'Cyrano 360M' },
+  { id: 'smollm2-360m', name: 'SmolLM2 360M' },
+];
+
 export async function getModels(): Promise<ModelInfo[]> {
   const models: ModelInfo[] = [];
+  const seen = new Set<string>();
 
   // Try to fetch remote model list
   try {
     const baseUrl = getApiBaseUrl();
     const resp = await fetch(`${baseUrl}/v1/models`, {
-      headers: getAuthHeaders(),
+      headers: {
+        ...getAuthHeaders(),
+        'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+        'Origin': 'https://edge.affectively.ai',
+      },
       signal: AbortSignal.timeout(5_000),
     });
     if (resp.ok) {
       const data = (await resp.json()) as { data?: ModelInfo[] };
       if (data.data) {
-        models.push(...data.data);
+        for (const m of data.data) {
+          if (!seen.has(m.id)) {
+            seen.add(m.id);
+            models.push(m);
+          }
+        }
       }
     }
   } catch {
-    // Remote unavailable
+    // Remote unavailable -- fall through to hardcoded list
   }
 
-  // Add Cloud Run models that may not be in remote list
-  for (const modelId of Object.keys(CLOUD_RUN_COORDINATORS)) {
-    if (!models.some((m) => m.id === modelId)) {
+  // Always include all Edgework edge models (canonical list)
+  for (const em of EDGEWORK_MODELS) {
+    if (!seen.has(em.id)) {
+      seen.add(em.id);
       models.push({
-        id: modelId,
+        id: em.id,
         object: 'model',
-        owned_by: 'edgework-cloudrun',
+        owned_by: 'edgework',
       });
     }
   }
@@ -1678,7 +1707,8 @@ export async function getModels(): Promise<ModelInfo[]> {
     const meshStatus = getMeshStatus();
     for (const peer of meshStatus.peers) {
       for (const modelId of peer.capabilities.models) {
-        if (!models.some((m) => m.id === modelId)) {
+        if (!seen.has(modelId)) {
+          seen.add(modelId);
           models.push({
             id: modelId,
             object: 'model',
@@ -1690,13 +1720,6 @@ export async function getModels(): Promise<ModelInfo[]> {
   } catch {
     // Mesh not available
   }
-
-  // Add local models
-  models.push({
-    id: 'wasm-local',
-    object: 'model',
-    owned_by: 'edgework-wasm',
-  });
 
   return models;
 }

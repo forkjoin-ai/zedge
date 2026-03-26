@@ -17,16 +17,17 @@ pub struct ZedgeModel {
     pub max_tokens: u32,
 }
 
-/// Available models — real 7B+ models via edge coordinators
+/// Available models — all Edgework edge models via Glossolalia MOA
 pub const MODELS: &[ZedgeModel] = &[
-    ZedgeModel {
-        id: "mistral-7b",
-        display_name: "Mistral 7B",
-        max_tokens: 4096,
-    },
+    // ── Primary coding models ──
     ZedgeModel {
         id: "qwen-2.5-coder-7b",
         display_name: "Qwen 2.5 Coder 7B",
+        max_tokens: 4096,
+    },
+    ZedgeModel {
+        id: "mistral-7b",
+        display_name: "Mistral 7B",
         max_tokens: 4096,
     },
     ZedgeModel {
@@ -34,20 +35,11 @@ pub const MODELS: &[ZedgeModel] = &[
         display_name: "DeepSeek R1 7B",
         max_tokens: 4096,
     },
+    // ── Reasoning / large ──
     ZedgeModel {
-        id: "tinyllama-1.1b",
-        display_name: "TinyLlama 1.1B (Fast)",
-        max_tokens: 2048,
-    },
-    ZedgeModel {
-        id: "gemma3-4b-it",
-        display_name: "Gemma3 4B IT",
+        id: "llama-70b",
+        display_name: "LLaMA 2 70B",
         max_tokens: 4096,
-    },
-    ZedgeModel {
-        id: "gemma3-1b-it",
-        display_name: "Gemma3 1B IT",
-        max_tokens: 2048,
     },
     ZedgeModel {
         id: "glm-4-9b",
@@ -55,18 +47,51 @@ pub const MODELS: &[ZedgeModel] = &[
         max_tokens: 4096,
     },
     ZedgeModel {
-        id: "deepseek-r1",
-        display_name: "DeepSeek R1",
+        id: "step-3.5-flash",
+        display_name: "Step 3.5 Flash",
+        max_tokens: 4096,
+    },
+    // ── Mid-size ──
+    ZedgeModel {
+        id: "gemma3-4b-it",
+        display_name: "Gemma 3 4B IT",
         max_tokens: 4096,
     },
     ZedgeModel {
-        id: "personaplex-7b",
-        display_name: "PersonaPlex 7B (Moshi)",
+        id: "nanbeige-3b",
+        display_name: "Nanbeige 3B",
         max_tokens: 4096,
     },
+    // ── Small / fast ──
     ZedgeModel {
-        id: "lfm2.5-1.2b-glm-4.7-flash-thinking",
-        display_name: "LFM 2.5 1.2B (Thinking)",
+        id: "gemma3-1b-it",
+        display_name: "Gemma 3 1B IT",
         max_tokens: 2048,
+    },
+    ZedgeModel {
+        id: "deepseek-r1-distill-qwen-1.5b",
+        display_name: "DeepSeek R1 1.5B",
+        max_tokens: 2048,
+    },
+    ZedgeModel {
+        id: "tinyllama-1.1b",
+        display_name: "TinyLlama 1.1B (Fast)",
+        max_tokens: 2048,
+    },
+    // ── Edgework internal ──
+    ZedgeModel {
+        id: "cog-360m",
+        display_name: "Cog 360M",
+        max_tokens: 1024,
+    },
+    ZedgeModel {
+        id: "cyrano-360m",
+        display_name: "Cyrano 360M",
+        max_tokens: 1024,
+    },
+    ZedgeModel {
+        id: "smollm2-360m",
+        display_name: "SmolLM2 360M",
+        max_tokens: 1024,
     },
 ];
