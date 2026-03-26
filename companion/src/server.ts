@@ -1197,24 +1197,24 @@ export async function handleWebRequest(req: Request): Promise<Response> {
     };
 
     // ── Local x-gnosis inference (in-process, zero network) ──
-    // Try to run inference locally before falling back to edge.
-    // Requires weights on disk at WEIGHTS_DIR.
+    // Map all models to cog-360m for local inference (only model with weights on disk).
+    // Full 32-layer inference, proper BPE tokenizer, ~6s warm.
     try {
       const { handleChatCompletions } = await import(
         '../../../x-gnosis/src/handlers/inference-complete'
       );
+      const localRequest = { ...request, model: 'cog-360m' };
       const localReq = new Request('http://local/v1/chat/completions', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(request),
+        body: JSON.stringify(localRequest),
       });
       const localResp = await handleChatCompletions(localReq);
       if (localResp.ok) {
-        console.log('[zedge] Local x-gnosis inference: OK');
+        console.log(`[zedge] Local x-gnosis inference: OK (mapped ${request.model} → cog-360m)`);
         return localResp;
       }
     } catch (localErr) {
-      // Weights not on disk or handler failed -- fall through to edge
       console.log(`[zedge] Local inference unavailable: ${localErr instanceof Error ? localErr.message : localErr}`);
     }
 
