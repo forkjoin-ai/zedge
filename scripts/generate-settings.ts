@@ -14,6 +14,7 @@ import { join } from 'path';
 import { existsSync, readFileSync } from 'fs';
 import {
   buildZedAvailableModels,
+  getKnownZedgeModels,
   getKnownRemoteZedgeModels,
   type ZedAvailableModel,
 } from '../companion/src/model-catalog.ts';
@@ -29,7 +30,6 @@ interface EdgeworkConfig {
 }
 
 const DEFAULT_API_URL = 'https://api.edgework.ai';
-const COMPANION_SETTINGS_API_URL = 'http://localhost:7331/v1';
 const COMPANION_CATALOG_URLS = [
   'http://127.0.0.1:7331/v1/models',
   'http://localhost:7331/v1/models',
@@ -57,13 +57,33 @@ function getApiKey(): string | null {
   return null;
 }
 
+function getRemoteSettingsApiUrl(config: EdgeworkConfig): string {
+  return config.apiBaseUrl + '/v1';
+}
+
+function printApiKeyComments(apiKey: string | null): void {
+  if (apiKey) {
+    console.log(
+      '# API key found in ~/.edgework/api-key — set as OPENAI_COMPATIBLE_API_KEY in Zed'
+    );
+    return;
+  }
+
+  console.log(
+    '# No API key found. Run `edgework auth login` or create ~/.edgework/api-key'
+  );
+  console.log(
+    '# For anonymous access, leave the API key blank in Zed settings.'
+  );
+}
+
 function getAuthHeaders(apiKey: string | null): Record<string, string> {
   if (!apiKey) {
     return {};
   }
 
   return {
-    Authorization: `Bearer ${apiKey}`,
+    Authorization: 'Bearer ' + apiKey,
     'X-API-Key': apiKey,
   };
 }
@@ -115,30 +135,27 @@ async function resolveRemoteAvailableModels(
   apiKey: string | null
 ): Promise<ZedAvailableModel[]> {
   const remoteIds =
-    (await fetchModelIds(`${apiUrl}/v1/models`, getAuthHeaders(apiKey))) ??
+    (await fetchModelIds(apiUrl + '/v1/models', getAuthHeaders(apiKey))) ??
     getKnownRemoteZedgeModels().map((model) => model.id);
   return buildZedAvailableModels(remoteIds);
 }
 
-async function resolveCompanionAvailableModels(
-  remoteModels: ZedAvailableModel[]
-): Promise<ZedAvailableModel[]> {
+async function resolveCompanionAvailableModels(): Promise<ZedAvailableModel[]> {
   const companionIds =
     (await fetchFirstModelIds(COMPANION_CATALOG_URLS, {})) ??
-    remoteModels.map((model) => model.name);
+    getKnownZedgeModels().map((model) => model.id);
   return buildZedAvailableModels(companionIds, { includeLocalWasm: true });
 }
 
 export async function main(): Promise<void> {
   const config = getConfig();
   const apiKey = getApiKey();
-  const apiUrl = `${config.apiBaseUrl}/v1`;
+  const apiUrl = getRemoteSettingsApiUrl(config);
   const remoteAvailableModels = await resolveRemoteAvailableModels(
     config.apiBaseUrl,
     apiKey
   );
-  const companionAvailableModels =
-    await resolveCompanionAvailableModels(remoteAvailableModels);
+  const companionAvailableModels = await resolveCompanionAvailableModels();
 
   const settings = {
     language_models: {
@@ -150,34 +167,23 @@ export async function main(): Promise<void> {
       },
     },
   };
+  const settingsJson = JSON.stringify(settings, null, 2);
 
   console.log('# Zedge — Edge Inference for Zed');
   console.log('#');
   console.log('# Add this to your Zed settings.json (Cmd+, or Ctrl+,):');
   console.log('#');
-
-  if (apiKey) {
-    console.log(
-      '# API key found in ~/.edgework/api-key — set as OPENAI_COMPATIBLE_API_KEY in Zed'
-    );
-  } else {
-    console.log(
-      '# No API key found. Run `edgework auth login` or create ~/.edgework/api-key'
-    );
-    console.log(
-      '# For anonymous access, leave the API key blank in Zed settings.'
-    );
-  }
+  printApiKeyComments(apiKey);
 
   console.log('#');
-  console.log(JSON.stringify(settings, null, 2));
+  console.log(settingsJson);
 
   // Companion settings with edit predictions (tab completions)
   const companionSettings = {
     language_models: {
       openai_compatible: {
         Zedge: {
-          api_url: COMPANION_SETTINGS_API_URL,
+          api_url: 'http://localhost:7331/v1',
           available_models: companionAvailableModels,
         },
       },
@@ -188,6 +194,7 @@ export async function main(): Promise<void> {
       },
     },
   };
+  const companionSettingsJson = JSON.stringify(companionSettings, null, 2);
 
   console.log('\n# ---- Companion Mode (local inference + tab completions) ----');
   console.log('# Start the companion sidecar:');
@@ -196,5 +203,6 @@ export async function main(): Promise<void> {
   );
   console.log('# Then use these settings for local inference + FIM tab completions:');
   console.log('#');
-  console.log(JSON.stringify(companionSettings, null, 2));
+  console.log(companionSettingsJson);
+  return;
 }

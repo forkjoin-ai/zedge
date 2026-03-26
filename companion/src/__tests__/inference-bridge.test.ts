@@ -267,6 +267,69 @@ describe('Inference Bridge', () => {
     2_000
   );
 
+  test('infer falls back to wasm when edge returns only empty SSE content', async () => {
+    const originalFetch = global.fetch;
+
+    global.fetch = (async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (!url.includes('/ai/communicate')) {
+        return new Response('unexpected', { status: 500 });
+      }
+
+      const emptyChunk = JSON.stringify({
+        id: 'chatcmpl-edge-empty',
+        object: 'chat.completion.chunk',
+        created: 1000,
+        model: 'tinyllama-1.1b',
+        choices: [
+          {
+            index: 0,
+            delta: { content: '   ' },
+            finish_reason: null,
+          },
+        ],
+      });
+      const stopChunk = JSON.stringify({
+        id: 'chatcmpl-edge-empty',
+        object: 'chat.completion.chunk',
+        created: 1000,
+        model: 'tinyllama-1.1b',
+        choices: [
+          {
+            index: 0,
+            delta: {},
+            finish_reason: 'stop',
+          },
+        ],
+      });
+
+      return new Response(
+        `data: ${emptyChunk}\n\ndata: ${stopChunk}\n\ndata: [DONE]\n\n`,
+        {
+          status: 200,
+          headers: { 'Content-Type': 'text/event-stream' },
+        }
+      );
+    }) as typeof fetch;
+
+    try {
+      const result = await infer({
+        model: 'tinyllama-1.1b',
+        messages: [{ role: 'user', content: 'hello' }],
+        stream: false,
+        max_tokens: 16,
+        temperature: 0,
+      });
+
+      expect(result.tier).toBe('wasm');
+      const data = (await result.response.json()) as ChatCompletionResponse;
+      expect(data.choices[0]?.message.role).toBe('assistant');
+      expect(typeof data.choices[0]?.message.content).toBe('string');
+    } finally {
+      global.fetch = originalFetch;
+    }
+  }, 45_000);
+
   test('infer requests SSE from edge for streaming callers', async () => {
     const originalFetch = global.fetch;
     const requestBodies: Array<Record<string, unknown>> = [];

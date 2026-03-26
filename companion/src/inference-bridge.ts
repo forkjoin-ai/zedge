@@ -137,6 +137,20 @@ function shouldUseLocalEmbeddingFallback(model: string): boolean {
   );
 }
 
+function getEdgeRequestTimeoutMs(
+  request: ChatCompletionRequest
+): number | null {
+  if (request.stream !== true) {
+    return EDGE_NON_STREAMING_TOTAL_TIMEOUT_MS;
+  }
+
+  if (request.model === 'tinyllama-1.1b') {
+    return EDGE_NON_STREAMING_TOTAL_TIMEOUT_MS;
+  }
+
+  return null;
+}
+
 export interface TierAttempt {
   tier: InferenceTier;
   status: 'ok' | 'timeout' | 'error' | 'skipped' | 'http_error';
@@ -156,6 +170,8 @@ export interface TierResult {
 const LOCAL_WASM_TOTAL_TIMEOUT_MS = 45_000;
 const LOCAL_WASM_BUSY_BUFFER_MS = 15_000;
 const LOCAL_WASM_PREWARM_BUSY_MS = 5 * 60_000;
+const EDGE_NON_STREAMING_TOTAL_TIMEOUT_MS = 25_000;
+const EDGE_NON_STREAMING_COMPLETION_TIMEOUT_MS = 20_000;
 
 function isOpenAiSsePayload(payload: string): boolean {
   if (payload === '[DONE]') {
@@ -253,7 +269,11 @@ function createJsonChatCompletionResponse(
 
 async function collapseEdgeStreamingResponse(
   response: Response,
-  fallbackModel: string
+  fallbackModel: string,
+  options: {
+    timeoutMs?: number;
+    requireNonEmptyText?: boolean;
+  } = {}
 ): Promise<Response> {
   const upstreamHeaders = extractUpstreamDebugHeaders(response);
   const contentType = response.headers.get('content-type') ?? '';
@@ -276,6 +296,10 @@ async function collapseEdgeStreamingResponse(
     let model = fallbackModel;
     let id = `chatcmpl-edge-${Date.now()}`;
     let created = Math.floor(Date.now() / 1000);
+    const deadline =
+      typeof options.timeoutMs === 'number'
+        ? Date.now() + options.timeoutMs
+        : null;
     let sawCompletion = false;
     let pendingDataLines: string[] = [];
 
@@ -329,7 +353,23 @@ async function collapseEdgeStreamingResponse(
 
     try {
       while (!sawCompletion) {
-        const { done, value } = await reader.read();
+        const readResult =
+          deadline === null
+            ? await reader.read()
+            : await Promise.race([
+                reader.read(),
+                new Promise<null>((resolve) => {
+                  const remainingMs = Math.max(1, deadline - Date.now());
+                  setTimeout(() => resolve(null), remainingMs);
+                }),
+              ]);
+        if (readResult === null) {
+          throw new Error(
+            `Edge completion timed out after ${options.timeoutMs}ms`
+          );
+        }
+
+        const { done, value } = readResult;
         if (done) {
           buffer += decoder.decode();
           break;
@@ -364,6 +404,10 @@ async function collapseEdgeStreamingResponse(
 
     if (!sawCompletion && pendingDataLines.length > 0) {
       processEvent();
+    }
+
+    if (options.requireNonEmptyText && content.trim().length === 0) {
+      throw new Error('Edge returned empty completion');
     }
 
     return createJsonChatCompletionResponse(model, content, {
@@ -456,6 +500,7 @@ async function tryEdgeCoordinator(
     'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
     'Accept': 'text/event-stream, application/json',
     'Origin': 'https://edge.affectively.ai',
+    'X-Requested-Model': request.model,
     ...authHeaders,
   };
 
@@ -487,12 +532,29 @@ async function tryEdgeCoordinator(
         } attempt=${attempt}`
       );
 
-      const resp = await fetch(url, {
-        method: 'POST',
-        headers,
-        body: JSON.stringify(communicateBody),
-        signal,
-      });
+      const edgeSignalController = new AbortController();
+      const abortFromUpstream = () => edgeSignalController.abort();
+      signal?.addEventListener('abort', abortFromUpstream, { once: true });
+      const edgeTimeoutMs = getEdgeRequestTimeoutMs(request);
+      const requestTimeout =
+        edgeTimeoutMs === null
+          ? null
+          : setTimeout(() => edgeSignalController.abort(), edgeTimeoutMs);
+
+      let resp: Response;
+      try {
+        resp = await fetch(url, {
+          method: 'POST',
+          headers,
+          body: JSON.stringify(communicateBody),
+          signal: edgeSignalController.signal,
+        });
+      } finally {
+        if (requestTimeout !== null) {
+          clearTimeout(requestTimeout);
+        }
+        signal?.removeEventListener('abort', abortFromUpstream);
+      }
 
       // Log response
       const respHeaders: Record<string, string> = {};
@@ -523,9 +585,13 @@ async function tryEdgeCoordinator(
 
       // Batch mode: normalize either JSON or unexpected SSE to OpenAI JSON.
       try {
-        return await collapseEdgeStreamingResponse(resp, request.model);
-      } catch {
-        return resp;
+        return await collapseEdgeStreamingResponse(resp, request.model, {
+          timeoutMs: EDGE_NON_STREAMING_COMPLETION_TIMEOUT_MS,
+          requireNonEmptyText: true,
+        });
+      } catch (error) {
+        await cancelResponseBody(resp);
+        throw error;
       }
     }
   }
