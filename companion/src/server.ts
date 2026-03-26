@@ -1196,26 +1196,26 @@ export async function handleWebRequest(req: Request): Promise<Response> {
       top_p: body.top_p,
     };
 
-    // ── Local x-gnosis inference (in-process, zero network) ──
-    // Map all models to cog-360m for local inference (only model with weights on disk).
-    // Full 32-layer inference, proper BPE tokenizer, ~6s warm.
+    // ── Browser Fleet inference (DeepSeek R1 1.5B / TinyLlama via transformers.js) ──
+    // Real instruction-following models running in headless Chromium.
+    // The browser fleet is already deployed and handles /v1/chat/completions.
+    const browserFleetUrl = (getZedgeConfig() as any).browserFleetUrl
+      ?? process.env.BROWSER_FLEET_URL
+      ?? 'https://cf-browser-fleet.taylorbuley.workers.dev';
     try {
-      const { handleChatCompletions } = await import(
-        '../../../x-gnosis/src/handlers/inference-complete'
-      );
-      const localRequest = { ...request, model: 'cog-360m' };
-      const localReq = new Request('http://local/v1/chat/completions', {
+      const fleetResp = await fetch(`${browserFleetUrl}/v1/chat/completions`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(localRequest),
+        body: JSON.stringify(request),
+        signal: AbortSignal.timeout(60000),
       });
-      const localResp = await handleChatCompletions(localReq);
-      if (localResp.ok) {
-        console.log(`[zedge] Local x-gnosis inference: OK (mapped ${request.model} → cog-360m)`);
-        return localResp;
+      if (fleetResp.ok) {
+        console.log(`[zedge] Browser fleet inference: OK (${request.model} → DeepSeek R1 1.5B)`);
+        return fleetResp;
       }
-    } catch (localErr) {
-      console.log(`[zedge] Local inference unavailable: ${localErr instanceof Error ? localErr.message : localErr}`);
+      console.log(`[zedge] Browser fleet returned ${fleetResp.status}`);
+    } catch (fleetErr) {
+      console.log(`[zedge] Browser fleet unavailable: ${fleetErr instanceof Error ? fleetErr.message : fleetErr}`);
     }
 
     if (request.stream) {
