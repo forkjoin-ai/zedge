@@ -25,10 +25,12 @@ let shuttingDown = false;
 let healthCheckInFlight = false;
 
 function getCompanionEntry(): string {
-  // When running from companion/ dir, __dirname is companion/src/
-  // so go up one level to get companion/, then resolve src/index.ts
-  const thisDir = dirname(fileURLToPath(import.meta.url));
-  return resolve(thisDir, 'index.ts');
+  // pnpm start runs from companion/ dir. Resolve relative to cwd.
+  // AEON_ROOT overrides for monorepo-root invocation.
+  if (process.env.AEON_ROOT) {
+    return resolve(process.env.AEON_ROOT, 'open-source/zedge/companion/src/index.ts');
+  }
+  return resolve(process.cwd(), 'src/index.ts');
 }
 
 function getCompanionBase(): string {
