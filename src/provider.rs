@@ -17,7 +17,8 @@ pub struct ZedgeModel {
     pub max_tokens: u32,
 }
 
-/// Available models — all Edgework edge models via Glossolalia MOA
+/// Available models — all Edgework edge models via Glossolalia MOA.
+/// IDs match what edge.affectively.ai/v1/models returns.
 pub const MODELS: &[ZedgeModel] = &[
     // ── Primary coding models ──
     ZedgeModel {
@@ -31,7 +32,7 @@ pub const MODELS: &[ZedgeModel] = &[
         max_tokens: 4096,
     },
     ZedgeModel {
-        id: "deepseek-r1-distill-qwen-7b",
+        id: "deepseek-r1-7b",
         display_name: "DeepSeek R1 7B",
         max_tokens: 4096,
     },
@@ -62,6 +63,11 @@ pub const MODELS: &[ZedgeModel] = &[
         display_name: "Nanbeige 3B",
         max_tokens: 4096,
     },
+    ZedgeModel {
+        id: "mamba-2.8b",
+        display_name: "Mamba 2.8B",
+        max_tokens: 4096,
+    },
     // ── Small / fast ──
     ZedgeModel {
         id: "gemma3-1b-it",
@@ -69,7 +75,7 @@ pub const MODELS: &[ZedgeModel] = &[
         max_tokens: 2048,
     },
     ZedgeModel {
-        id: "deepseek-r1-distill-qwen-1.5b",
+        id: "deepseek-r1-1.5b",
         display_name: "DeepSeek R1 1.5B",
         max_tokens: 2048,
     },
@@ -80,6 +86,11 @@ pub const MODELS: &[ZedgeModel] = &[
     },
     // ── Edgework internal ──
     ZedgeModel {
+        id: "smollm2-360m",
+        display_name: "SmolLM2 360M",
+        max_tokens: 1024,
+    },
+    ZedgeModel {
         id: "cog-360m",
         display_name: "Cog 360M",
         max_tokens: 1024,
@@ -87,11 +98,6 @@ pub const MODELS: &[ZedgeModel] = &[
     ZedgeModel {
         id: "cyrano-360m",
         display_name: "Cyrano 360M",
-        max_tokens: 1024,
-    },
-    ZedgeModel {
-        id: "smollm2-360m",
-        display_name: "SmolLM2 360M",
         max_tokens: 1024,
     },
 ];

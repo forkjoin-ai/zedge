@@ -1641,19 +1641,26 @@ export function autoLearnFromInference(
 /**
  * Get merged model list from remote + local + mesh peers
  */
-// All Edgework edge models available via Glossolalia MOA
+// All Edgework edge models available via Glossolalia MOA.
+// IDs must match what edge.affectively.ai/v1/models returns.
+// The edge uses shortened IDs for some models.
 const EDGEWORK_MODELS: Array<{ id: string; name: string }> = [
+  // IDs from edge /v1/models (confirmed via live fetch)
   { id: 'qwen-2.5-coder-7b', name: 'Qwen 2.5 Coder 7B' },
+  { id: 'qwen-edit', name: 'Qwen 2.5 Coder 7B (Edit)' },
   { id: 'mistral-7b', name: 'Mistral 7B' },
-  { id: 'deepseek-r1-distill-qwen-7b', name: 'DeepSeek R1 7B' },
+  { id: 'deepseek-r1-7b', name: 'DeepSeek R1 7B' },
+  { id: 'deepseek-r1-distill-qwen-7b', name: 'DeepSeek R1 7B (Distill)' },
+  { id: 'deepseek-r1-1.5b', name: 'DeepSeek R1 1.5B' },
+  { id: 'deepseek-r1-distill-qwen-1.5b', name: 'DeepSeek R1 1.5B (Distill)' },
   { id: 'llama-70b', name: 'LLaMA 2 70B' },
   { id: 'glm-4-9b', name: 'GLM-4 9B' },
   { id: 'step-3.5-flash', name: 'Step 3.5 Flash' },
   { id: 'gemma3-4b-it', name: 'Gemma 3 4B IT' },
   { id: 'nanbeige-3b', name: 'Nanbeige 3B' },
   { id: 'gemma3-1b-it', name: 'Gemma 3 1B IT' },
-  { id: 'deepseek-r1-distill-qwen-1.5b', name: 'DeepSeek R1 1.5B' },
   { id: 'tinyllama-1.1b', name: 'TinyLlama 1.1B' },
+  { id: 'mamba-2.8b', name: 'Mamba 2.8B' },
   { id: 'cog-360m', name: 'Cog 360M' },
   { id: 'cyrano-360m', name: 'Cyrano 360M' },
   { id: 'smollm2-360m', name: 'SmolLM2 360M' },
