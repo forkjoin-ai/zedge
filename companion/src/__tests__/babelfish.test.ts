@@ -1,10 +1,4 @@
-import {
-  beforeEach,
-  describe,
-  expect,
-  mock,
-  test,
-} from 'bun:test';
+import { beforeEach, describe, expect, mock, test } from '@a0n/gnosis/test';
 import { mkdtempSync, readFileSync, writeFileSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -37,7 +31,10 @@ mock.module('../babelfish-gnosis', () => ({
       },
     ],
   }),
-  analyzePolyglotSourceString: async (sourceText: string, filePath: string) => ({
+  analyzePolyglotSourceString: async (
+    sourceText: string,
+    filePath: string
+  ) => ({
     filePath,
     language: filePath.endsWith('.rs') ? 'rust' : 'typescript',
     functions: [
@@ -60,7 +57,7 @@ mock.module('../babelfish-gnosis', () => ({
         fileName: targetLanguage === 'rust' ? 'greet.rs' : 'greet.ts',
         source:
           targetLanguage === 'rust'
-            ? 'pub fn greet() -> &' + "'static str" + " { \"hola mundo\" }\n"
+            ? 'pub fn greet() -> &' + "'static str" + ' { "hola mundo" }\n'
             : 'export function greet() { return "hello world"; }\n',
       },
     ],
@@ -95,9 +92,7 @@ describe('Babelfish Service', () => {
       'typescript',
       'rust',
     ]);
-    expect(
-      capabilities.languages[0]?.operations.translate
-    ).toBe('supported');
+    expect(capabilities.languages[0]?.operations.translate).toBe('supported');
   });
 
   test('generate_files writes generated output immediately', async () => {

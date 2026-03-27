@@ -15,8 +15,8 @@ import { readFileSync, existsSync } from 'fs';
 import { spawn, type ChildProcess } from 'child_process';
 import { resolve, dirname, relative, sep } from 'path';
 import { fileURLToPath } from 'url';
-import { getCompanionPort } from "./config.ts";
-import { callBabelfishMcpTool, getBabelfishMcpTools } from "./babelfish-mcp.ts";
+import { getCompanionPort } from './config.ts';
+import { callBabelfishMcpTool, getBabelfishMcpTools } from './babelfish-mcp.ts';
 import {
   COMPANION_STOP_TIMEOUT_MS,
   CONSECUTIVE_FAILURES_BEFORE_RESTART,
@@ -24,9 +24,9 @@ import {
   HEALTH_CHECK_TIMEOUT_MS,
   RESTART_WINDOW_MS,
   decideCompanionRestart,
-} from "./companion-restart-policy.ts";
-import { getOwnedCompanionActivity } from "./companion-activity.ts";
-import { resolveTypeScriptEntrypointCommand } from "./runtime-command.ts";
+} from './companion-restart-policy.ts';
+import { getOwnedCompanionActivity } from './companion-activity.ts';
+import { resolveTypeScriptEntrypointCommand } from './runtime-command.ts';
 
 function getCompanionBase(): string {
   return `http://localhost:${getCompanionPort()}`;
@@ -50,11 +50,16 @@ function getModuleDirectory(): string {
 }
 
 function getWorkspaceRoot(): string {
-  return resolve(process.env.AEON_ROOT ?? resolve(getModuleDirectory(), '../../../..'));
+  return resolve(
+    process.env.AEON_ROOT ?? resolve(getModuleDirectory(), '../../../..')
+  );
 }
 
 function getCompanionEntry(): string {
-  return resolve(getWorkspaceRoot(), 'open-source/zedge/companion/src/index.ts');
+  return resolve(
+    getWorkspaceRoot(),
+    'open-source/zedge/companion/src/index.ts'
+  );
 }
 
 function sleep(ms: number): Promise<void> {
@@ -101,7 +106,9 @@ function spawnCompanion(): void {
     return;
   }
 
-  const runtimeCommand = resolveTypeScriptEntrypointCommand(getCompanionEntry());
+  const runtimeCommand = resolveTypeScriptEntrypointCommand(
+    getCompanionEntry()
+  );
   console.log(
     `[zedge:babysitter] Spawning companion: ${runtimeCommand.display}`
   );
@@ -207,7 +214,9 @@ async function restartCompanion(
     if (!decision.shouldRestart) {
       if (decision.reason === 'busy' && busyActivity) {
         console.debug(
-          `[zedge:babysitter] Companion busy with ${busyActivity.kind}; skipping restart until ${new Date(
+          `[zedge:babysitter] Companion busy with ${
+            busyActivity.kind
+          }; skipping restart until ${new Date(
             busyActivity.busyUntil
           ).toISOString()}`
         );
@@ -217,9 +226,9 @@ async function restartCompanion(
         );
       } else if (decision.reason === 'rate_limited') {
         console.warn(
-          `[zedge:babysitter] Restart suppressed after ${recentRestartTimestamps.length} restarts in the last ${Math.round(
-            RESTART_WINDOW_MS / 1000
-          )}s`
+          `[zedge:babysitter] Restart suppressed after ${
+            recentRestartTimestamps.length
+          } restarts in the last ${Math.round(RESTART_WINDOW_MS / 1000)}s`
         );
       }
       return false;
@@ -290,7 +299,11 @@ function startBabysitter(): void {
     shuttingDown = true;
     if (babysitterTimer) clearInterval(babysitterTimer);
     if (companionProc && !companionProc.killed) {
-      try { companionProc.kill('SIGTERM'); } catch { /* Process may already be terminated */ }
+      try {
+        companionProc.kill('SIGTERM');
+      } catch {
+        /* Process may already be terminated */
+      }
     }
   });
 }
@@ -371,7 +384,8 @@ function buildSwarmPromptPayload(args: string | null): Record<string, unknown> {
 const ZEDGE_PROMPTS: McpPromptDefinition[] = [
   {
     name: 'zedge-status',
-    description: 'Show inference chain health, compute pool stats, and token balance',
+    description:
+      'Show inference chain health, compute pool stats, and token balance',
     instructions:
       'Inspect the Zedge companion status. Use the `zedge_command` tool with `command: "zedge-status"` and summarize health, preferred model, mesh, compute pool, workspace bridges, and inference-tier availability.',
   },
@@ -499,7 +513,8 @@ const ZEDGE_PROMPTS: McpPromptDefinition[] = [
   },
   {
     name: 'zedge-babelfish',
-    description: 'Babelfish over Gnosis: capabilities, explain, translate, generate, and apply',
+    description:
+      'Babelfish over Gnosis: capabilities, explain, translate, generate, and apply',
     arguments: slashArgsPrompt,
     instructions:
       'Run a Babelfish operation. Use the `zedge_command` tool with `command: "zedge-babelfish"`. With no argument, list capabilities. Supported argument forms mirror the extension slash command: `capabilities`, `explain <file-path> [audience-language]`, `translate-code <target-language> <file-path>`, `translate-text <target-language> <file-path>`, `generate <target-language> <file-path>`, `rewrite-preview <target-language> <file-path>`, and `apply <preview-id> [rewrite_in_place|generate_files]`.',
@@ -695,7 +710,10 @@ function createToolResult(
   return result;
 }
 
-function renderPromptText(prompt: McpPromptDefinition, args: string | null): string {
+function renderPromptText(
+  prompt: McpPromptDefinition,
+  args: string | null
+): string {
   const payload =
     prompt.payload?.(args) ??
     (() => {
@@ -732,9 +750,10 @@ function readWorkspaceFile(filePath: string): string {
   return readFileSync(resolvedPath, 'utf8');
 }
 
-function readFirstWorkspaceFile(
-  candidates: string[]
-): { filePath: string; sourceText: string } {
+function readFirstWorkspaceFile(candidates: string[]): {
+  filePath: string;
+  sourceText: string;
+} {
   for (const candidate of candidates) {
     const resolvedPath = resolveWorkspacePath(candidate);
     if (existsSync(resolvedPath)) {
@@ -803,7 +822,9 @@ function createBabelfishScope(filePath: string): Record<string, unknown> {
   };
 }
 
-async function handleBabelfishSlashCommand(argsText: string | null): Promise<string> {
+async function handleBabelfishSlashCommand(
+  argsText: string | null
+): Promise<string> {
   const parts = tokenizeArgs(argsText);
   const subcommand = parts[0] ?? 'capabilities';
 
@@ -843,8 +864,8 @@ async function handleBabelfishSlashCommand(argsText: string | null): Promise<str
         subcommand === 'generate'
           ? 'generate_files'
           : subcommand === 'rewrite-preview'
-            ? 'rewrite_in_place_requested'
-            : 'preview';
+          ? 'rewrite_in_place_requested'
+          : 'preview';
 
       return callBabelfishMcpTool(getCompanionBase(), 'zedge_babelfish_code', {
         scope: createBabelfishScope(filePath),
@@ -879,11 +900,15 @@ async function handleBabelfishSlashCommand(argsText: string | null): Promise<str
       }
 
       const audienceLanguage = parts[2] ?? 'en';
-      return callBabelfishMcpTool(getCompanionBase(), 'zedge_babelfish_explain', {
-        scope: createBabelfishScope(filePath),
-        audienceLanguage,
-        includeGg: true,
-      });
+      return callBabelfishMcpTool(
+        getCompanionBase(),
+        'zedge_babelfish_explain',
+        {
+          scope: createBabelfishScope(filePath),
+          audienceLanguage,
+          includeGg: true,
+        }
+      );
     }
     default:
       return [
@@ -933,7 +958,8 @@ async function executeZedgeCommandTool(
         );
       }
       case 'zedge-logs': {
-        const requestedLimit = optionalNumber(args.limit) ?? optionalNumber(argsText);
+        const requestedLimit =
+          optionalNumber(args.limit) ?? optionalNumber(argsText);
         const limit = Math.max(1, Math.min(requestedLimit ?? 100, 1000));
         return createToolResult(await fetchCompanionText(`/logs?n=${limit}`));
       }
@@ -954,7 +980,9 @@ async function executeZedgeCommandTool(
       }
       case 'zedgework': {
         if (!argsText) {
-          return createToolResult(await fetchCompanionText('/edgework/commands'));
+          return createToolResult(
+            await fetchCompanionText('/edgework/commands')
+          );
         }
 
         const commandText = argsText.startsWith('edgework ')
@@ -1000,14 +1028,14 @@ async function executeZedgeCommandTool(
           subcommand === 'files'
             ? '/crdt/files'
             : subcommand === 'cursors'
-              ? '/crdt/cursors'
-              : subcommand === 'participants'
-                ? '/crdt/participants'
-                : subcommand === 'ledger'
-                  ? '/crdt/ledger'
-                  : subcommand === 'diagnostics'
-                    ? '/crdt/diagnostics'
-                    : '/crdt/status';
+            ? '/crdt/cursors'
+            : subcommand === 'participants'
+            ? '/crdt/participants'
+            : subcommand === 'ledger'
+            ? '/crdt/ledger'
+            : subcommand === 'diagnostics'
+            ? '/crdt/diagnostics'
+            : '/crdt/status';
         return createToolResult(await fetchCompanionText(path));
       }
       case 'zedge-forge': {
@@ -1017,7 +1045,8 @@ async function executeZedgeCommandTool(
         }
         if (subcommand === 'deploy') {
           const project =
-            optionalString(args.projectName) ?? optionalString(parts.slice(1).join(' '));
+            optionalString(args.projectName) ??
+            optionalString(parts.slice(1).join(' '));
           if (!project) {
             return createToolResult(
               'Usage: /zedge-forge deploy <project-name>',
@@ -1042,7 +1071,9 @@ async function executeZedgeCommandTool(
           return createToolResult(await fetchCompanionText('/kernel/commands'));
         }
         if (subcommand === 'flight-log') {
-          return createToolResult(await fetchCompanionText('/kernel/flight-log'));
+          return createToolResult(
+            await fetchCompanionText('/kernel/flight-log')
+          );
         }
 
         const [daemons, plugins] = await Promise.all([
@@ -1055,10 +1086,13 @@ async function executeZedgeCommandTool(
       }
       case 'zedge-scaffold': {
         if (!argsText && !optionalString(args.template)) {
-          return createToolResult(await fetchCompanionText('/scaffold/templates'));
+          return createToolResult(
+            await fetchCompanionText('/scaffold/templates')
+          );
         }
 
-        const template = optionalString(args.template) ?? optionalString(parts[0]);
+        const template =
+          optionalString(args.template) ?? optionalString(parts[0]);
         const projectName =
           optionalString(args.projectName) ?? optionalString(parts[1]);
         const targetDir = optionalString(args.targetDir);
@@ -1100,11 +1134,17 @@ async function executeZedgeCommandTool(
           body: JSON.stringify({ file_path: filePath }),
           signal: AbortSignal.timeout(60_000),
         });
-        const result = await resp.json() as Record<string, unknown>;
+        const result = (await resp.json()) as Record<string, unknown>;
         const success = result.success ? 'OK' : 'FAILED';
-        const metrics = result.metrics as Record<string, unknown> ?? {};
+        const metrics = (result.metrics as Record<string, unknown>) ?? {};
         return createToolResult(
-          `## Topology Run: ${filePath} [${success}]\n\nbeta1: ${metrics.beta1 ?? '?'} | nodes: ${metrics.nodeCount ?? '?'} | edges: ${metrics.edgeCount ?? '?'}\n\n${result.logs ?? ''}\n\n${result.error ? `Error: ${result.error}` : ''}`
+          `## Topology Run: ${filePath} [${success}]\n\nbeta1: ${
+            metrics.beta1 ?? '?'
+          } | nodes: ${metrics.nodeCount ?? '?'} | edges: ${
+            metrics.edgeCount ?? '?'
+          }\n\n${result.logs ?? ''}\n\n${
+            result.error ? `Error: ${result.error}` : ''
+          }`
         );
       }
       case 'zedge-gnosis-viz': {
@@ -1118,7 +1158,11 @@ async function executeZedgeCommandTool(
           argsText ??
           'open-source/gnosis/topologies/services/isolation-tests.gg';
         const code = readWorkspaceFile(filePath);
-        const result = await postCompanionJson('/gnosis/eval', { code }, 30_000);
+        const result = await postCompanionJson(
+          '/gnosis/eval',
+          { code },
+          30_000
+        );
         return createToolResult(`Ran ${filePath}\n\n${result}`);
       }
       case 'zedge-feedback':
@@ -1133,7 +1177,8 @@ async function executeZedgeCommandTool(
           }
 
           const comment =
-            optionalString(args.comment) ?? optionalString(parts.slice(1).join(' '));
+            optionalString(args.comment) ??
+            optionalString(parts.slice(1).join(' '));
           const model = optionalString(args.model);
           return createToolResult(
             await postCompanionJson(
@@ -1167,14 +1212,18 @@ async function executeZedgeCommandTool(
         if (!diff.trim()) {
           return createToolResult('No changes in current diff.');
         }
-        const { superinfer } = await import("./superinference.ts");
-        const { voidMapStore } = await import("./void-map-store.ts");
+        const { superinfer } = await import('./superinference.ts');
+        const { voidMapStore } = await import('./void-map-store.ts');
         const steering = voidMapStore.getSteeringVector();
         const result = await superinfer({
           request: {
             model: 'qwen-2.5-coder-7b',
             messages: [
-              { role: 'system', content: 'You are a code reviewer. Review the following git diff. For each issue, cite the file and line. Separate agreements (high confidence) from disagreements (flagged for human review).' },
+              {
+                role: 'system',
+                content:
+                  'You are a code reviewer. Review the following git diff. For each issue, cite the file and line. Separate agreements (high confidence) from disagreements (flagged for human review).',
+              },
               { role: 'user', content: diff },
             ],
             temperature: 0.3,
@@ -1186,21 +1235,34 @@ async function executeZedgeCommandTool(
           timeoutMs: 60_000,
         });
         return createToolResult(
-          `## Consensus Review (confidence: ${result.confidence.toFixed(2)})\n\n${result.content}\n\n---\nModels: ${result.modelResults.map((m) => m.model).join(', ')} | Strategy: ${result.strategy} | ${result.durationMs}ms`
+          `## Consensus Review (confidence: ${result.confidence.toFixed(
+            2
+          )})\n\n${result.content}\n\n---\nModels: ${result.modelResults
+            .map((m) => m.model)
+            .join(', ')} | Strategy: ${result.strategy} | ${
+            result.durationMs
+          }ms`
         );
       }
       case 'zedge-void': {
-        const resp = await fetch(`${getCompanionBase()}/void-map/status`, { signal: AbortSignal.timeout(10_000) });
+        const resp = await fetch(`${getCompanionBase()}/void-map/status`, {
+          signal: AbortSignal.timeout(10_000),
+        });
         return createToolResult(JSON.stringify(await resp.json(), null, 2));
       }
       case 'zedge-swarm': {
         if (!argsText?.trim()) {
-          const { AgentSwarm } = await import("./agent-swarm.ts");
-          return createToolResult(`Available roles: ${AgentSwarm.listRoles().join(', ')}\n\nUsage: /zedge-swarm role1,role2 [task description]`);
+          const { AgentSwarm } = await import('./agent-swarm.ts');
+          return createToolResult(
+            `Available roles: ${AgentSwarm.listRoles().join(
+              ', '
+            )}\n\nUsage: /zedge-swarm role1,role2 [task description]`
+          );
         }
         const parts = argsText.trim().split(/\s+/);
         const roles = parts[0].split(',');
-        const task = parts.slice(1).join(' ') || 'Review and improve the current file';
+        const task =
+          parts.slice(1).join(' ') || 'Review and improve the current file';
         const resp = await fetch(`${getCompanionBase()}/agent/swarm/start`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -1210,15 +1272,21 @@ async function executeZedgeCommandTool(
         return createToolResult(JSON.stringify(await resp.json(), null, 2));
       }
       case 'zedge-engram': {
-        const resp = await fetch(`${getCompanionBase()}/engram/status`, { signal: AbortSignal.timeout(10_000) });
+        const resp = await fetch(`${getCompanionBase()}/engram/status`, {
+          signal: AbortSignal.timeout(10_000),
+        });
         return createToolResult(JSON.stringify(await resp.json(), null, 2));
       }
       case 'zedge-emotion': {
-        return createToolResult('Use the zedge_emotion MCP tool with a file_path to analyze emotional profile.');
+        return createToolResult(
+          'Use the zedge_emotion MCP tool with a file_path to analyze emotional profile.'
+        );
       }
       case 'zedge-agent': {
         if (!argsText?.trim()) {
-          const resp = await fetch(`${getCompanionBase()}/forge/projects`, { signal: AbortSignal.timeout(10_000) });
+          const resp = await fetch(`${getCompanionBase()}/forge/projects`, {
+            signal: AbortSignal.timeout(10_000),
+          });
           return createToolResult(JSON.stringify(await resp.json(), null, 2));
         }
         const resp = await fetch(`${getCompanionBase()}/forge/deploy`, {
@@ -1399,7 +1467,8 @@ export async function handleToolsList(): Promise<Record<string, unknown>> {
           properties: {
             query: {
               type: 'string',
-              description: 'Natural language query describing what you are looking for',
+              description:
+                'Natural language query describing what you are looking for',
             },
             top_k: {
               type: 'integer',
@@ -1418,7 +1487,8 @@ export async function handleToolsList(): Promise<Record<string, unknown>> {
           properties: {
             file_path: {
               type: 'string',
-              description: 'Workspace-relative path to find related context for',
+              description:
+                'Workspace-relative path to find related context for',
             },
           },
           required: ['file_path'],
@@ -1512,7 +1582,12 @@ export async function handleToolsList(): Promise<Record<string, unknown>> {
             },
             type: {
               type: 'string',
-              enum: ['conversation-summary', 'code-pattern', 'user-preference', 'file-relationship'],
+              enum: [
+                'conversation-summary',
+                'code-pattern',
+                'user-preference',
+                'file-relationship',
+              ],
               description: 'Engram type for remember action',
             },
             id: {
@@ -1604,7 +1679,8 @@ export async function handleToolsList(): Promise<Record<string, unknown>> {
             },
             agent_name: {
               type: 'string',
-              description: 'Agent name for start action (e.g. cera-agent, polyglot-scanner-agent)',
+              description:
+                'Agent name for start action (e.g. cera-agent, polyglot-scanner-agent)',
             },
             task: {
               type: 'string',
@@ -1726,9 +1802,11 @@ export async function handleToolCall(
           }),
           signal: AbortSignal.timeout(120_000),
         });
-        const data = await resp.json();
+        const data = (await resp.json()) as {
+          choices?: Array<{ message?: { content?: string } }>;
+        };
         const content =
-          (data as unknown)?.choices?.[0]?.message?.content ?? JSON.stringify(data);
+          data.choices?.[0]?.message?.content ?? JSON.stringify(data);
         return {
           content: [{ type: 'text', text: content }],
         };
@@ -1760,7 +1838,9 @@ export async function handleToolCall(
         const replace = String(args.replace ?? '');
         if (!filePath || !search) {
           return {
-            content: [{ type: 'text', text: 'file_path and search are required' }],
+            content: [
+              { type: 'text', text: 'file_path and search are required' },
+            ],
             isError: true,
           };
         }
@@ -1779,7 +1859,12 @@ export async function handleToolCall(
 
         if (!fileContent.includes(search)) {
           return {
-            content: [{ type: 'text', text: `Search string not found in ${filePath}. The search must match exactly.` }],
+            content: [
+              {
+                type: 'text',
+                text: `Search string not found in ${filePath}. The search must match exactly.`,
+              },
+            ],
             isError: true,
           };
         }
@@ -1790,11 +1875,25 @@ export async function handleToolCall(
           writeFileSync(fullPath, updated, 'utf-8');
           const lineCount = search.split('\n').length;
           return {
-            content: [{ type: 'text', text: `Applied change to ${filePath} (replaced ${lineCount} line(s))` }],
+            content: [
+              {
+                type: 'text',
+                text: `Applied change to ${filePath} (replaced ${lineCount} line(s))`,
+              },
+            ],
           };
         } catch (writeErr) {
           return {
-            content: [{ type: 'text', text: `Failed to write ${filePath}: ${writeErr instanceof Error ? writeErr.message : String(writeErr)}` }],
+            content: [
+              {
+                type: 'text',
+                text: `Failed to write ${filePath}: ${
+                  writeErr instanceof Error
+                    ? writeErr.message
+                    : String(writeErr)
+                }`,
+              },
+            ],
             isError: true,
           };
         }
@@ -1819,7 +1918,9 @@ export async function handleToolCall(
         const file = String(args.file_path ?? '');
         const fullFilePath = resolve(getWorkspaceRoot(), file);
         const resp = await fetch(
-          `${getCompanionBase()}/code-index/related?file=${encodeURIComponent(fullFilePath)}`,
+          `${getCompanionBase()}/code-index/related?file=${encodeURIComponent(
+            fullFilePath
+          )}`,
           { signal: AbortSignal.timeout(10_000) }
         );
         const data = await resp.json();
@@ -1857,85 +1958,210 @@ export async function handleToolCall(
         let voidResp: Response;
         switch (action) {
           case 'status':
-            voidResp = await fetch(`${base}/void-map/status`, { signal: AbortSignal.timeout(10_000) });
+            voidResp = await fetch(`${base}/void-map/status`, {
+              signal: AbortSignal.timeout(10_000),
+            });
             break;
           case 'query': {
             const params = new URLSearchParams();
             if (args.file_path) params.set('file', String(args.file_path));
             if (args.category) params.set('category', String(args.category));
-            voidResp = await fetch(`${base}/void-map/query?${params}`, { signal: AbortSignal.timeout(10_000) });
+            voidResp = await fetch(`${base}/void-map/query?${params}`, {
+              signal: AbortSignal.timeout(10_000),
+            });
             break;
           }
           case 'steering': {
             const sp = new URLSearchParams();
             if (args.file_path) sp.set('file', String(args.file_path));
-            voidResp = await fetch(`${base}/void-map/steering?${sp}`, { signal: AbortSignal.timeout(10_000) });
+            voidResp = await fetch(`${base}/void-map/steering?${sp}`, {
+              signal: AbortSignal.timeout(10_000),
+            });
             break;
           }
           case 'export': {
-            const { exportRecords } = await import("./void-map-export.ts");
+            const { exportRecords } = await import('./void-map-export.ts');
             const records = exportRecords({
               filePath: args.file_path ? String(args.file_path) : undefined,
               category: args.category ? String(args.category) : undefined,
             });
             return {
-              content: [{ type: 'text', text: JSON.stringify({ records, count: records.length }, null, 2) }],
+              content: [
+                {
+                  type: 'text',
+                  text: JSON.stringify(
+                    { records, count: records.length },
+                    null,
+                    2
+                  ),
+                },
+              ],
             };
           }
           case 'compact':
-            voidResp = await fetch(`${base}/void-map/compact`, { method: 'POST', signal: AbortSignal.timeout(10_000) });
+            voidResp = await fetch(`${base}/void-map/compact`, {
+              method: 'POST',
+              signal: AbortSignal.timeout(10_000),
+            });
             break;
           default:
-            return { content: [{ type: 'text', text: `Unknown void map action: ${action}` }], isError: true };
+            return {
+              content: [
+                { type: 'text', text: `Unknown void map action: ${action}` },
+              ],
+              isError: true,
+            };
         }
-        return { content: [{ type: 'text', text: JSON.stringify(await voidResp.json(), null, 2) }] };
+        return {
+          content: [
+            {
+              type: 'text',
+              text: JSON.stringify(await voidResp.json(), null, 2),
+            },
+          ],
+        };
       }
 
       case 'zedge_engram': {
         const action = String(args.action ?? 'status');
-        const { getEngramStore } = await import("./engram-store.ts");
+        const { getEngramStore } = await import('./engram-store.ts');
         const store = getEngramStore();
         switch (action) {
           case 'status':
-            return { content: [{ type: 'text', text: JSON.stringify(store.getStatus(), null, 2) }] };
+            return {
+              content: [
+                {
+                  type: 'text',
+                  text: JSON.stringify(store.getStatus(), null, 2),
+                },
+              ],
+            };
           case 'recall': {
             const query = String(args.query ?? '');
-            if (!query) return { content: [{ type: 'text', text: 'query is required for recall' }], isError: true };
+            if (!query)
+              return {
+                content: [
+                  { type: 'text', text: 'query is required for recall' },
+                ],
+                isError: true,
+              };
             const results = await store.recall(query, 5);
-            return { content: [{ type: 'text', text: JSON.stringify(results.map((r) => ({ score: r.score, type: r.engram.type, content: r.engram.content, createdAt: r.engram.createdAt })), null, 2) }] };
+            return {
+              content: [
+                {
+                  type: 'text',
+                  text: JSON.stringify(
+                    results.map((r) => ({
+                      score: r.score,
+                      type: r.engram.type,
+                      content: r.engram.content,
+                      createdAt: r.engram.createdAt,
+                    })),
+                    null,
+                    2
+                  ),
+                },
+              ],
+            };
           }
           case 'remember': {
             const content = String(args.query ?? '');
-            const type = String(args.type ?? 'code-pattern') as 'conversation-summary' | 'code-pattern' | 'user-preference' | 'file-relationship';
-            if (!content) return { content: [{ type: 'text', text: 'query (content) is required for remember' }], isError: true };
+            const type = String(args.type ?? 'code-pattern') as
+              | 'conversation-summary'
+              | 'code-pattern'
+              | 'user-preference'
+              | 'file-relationship';
+            if (!content)
+              return {
+                content: [
+                  {
+                    type: 'text',
+                    text: 'query (content) is required for remember',
+                  },
+                ],
+                isError: true,
+              };
             const engram = await store.remember({ type, content });
-            return { content: [{ type: 'text', text: JSON.stringify({ remembered: true, id: engram.id, type: engram.type }, null, 2) }] };
+            return {
+              content: [
+                {
+                  type: 'text',
+                  text: JSON.stringify(
+                    { remembered: true, id: engram.id, type: engram.type },
+                    null,
+                    2
+                  ),
+                },
+              ],
+            };
           }
           case 'forget': {
             const id = String(args.id ?? '');
-            if (!id) return { content: [{ type: 'text', text: 'id is required for forget' }], isError: true };
+            if (!id)
+              return {
+                content: [{ type: 'text', text: 'id is required for forget' }],
+                isError: true,
+              };
             const removed = store.forget(id);
-            return { content: [{ type: 'text', text: JSON.stringify({ forgotten: removed, id }, null, 2) }] };
+            return {
+              content: [
+                {
+                  type: 'text',
+                  text: JSON.stringify({ forgotten: removed, id }, null, 2),
+                },
+              ],
+            };
           }
           default:
-            return { content: [{ type: 'text', text: `Unknown engram action: ${action}` }], isError: true };
+            return {
+              content: [
+                { type: 'text', text: `Unknown engram action: ${action}` },
+              ],
+              isError: true,
+            };
         }
       }
 
       case 'zedge_emotion': {
         const filePath = String(args.file_path ?? '');
-        if (!filePath) return { content: [{ type: 'text', text: 'file_path is required' }], isError: true };
+        if (!filePath)
+          return {
+            content: [{ type: 'text', text: 'file_path is required' }],
+            isError: true,
+          };
         const { readFileSync } = await import('fs');
         const { resolve } = await import('path');
-        const { analyzeCodeEmotion, routeByEmotion } = await import("./emotion-router.ts");
+        const { analyzeCodeEmotion, routeByEmotion } = await import(
+          './emotion-router.ts'
+        );
         try {
-          const fullPath = resolve(process.env.AEON_ROOT || process.cwd(), filePath);
+          const fullPath = resolve(
+            process.env.AEON_ROOT || process.cwd(),
+            filePath
+          );
           const content = readFileSync(fullPath, 'utf-8');
           const profile = analyzeCodeEmotion(content);
           const route = routeByEmotion(profile);
-          return { content: [{ type: 'text', text: JSON.stringify({ profile, route }, null, 2) }] };
+          return {
+            content: [
+              {
+                type: 'text',
+                text: JSON.stringify({ profile, route }, null, 2),
+              },
+            ],
+          };
         } catch (err) {
-          return { content: [{ type: 'text', text: `Failed to analyze: ${err instanceof Error ? err.message : String(err)}` }], isError: true };
+          return {
+            content: [
+              {
+                type: 'text',
+                text: `Failed to analyze: ${
+                  err instanceof Error ? err.message : String(err)
+                }`,
+              },
+            ],
+            isError: true,
+          };
         }
       }
 
@@ -1944,34 +2170,94 @@ export async function handleToolCall(
         const base = getCompanionBase();
         switch (action) {
           case 'list': {
-            const resp = await fetch(`${base}/forge/projects`, { signal: AbortSignal.timeout(10_000) });
-            const data = await resp.json() as { projects?: Array<{ name: string; kind: string }> };
-            const agents = (data.projects ?? []).filter((p: { kind: string }) => p.kind === 'agent');
-            return { content: [{ type: 'text', text: JSON.stringify({ agents, count: agents.length }, null, 2) }] };
+            const resp = await fetch(`${base}/forge/projects`, {
+              signal: AbortSignal.timeout(10_000),
+            });
+            const data = (await resp.json()) as {
+              projects?: Array<{ name: string; kind: string }>;
+            };
+            const agents = (data.projects ?? []).filter(
+              (p: { kind: string }) => p.kind === 'agent'
+            );
+            return {
+              content: [
+                {
+                  type: 'text',
+                  text: JSON.stringify(
+                    { agents, count: agents.length },
+                    null,
+                    2
+                  ),
+                },
+              ],
+            };
           }
           case 'trigger': {
             const agentName = String(args.agent_name ?? '');
-            if (!agentName) return { content: [{ type: 'text', text: 'agent_name is required' }], isError: true };
+            if (!agentName)
+              return {
+                content: [{ type: 'text', text: 'agent_name is required' }],
+                isError: true,
+              };
             const resp = await fetch(`${base}/forge/deploy`, {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ project: agentName, trigger: 'manual', payload: args.payload }),
+              body: JSON.stringify({
+                project: agentName,
+                trigger: 'manual',
+                payload: args.payload,
+              }),
               signal: AbortSignal.timeout(120_000),
             });
-            return { content: [{ type: 'text', text: JSON.stringify(await resp.json(), null, 2) }] };
+            return {
+              content: [
+                {
+                  type: 'text',
+                  text: JSON.stringify(await resp.json(), null, 2),
+                },
+              ],
+            };
           }
           case 'status': {
-            const resp = await fetch(`${base}/forge/status`, { signal: AbortSignal.timeout(10_000) });
-            return { content: [{ type: 'text', text: JSON.stringify(await resp.json(), null, 2) }] };
+            const resp = await fetch(`${base}/forge/status`, {
+              signal: AbortSignal.timeout(10_000),
+            });
+            return {
+              content: [
+                {
+                  type: 'text',
+                  text: JSON.stringify(await resp.json(), null, 2),
+                },
+              ],
+            };
           }
           case 'health': {
             const agentName = String(args.agent_name ?? '');
-            if (!agentName) return { content: [{ type: 'text', text: 'agent_name is required' }], isError: true };
-            const resp = await fetch(`${base}/forge/status?project=${encodeURIComponent(agentName)}`, { signal: AbortSignal.timeout(10_000) });
-            return { content: [{ type: 'text', text: JSON.stringify(await resp.json(), null, 2) }] };
+            if (!agentName)
+              return {
+                content: [{ type: 'text', text: 'agent_name is required' }],
+                isError: true,
+              };
+            const resp = await fetch(
+              `${base}/forge/status?project=${encodeURIComponent(agentName)}`,
+              { signal: AbortSignal.timeout(10_000) }
+            );
+            return {
+              content: [
+                {
+                  type: 'text',
+                  text: JSON.stringify(await resp.json(), null, 2),
+                },
+              ],
+            };
           }
           default:
-            return { content: [{ type: 'text', text: `Unknown agent action: ${action}` }], isError: true };
+            return {
+              content: [
+                { type: 'text', text: `Unknown agent action: ${action}` },
+              ],
+              isError: true,
+            };
         }
       }
 
@@ -1988,7 +2274,9 @@ export async function handleToolCall(
           }
 
           const roles = Array.isArray(args.roles)
-            ? args.roles.filter((value): value is string => typeof value === 'string')
+            ? args.roles.filter(
+                (value): value is string => typeof value === 'string'
+              )
             : ['reviewer', 'refactorer', 'tester'];
           const targetFiles = Array.isArray(args.target_files)
             ? args.target_files.filter(
@@ -2007,7 +2295,12 @@ export async function handleToolCall(
             signal: AbortSignal.timeout(120_000),
           });
           return {
-            content: [{ type: 'text', text: JSON.stringify(await resp.json(), null, 2) }],
+            content: [
+              {
+                type: 'text',
+                text: JSON.stringify(await resp.json(), null, 2),
+              },
+            ],
             isError: !resp.ok,
           };
         }
@@ -2016,7 +2309,9 @@ export async function handleToolCall(
           signal: AbortSignal.timeout(10_000),
         });
         return {
-          content: [{ type: 'text', text: JSON.stringify(await resp.json(), null, 2) }],
+          content: [
+            { type: 'text', text: JSON.stringify(await resp.json(), null, 2) },
+          ],
           isError: !resp.ok,
         };
       }
@@ -2029,56 +2324,135 @@ export async function handleToolCall(
             const agentName = String(args.agent_name ?? '');
             const task = String(args.task ?? '');
             if (!agentName || !task) {
-              return { content: [{ type: 'text', text: 'agent_name and task are required for start' }], isError: true };
+              return {
+                content: [
+                  {
+                    type: 'text',
+                    text: 'agent_name and task are required for start',
+                  },
+                ],
+                isError: true,
+              };
             }
             const targetFiles = Array.isArray(args.target_files)
-              ? args.target_files.filter((v): v is string => typeof v === 'string')
+              ? args.target_files.filter(
+                  (v): v is string => typeof v === 'string'
+                )
               : undefined;
             const resp = await fetch(`${base}/cloud-agent/start`, {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ agent_name: agentName, task, target_files: targetFiles }),
+              body: JSON.stringify({
+                agent_name: agentName,
+                task,
+                target_files: targetFiles,
+              }),
               signal: AbortSignal.timeout(120_000),
             });
-            return { content: [{ type: 'text', text: JSON.stringify(await resp.json(), null, 2) }] };
+            return {
+              content: [
+                {
+                  type: 'text',
+                  text: JSON.stringify(await resp.json(), null, 2),
+                },
+              ],
+            };
           }
           case 'sessions': {
-            const resp = await fetch(`${base}/cloud-agent/sessions`, { signal: AbortSignal.timeout(10_000) });
-            return { content: [{ type: 'text', text: JSON.stringify(await resp.json(), null, 2) }] };
+            const resp = await fetch(`${base}/cloud-agent/sessions`, {
+              signal: AbortSignal.timeout(10_000),
+            });
+            return {
+              content: [
+                {
+                  type: 'text',
+                  text: JSON.stringify(await resp.json(), null, 2),
+                },
+              ],
+            };
           }
           case 'status': {
             const sessionId = String(args.session_id ?? '');
-            if (!sessionId) return { content: [{ type: 'text', text: 'session_id required' }], isError: true };
-            const resp = await fetch(`${base}/cloud-agent/session/${sessionId}`, { signal: AbortSignal.timeout(10_000) });
-            return { content: [{ type: 'text', text: JSON.stringify(await resp.json(), null, 2) }] };
+            if (!sessionId)
+              return {
+                content: [{ type: 'text', text: 'session_id required' }],
+                isError: true,
+              };
+            const resp = await fetch(
+              `${base}/cloud-agent/session/${sessionId}`,
+              { signal: AbortSignal.timeout(10_000) }
+            );
+            return {
+              content: [
+                {
+                  type: 'text',
+                  text: JSON.stringify(await resp.json(), null, 2),
+                },
+              ],
+            };
           }
           case 'cancel': {
             const sid = String(args.session_id ?? '');
-            if (!sid) return { content: [{ type: 'text', text: 'session_id required' }], isError: true };
-            const resp = await fetch(`${base}/cloud-agent/cancel/${sid}`, { method: 'POST', signal: AbortSignal.timeout(10_000) });
-            return { content: [{ type: 'text', text: JSON.stringify(await resp.json(), null, 2) }] };
+            if (!sid)
+              return {
+                content: [{ type: 'text', text: 'session_id required' }],
+                isError: true,
+              };
+            const resp = await fetch(`${base}/cloud-agent/cancel/${sid}`, {
+              method: 'POST',
+              signal: AbortSignal.timeout(10_000),
+            });
+            return {
+              content: [
+                {
+                  type: 'text',
+                  text: JSON.stringify(await resp.json(), null, 2),
+                },
+              ],
+            };
           }
           default:
-            return { content: [{ type: 'text', text: `Unknown cloud agent action: ${action}` }], isError: true };
+            return {
+              content: [
+                { type: 'text', text: `Unknown cloud agent action: ${action}` },
+              ],
+              isError: true,
+            };
         }
       }
 
       case 'zedge_topology_run': {
         const filePath = String(args.file_path ?? '');
-        if (!filePath) return { content: [{ type: 'text', text: 'file_path is required' }], isError: true };
+        if (!filePath)
+          return {
+            content: [{ type: 'text', text: 'file_path is required' }],
+            isError: true,
+          };
         const resp = await fetch(`${getCompanionBase()}/gnosis/run`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ file_path: filePath, input: args.input, strategy: args.strategy }),
+          body: JSON.stringify({
+            file_path: filePath,
+            input: args.input,
+            strategy: args.strategy,
+          }),
           signal: AbortSignal.timeout(60_000),
         });
-        const result = await resp.json() as Record<string, unknown>;
-        const metrics = result.metrics as Record<string, unknown> ?? {};
+        const result = (await resp.json()) as Record<string, unknown>;
+        const metrics = (result.metrics as Record<string, unknown>) ?? {};
         return {
-          content: [{
-            type: 'text',
-            text: `## Topology: ${filePath} [${result.success ? 'OK' : 'FAILED'}]\n\nbeta1: ${metrics.beta1 ?? '?'} | nodes: ${metrics.nodeCount ?? '?'} | edges: ${metrics.edgeCount ?? '?'}\n\n${result.logs ?? ''}\n\n${result.error ? `Error: ${result.error}` : ''}`,
-          }],
+          content: [
+            {
+              type: 'text',
+              text: `## Topology: ${filePath} [${
+                result.success ? 'OK' : 'FAILED'
+              }]\n\nbeta1: ${metrics.beta1 ?? '?'} | nodes: ${
+                metrics.nodeCount ?? '?'
+              } | edges: ${metrics.edgeCount ?? '?'}\n\n${
+                result.logs ?? ''
+              }\n\n${result.error ? `Error: ${result.error}` : ''}`,
+            },
+          ],
         };
       }
 
@@ -2140,7 +2514,10 @@ export async function handleToolCall(
                 signal: AbortSignal.timeout(10_000),
               });
             default:
-              return new Response(JSON.stringify({ error: `Unknown action: ${action}` }), { status: 400 });
+              return new Response(
+                JSON.stringify({ error: `Unknown action: ${action}` }),
+                { status: 400 }
+              );
           }
         })();
         const data = await resp.json();
@@ -2176,7 +2553,8 @@ async function handleResourcesList(): Promise<Record<string, unknown>> {
       {
         uri: 'zedge://observatory',
         name: 'Inference Quality Observatory',
-        description: 'Real-time dashboard of the self-improving loop: void map, engrams, emotions, agents, breeding',
+        description:
+          'Real-time dashboard of the self-improving loop: void map, engrams, emotions, agents, breeding',
         mimeType: 'application/json',
       },
       {
@@ -2233,14 +2611,40 @@ export async function dispatch(
       case 'resources/read': {
         const uri = (params as Record<string, unknown>)?.uri as string;
         if (uri === 'zedge://observatory') {
-          const { getObservatorySnapshot } = await import("./observatory.ts");
-          result = { contents: [{ uri, mimeType: 'application/json', text: JSON.stringify(await getObservatorySnapshot(), null, 2) }] };
+          const { getObservatorySnapshot } = await import('./observatory.ts');
+          result = {
+            contents: [
+              {
+                uri,
+                mimeType: 'application/json',
+                text: JSON.stringify(await getObservatorySnapshot(), null, 2),
+              },
+            ],
+          };
         } else if (uri === 'zedge://void-sync') {
-          const { federatedVoidSync } = await import("./federated-void-sync.ts");
-          result = { contents: [{ uri, mimeType: 'application/json', text: JSON.stringify(federatedVoidSync.getStatus(), null, 2) }] };
+          const { federatedVoidSync } = await import(
+            './federated-void-sync.ts'
+          );
+          result = {
+            contents: [
+              {
+                uri,
+                mimeType: 'application/json',
+                text: JSON.stringify(federatedVoidSync.getStatus(), null, 2),
+              },
+            ],
+          };
         } else if (uri === 'zedge://breeding') {
-          const { agentBreeding } = await import("./agent-breeding.ts");
-          result = { contents: [{ uri, mimeType: 'application/json', text: JSON.stringify(agentBreeding.getStatus(), null, 2) }] };
+          const { agentBreeding } = await import('./agent-breeding.ts');
+          result = {
+            contents: [
+              {
+                uri,
+                mimeType: 'application/json',
+                text: JSON.stringify(agentBreeding.getStatus(), null, 2),
+              },
+            ],
+          };
         } else {
           result = { contents: [] };
         }

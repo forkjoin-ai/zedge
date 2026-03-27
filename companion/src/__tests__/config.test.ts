@@ -1,4 +1,4 @@
-import { describe, test, expect } from 'bun:test';
+import { describe, test, expect } from '@a0n/gnosis/test';
 import { spawnSync } from 'child_process';
 import { mkdtempSync, mkdirSync } from 'fs';
 import { tmpdir } from 'os';
@@ -52,10 +52,14 @@ describe('Zedge Config', () => {
   test('default preferred model is wasm-local', async () => {
     const tempHome = mkdtempSync(join(tmpdir(), 'zedge-default-model-test-'));
     mkdirSync(join(tempHome, '.edgework'), { recursive: true });
-    const configModulePath = fileURLToPath(new URL('../config.ts', import.meta.url));
+    const configModulePath = fileURLToPath(
+      new URL('../config.ts', import.meta.url)
+    );
     const script = `
       (async () => {
-        const { getZedgeConfig } = await import(${JSON.stringify(configModulePath)});
+        const { getZedgeConfig } = await import(${JSON.stringify(
+          configModulePath
+        )});
         process.stdout.write(JSON.stringify(getZedgeConfig()));
       })().catch((error) => {
         console.error(error);
@@ -73,17 +77,25 @@ describe('Zedge Config', () => {
     expect(result.status).toBe(0);
     expect(result.stderr).toBe('');
 
-    const config = JSON.parse(result.stdout) as { preferredModel: string };
+    const config = JSON.parse(result.stdout) as {
+      preferredModel: string;
+      cloudRunDirect: boolean;
+    };
     expect(config.preferredModel).toBe('wasm-local');
+    expect(config.cloudRunDirect).toBe(false);
   });
 
   test('env overrides can force companion port and listener mode', async () => {
     const tempHome = mkdtempSync(join(tmpdir(), 'zedge-config-test-'));
     mkdirSync(join(tempHome, '.edgework'), { recursive: true });
-    const configModulePath = fileURLToPath(new URL('../config.ts', import.meta.url));
+    const configModulePath = fileURLToPath(
+      new URL('../config.ts', import.meta.url)
+    );
     const script = `
       (async () => {
-        const { getCompanionPort, getZedgeConfig } = await import(${JSON.stringify(configModulePath)});
+        const { getCompanionPort, getZedgeConfig } = await import(${JSON.stringify(
+          configModulePath
+        )});
         process.stdout.write(JSON.stringify({
           port: getCompanionPort(),
           config: getZedgeConfig(),
@@ -114,13 +126,15 @@ describe('Zedge Config', () => {
           mode: string;
           internalPort?: number;
           flowPort?: number;
+          discoveryPort?: number;
         };
       };
     };
     expect(payload.port).toBe(8123);
     expect(payload.config.port).toBe(8123);
     expect(payload.config.listener.mode).toBe('bun');
-    expect(payload.config.listener.internalPort).toBeGreaterThan(0);
-    expect(payload.config.listener.flowPort).toBeGreaterThan(0);
+    expect(payload.config.listener.internalPort).toBe(18123);
+    expect(payload.config.listener.flowPort).toBe(9123);
+    expect(payload.config.listener.discoveryPort).toBe(8124);
   });
 });

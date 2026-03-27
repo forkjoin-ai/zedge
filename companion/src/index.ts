@@ -41,14 +41,14 @@ export async function main(): Promise<void> {
 
 async function runCompanionBootstrap(): Promise<void> {
   try {
-    const serverMod = await import("./server.ts");
+    const serverMod = await import('./server.ts');
     await serverMod.startServer();
 
     console.log('[zedge] Companion sidecar v2.0 ready');
 
     void Promise.all([
-      import("./inference-bridge.ts"),
-      import("./zed-settings.ts"),
+      import('./inference-bridge.ts'),
+      import('./zed-settings.ts'),
     ])
       .then(async ([{ getModels }, { syncZedSettingsModelCatalog }]) => {
         const models = await getModels();
@@ -57,7 +57,9 @@ async function runCompanionBootstrap(): Promise<void> {
         );
         if (syncResult.updatedPaths.length > 0) {
           console.log(
-            `[zedge] Synced ${models.length} models into Zed settings: ${syncResult.updatedPaths.join(', ')}`
+            `[zedge] Synced ${
+              models.length
+            } models into Zed settings: ${syncResult.updatedPaths.join(', ')}`
           );
         }
       })
@@ -67,31 +69,33 @@ async function runCompanionBootstrap(): Promise<void> {
         );
       });
 
-    const { whoami } = await import("./auth.ts");
+    const { whoami } = await import('./auth.ts');
     const { getZedgeConfig, getApiBaseUrl, getAuthHeaders } = await import(
-      "./config.ts"
+      './config.ts'
     );
     const config = getZedgeConfig();
 
     const authStatus = whoami();
     if (authStatus.authenticated) {
       console.log(
-        `[zedge] Authenticated via ${authStatus.method}${authStatus.email ? ` (${authStatus.email})` : ''}`
+        `[zedge] Authenticated via ${authStatus.method}${
+          authStatus.email ? ` (${authStatus.email})` : ''
+        }`
       );
       void verifyKeyTier(getApiBaseUrl, getAuthHeaders);
     } else {
       console.log('[zedge] Not authenticated.');
     }
 
-    const { startProbing } = await import("./latency-probe.ts");
+    const { startProbing } = await import('./latency-probe.ts');
     startProbing();
 
-    const { startMesh, getMeshStatus } = await import("./p2p-mesh.ts");
+    const { startMesh, getMeshStatus } = await import('./p2p-mesh.ts');
     const mesh = startMesh();
     console.log(`[zedge] Mesh started. Node ID: ${mesh.nodeId}`);
 
     if (config.computePool.enabled) {
-      const { joinPool, getPoolStatus } = await import("./compute-node.ts");
+      const { joinPool, getPoolStatus } = await import('./compute-node.ts');
       await joinPool();
       console.log(`[zedge] Pool: ${getPoolStatus().connectedNodes} nodes`);
     }
@@ -102,15 +106,15 @@ async function runCompanionBootstrap(): Promise<void> {
       { KernelBridge },
       { CapacitorBridge },
     ] = await Promise.all([
-      import("./vfs-bridge.ts"),
-      import("./collab-bridge.ts"),
-      import("./kernel-bridge.ts"),
-      import("./capacitor-bridge.ts"),
+      import('./vfs-bridge.ts'),
+      import('./collab-bridge.ts'),
+      import('./kernel-bridge.ts'),
+      import('./capacitor-bridge.ts'),
     ]);
 
     const workspacePath = process.cwd();
     try {
-      const { ForgeBridge } = await import("./forge-bridge.ts");
+      const { ForgeBridge } = await import('./forge-bridge.ts');
       const forge = new ForgeBridge(workspacePath);
       const projects = await forge.discoverProjects();
       serverMod.setForgeBridge(forge);
@@ -150,7 +154,9 @@ async function runCompanionBootstrap(): Promise<void> {
     serverMod.setCapacitorBridge(new CapacitorBridge());
 
     const crdtCfg = {
-      workspaceId: Buffer.from(workspacePath).toString('base64url').slice(0, 16),
+      workspaceId: Buffer.from(workspacePath)
+        .toString('base64url')
+        .slice(0, 16),
       peerId: meshNodeId,
       displayName,
       relayUrl: config.dashRelayUrl,
@@ -158,7 +164,7 @@ async function runCompanionBootstrap(): Promise<void> {
       apiKey: config.dashRelayApiKey,
     };
     try {
-      const { CrdtBridge } = await import("./crdt-bridge.ts");
+      const { CrdtBridge } = await import('./crdt-bridge.ts');
       const crdt = new CrdtBridge(crdtCfg);
       serverMod.setCrdtBridge(crdt);
       await crdt.connect();
@@ -167,7 +173,7 @@ async function runCompanionBootstrap(): Promise<void> {
     }
 
     try {
-      const { UcanBridge } = await import("./ucan-bridge.ts");
+      const { UcanBridge } = await import('./ucan-bridge.ts');
       const ucan = new UcanBridge({
         secret: config.dashRelayApiKey ?? `zedge-local-${meshNodeId}`,
         workspaceId: crdtCfg.workspaceId,
@@ -192,14 +198,14 @@ async function runCompanionBootstrap(): Promise<void> {
 
     if (process.env.ZEDGE_AUTO_WASM_WARMUP === '1') {
       setTimeout(() => {
-        import("./inference-bridge.ts")
+        import('./inference-bridge.ts')
           .then(({ startLocalWasmWarmup }) => void startLocalWasmWarmup())
           .catch(() => {});
       }, 1_000);
     }
 
     setTimeout(() => {
-      import("./wire-phase3.ts")
+      import('./wire-phase3.ts')
         .then(({ wirePhase3 }) => wirePhase3())
         .then((status) => {
           console.log(

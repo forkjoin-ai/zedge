@@ -89,13 +89,21 @@ function cosineSimilarity(a: Float32Array, b: Float32Array): number {
 }
 
 function encodeEmbedding(embedding: Float32Array): string {
-  const buffer = Buffer.from(embedding.buffer, embedding.byteOffset, embedding.byteLength);
+  const buffer = Buffer.from(
+    embedding.buffer,
+    embedding.byteOffset,
+    embedding.byteLength
+  );
   return buffer.toString('base64');
 }
 
 function decodeEmbedding(base64: string): Float32Array {
   const buffer = Buffer.from(base64, 'base64');
-  return new Float32Array(buffer.buffer, buffer.byteOffset, buffer.byteLength / 4);
+  return new Float32Array(
+    buffer.buffer,
+    buffer.byteOffset,
+    buffer.byteLength / 4
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -108,7 +116,8 @@ export class EngramStore {
   private engrams: Engram[] = [];
   private loaded = false;
   private nextId = 0;
-  private embedFn: ((text: string) => Promise<Float32Array | null>) | null = null;
+  private embedFn: ((text: string) => Promise<Float32Array | null>) | null =
+    null;
 
   constructor(workspacePath: string) {
     this.workspaceHash = hashWorkspace(workspacePath);
@@ -156,7 +165,10 @@ export class EngramStore {
     // Trim per type
     const typeEngrams = this.engrams.filter((e) => e.type === opts.type);
     if (typeEngrams.length > MAX_ENGRAMS_PER_TYPE) {
-      const toRemove = typeEngrams.slice(0, typeEngrams.length - MAX_ENGRAMS_PER_TYPE);
+      const toRemove = typeEngrams.slice(
+        0,
+        typeEngrams.length - MAX_ENGRAMS_PER_TYPE
+      );
       const removeIds = new Set(toRemove.map((e) => e.id));
       this.engrams = this.engrams.filter((e) => !removeIds.has(e.id));
     }
@@ -324,7 +336,8 @@ export class EngramStore {
     try {
       mkdirSync(this.storePath, { recursive: true });
       const filePath = join(this.storePath, 'engrams.jsonl');
-      const content = this.engrams.map((e) => JSON.stringify(e)).join('\n') + '\n';
+      const content =
+        this.engrams.map((e) => JSON.stringify(e)).join('\n') + '\n';
       writeFileSync(filePath, content);
     } catch {
       // Best effort

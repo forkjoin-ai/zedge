@@ -1,4 +1,4 @@
-import { describe, test, expect } from 'bun:test';
+import { describe, test, expect } from '@a0n/gnosis/test';
 
 /**
  * Tests that verify codebase context is injected into chat completions

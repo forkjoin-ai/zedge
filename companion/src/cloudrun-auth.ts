@@ -18,7 +18,10 @@ let _resolvedSAKey: string | null | undefined;
 
 function resolveSAKey(): string | null {
   if (_resolvedSAKey !== undefined) {
-    if (!_resolvedSAKey) console.warn('[cloudrun-auth] SA key previously resolved as null (cached)');
+    if (!_resolvedSAKey)
+      console.warn(
+        '[cloudrun-auth] SA key previously resolved as null (cached)'
+      );
     return _resolvedSAKey;
   }
   console.log('[cloudrun-auth] First SA key resolution attempt...');

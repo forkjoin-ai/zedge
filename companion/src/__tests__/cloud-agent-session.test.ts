@@ -1,4 +1,4 @@
-import { describe, test, expect } from 'bun:test';
+import { describe, test, expect } from '@a0n/gnosis/test';
 
 describe('Cloud Agent Sessions', () => {
   test('startCloudAgent creates session with valid shape', async () => {
@@ -13,7 +13,9 @@ describe('Cloud Agent Sessions', () => {
     expect(session.id).toContain('cloud-agent-');
     expect(session.agentName).toBe('test-agent');
     expect(session.task).toBe('Review the codebase for security issues');
-    expect(['starting', 'running', 'completed', 'failed']).toContain(session.status);
+    expect(['starting', 'running', 'completed', 'failed']).toContain(
+      session.status
+    );
     expect(session.startedAt).toBeGreaterThan(0);
   });
 

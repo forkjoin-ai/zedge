@@ -6,9 +6,9 @@
  * Routes to the fastest healthy coordinator per model.
  */
 
-import { getApiBaseUrl, getAuthHeaders } from "./config.ts";
-import { CLOUD_RUN_COORDINATORS } from "./coordinator-urls.ts";
-import { buildCloudRunHealthUrls } from "./cloudrun-auth.ts";
+import { getApiBaseUrl, getAuthHeaders } from './config.ts';
+import { CLOUD_RUN_COORDINATORS } from './coordinator-urls.ts';
+import { buildCloudRunHealthUrls } from './cloudrun-auth.ts';
 
 // --- Types ---
 
@@ -247,8 +247,7 @@ async function probeEndpoint(
   try {
     const resp = await fetch(url, {
       method: 'GET',
-      headers:
-        tier === 'edge' || tier === 'cloudrun' ? getAuthHeaders() : {},
+      headers: tier === 'edge' || tier === 'cloudrun' ? getAuthHeaders() : {},
       signal: probeAbortController
         ? AbortSignal.any([
             AbortSignal.timeout(PROBE_TIMEOUT_MS),

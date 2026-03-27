@@ -1,4 +1,4 @@
-import { describe, test, expect } from 'bun:test';
+import { describe, test, expect } from '@a0n/gnosis/test';
 import type { CrdtBridge } from '../crdt-bridge';
 import type { VoidMapEntry } from '../void-map-store';
 
@@ -15,12 +15,38 @@ describe('Phase 3 Wiring', () => {
 
   // Task 2: Emotion router Capacitor integration
   test('analyzeCodeEmotionFromCapacitor aggregates tags', async () => {
-    const { analyzeCodeEmotionFromCapacitor } = await import('../emotion-router');
+    const { analyzeCodeEmotionFromCapacitor } = await import(
+      '../emotion-router'
+    );
 
     const tags = [
-      { blockId: '1', emotion: 'anxiety', valence: -0.5, arousal: 0.8, dominance: 0.3, intensity: 0.7, taggedAt: Date.now() },
-      { blockId: '2', emotion: 'anxiety', valence: -0.6, arousal: 0.9, dominance: 0.2, intensity: 0.8, taggedAt: Date.now() },
-      { blockId: '3', emotion: 'confidence', valence: 0.7, arousal: 0.3, dominance: 0.8, intensity: 0.6, taggedAt: Date.now() },
+      {
+        blockId: '1',
+        emotion: 'anxiety',
+        valence: -0.5,
+        arousal: 0.8,
+        dominance: 0.3,
+        intensity: 0.7,
+        taggedAt: Date.now(),
+      },
+      {
+        blockId: '2',
+        emotion: 'anxiety',
+        valence: -0.6,
+        arousal: 0.9,
+        dominance: 0.2,
+        intensity: 0.8,
+        taggedAt: Date.now(),
+      },
+      {
+        blockId: '3',
+        emotion: 'confidence',
+        valence: 0.7,
+        arousal: 0.3,
+        dominance: 0.8,
+        intensity: 0.6,
+        taggedAt: Date.now(),
+      },
     ];
 
     const profile = analyzeCodeEmotionFromCapacitor(tags);
@@ -32,17 +58,29 @@ describe('Phase 3 Wiring', () => {
   });
 
   test('analyzeCodeEmotionFromCapacitor returns neutral for empty tags', async () => {
-    const { analyzeCodeEmotionFromCapacitor } = await import('../emotion-router');
+    const { analyzeCodeEmotionFromCapacitor } = await import(
+      '../emotion-router'
+    );
     const profile = analyzeCodeEmotionFromCapacitor([]);
     expect(profile.dominantEmotion).toBe('neutral');
     expect(profile.blockCount).toBe(0);
   });
 
   test('analyzeCodeEmotionWithFallback prefers Capacitor when available', async () => {
-    const { analyzeCodeEmotionWithFallback } = await import('../emotion-router');
+    const { analyzeCodeEmotionWithFallback } = await import(
+      '../emotion-router'
+    );
 
     const tags = [
-      { blockId: '1', emotion: 'joy', valence: 0.9, arousal: 0.5, dominance: 0.7, intensity: 0.8, taggedAt: Date.now() },
+      {
+        blockId: '1',
+        emotion: 'joy',
+        valence: 0.9,
+        arousal: 0.5,
+        dominance: 0.7,
+        intensity: 0.8,
+        taggedAt: Date.now(),
+      },
     ];
 
     // With tags -- should use Capacitor

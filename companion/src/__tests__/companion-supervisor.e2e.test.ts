@@ -1,10 +1,4 @@
-import {
-  afterAll,
-  beforeAll,
-  describe,
-  expect,
-  test,
-} from 'bun:test';
+import { afterAll, beforeAll, describe, expect, test } from '@a0n/gnosis/test';
 import { mkdtempSync, mkdirSync } from 'fs';
 import { spawn, type ChildProcess } from 'child_process';
 import { get } from 'http';
@@ -34,7 +28,9 @@ function asRecord(value: unknown): Record<string, unknown> | null {
     : null;
 }
 
-function isCompanionHealthPayload(value: unknown): value is CompanionHealthPayload {
+function isCompanionHealthPayload(
+  value: unknown
+): value is CompanionHealthPayload {
   const root = asRecord(value);
   const runtime = asRecord(root?.['runtime']);
   const inference = asRecord(root?.['inference']);
@@ -102,9 +98,14 @@ async function waitForCompanionHealth(
   const deadline = Date.now() + timeoutMs;
 
   while (Date.now() < deadline) {
-    if (supervisorProcess?.exitCode !== null && supervisorProcess?.exitCode !== undefined) {
+    if (
+      supervisorProcess?.exitCode !== null &&
+      supervisorProcess?.exitCode !== undefined
+    ) {
       throw new Error(
-        `Supervisor exited early with code ${supervisorProcess.exitCode}\n${getLogTail()}`
+        `Supervisor exited early with code ${
+          supervisorProcess.exitCode
+        }\n${getLogTail()}`
       );
     }
 
@@ -116,9 +117,14 @@ async function waitForCompanionHealth(
             timeout: 1_000,
           },
           (response) => {
-            if ((response.statusCode ?? 500) < 200 || (response.statusCode ?? 500) >= 300) {
+            if (
+              (response.statusCode ?? 500) < 200 ||
+              (response.statusCode ?? 500) >= 300
+            ) {
               response.resume();
-              reject(new Error(`Unexpected status ${response.statusCode ?? 500}`));
+              reject(
+                new Error(`Unexpected status ${response.statusCode ?? 500}`)
+              );
               return;
             }
 
@@ -212,7 +218,9 @@ beforeAll(async () => {
   companionPort = await reservePort();
 
   const tempHome = mkdtempSync(join(tmpdir(), 'zedge-supervisor-home-'));
-  const tempWorkspace = mkdtempSync(join(tmpdir(), 'zedge-supervisor-workspace-'));
+  const tempWorkspace = mkdtempSync(
+    join(tmpdir(), 'zedge-supervisor-workspace-')
+  );
   mkdirSync(join(tempHome, '.edgework'), { recursive: true });
 
   const runtimeCommand = resolveTypeScriptEntrypointCommand(SUPERVISOR_ENTRY);
@@ -244,7 +252,7 @@ describe('companion supervisor end to end', () => {
     const firstHealth = await waitForCompanionHealth(companionPort);
     const firstPid = firstHealth.inference.localRuntime.pid;
 
-    expect(firstHealth.preferredModel).toBe('cog-360m');
+    expect(firstHealth.preferredModel).toBe('wasm-local');
     expect(firstHealth.runtime.hostRuntime).toBe('gnode');
     expect(firstPid).toBeGreaterThan(0);
 

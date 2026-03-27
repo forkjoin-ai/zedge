@@ -1,4 +1,4 @@
-import { describe, test, expect, afterEach } from 'bun:test';
+import { describe, test, expect, afterEach } from '@a0n/gnosis/test';
 import { createSession, getSession, deleteSession } from '../acp-agent';
 import type { AgentCapabilities, AgentSession } from '../acp-agent';
 import { mkdtempSync, writeFileSync, mkdirSync, rmSync } from 'fs';

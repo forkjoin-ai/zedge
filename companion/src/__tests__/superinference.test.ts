@@ -1,4 +1,4 @@
-import { describe, test, expect, beforeEach, afterEach, mock } from 'bun:test';
+import { describe, test, expect, beforeEach, afterEach, mock } from '@a0n/gnosis/test';
 import type { SuperinferenceResult, CollapseStrategy } from '../superinference';
 
 // Mock fetch to prevent real HTTP requests to Cloud Run coordinators

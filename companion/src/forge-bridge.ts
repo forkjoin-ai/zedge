@@ -9,7 +9,7 @@
 import { join } from 'node:path';
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { spawn as nodeSpawn } from 'node:child_process';
-import { resolveTypeScriptEntrypointCommand } from "./runtime-command.ts";
+import { resolveTypeScriptEntrypointCommand } from './runtime-command.ts';
 
 /** Run a shell command and collect output */
 function execShellForge(
@@ -25,7 +25,9 @@ function execShellForge(
     const chunks: Buffer[] = [];
     proc.stdout?.on('data', (c: Buffer) => chunks.push(c));
     proc.stderr?.on('data', (c: Buffer) => chunks.push(c));
-    proc.on('close', (code) => resolve({ output: Buffer.concat(chunks).toString(), exitCode: code ?? 1 }));
+    proc.on('close', (code) =>
+      resolve({ output: Buffer.concat(chunks).toString(), exitCode: code ?? 1 })
+    );
     proc.on('error', (err) => resolve({ output: err.message, exitCode: 1 }));
   });
 }
@@ -35,14 +37,14 @@ import type {
   ForgoProcessState,
   ForgoProjectConfig,
   ForgoDeployEvent,
-} from "../../../aeon-forge/src/deploy/types.ts";
-import { discoverProjects } from "../../../aeon-forge/src/deploy/discovery.ts";
-import { createLogger } from "../../../aeon-forge/src/deploy/logger.ts";
+} from '../../../aeon-forge/src/deploy/types.ts';
+import { discoverProjects } from '../../../aeon-forge/src/deploy/discovery.ts';
+import { createLogger } from '../../../aeon-forge/src/deploy/logger.ts';
 import type {
   ForgeEventBus,
   ExtendedForgoEvent,
   EventHandler,
-} from "../../../aeon-forge/src/deploy/event-bus.ts";
+} from '../../../aeon-forge/src/deploy/event-bus.ts';
 
 const log = createLogger('zedge-forge');
 
@@ -112,10 +114,7 @@ export class ForgeBridge {
   /**
    * Subscribe to specific event types from the forge event bus.
    */
-  on(
-    eventType: ExtendedForgoEvent['type'],
-    handler: EventHandler
-  ): void {
+  on(eventType: ExtendedForgoEvent['type'], handler: EventHandler): void {
     const handlers = this.eventHandlers.get(eventType) ?? [];
     handlers.push(handler);
     this.eventHandlers.set(eventType, handlers);

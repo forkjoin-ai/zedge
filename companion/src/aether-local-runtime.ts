@@ -1,4 +1,4 @@
-import { formatChatPrompt } from "../../../aether/src/config/chat-templates.ts";
+import { formatChatPrompt } from '../../../aether/src/config/chat-templates.ts';
 
 export interface LocalChatMessage {
   role: 'system' | 'user' | 'assistant';
@@ -33,10 +33,6 @@ interface TransformersModule {
 
 const LOCAL_CHAT_MODEL_CASCADE = [
   {
-    modelId: 'onnx-community/SmolLM2-360M-Instruct',
-    templateModel: 'smollm2-360m',
-  },
-  {
     modelId: 'Xenova/TinyLlama-1.1B-Chat-v1.0',
     templateModel: 'tinyllama-1.1b',
   },
@@ -48,9 +44,57 @@ const LOCAL_EMBED_DIMS = 384;
 
 function scrubGeneratedText(text: string): string {
   return text
+    .replace(/^<s>\s*/, '')
+    .replace(/^<\|assistant\|>\s*/, '')
+    .replace(/<\/s>.*/s, '')
+    .replace(/<\|(user|system|assistant)\|>.*/s, '')
     .replace(/<\|im_end\|>.*/s, '')
     .replace(/<\|im_start\|>.*/s, '')
     .trim();
+}
+
+function formatTinyLlamaInstPrompt(messages: LocalChatMessage[]): string {
+  let prompt = '';
+  let pendingSystem = '';
+  let sawUser = false;
+
+  for (const message of messages) {
+    if (message.role === 'system') {
+      pendingSystem = pendingSystem
+        ? `${pendingSystem}\n\n${message.content}`
+        : message.content;
+      continue;
+    }
+
+    if (message.role === 'user') {
+      const content = pendingSystem
+        ? `${pendingSystem}\n\n${message.content}`
+        : message.content;
+      prompt += `[INST] ${content} [/INST]`;
+      pendingSystem = '';
+      sawUser = true;
+      continue;
+    }
+
+    prompt += ` ${message.content} `;
+  }
+
+  if (!sawUser && pendingSystem) {
+    return `[INST] ${pendingSystem} [/INST]`;
+  }
+
+  return prompt.trim();
+}
+
+export function formatLocalChatPrompt(
+  messages: LocalChatMessage[],
+  modelName: string
+): string {
+  if (modelName.startsWith('tinyllama')) {
+    return formatTinyLlamaInstPrompt(messages);
+  }
+
+  return formatChatPrompt(messages, modelName);
 }
 
 function extractGeneratedText(result: unknown): string {
@@ -62,10 +106,7 @@ function extractGeneratedText(result: unknown): string {
     return '';
   }
 
-  if (
-    'generated_text' in result &&
-    typeof result.generated_text === 'string'
-  ) {
+  if ('generated_text' in result && typeof result.generated_text === 'string') {
     return scrubGeneratedText(result.generated_text);
   }
 
@@ -106,9 +147,7 @@ function extractEmbedding(result: unknown): number[] | null {
   }
 
   if ('data' in result && ArrayBuffer.isView(result.data)) {
-    return l2Normalize(
-      Array.from(result.data as unknown as ArrayLike<number>)
-    );
+    return l2Normalize(Array.from(result.data as unknown as ArrayLike<number>));
   }
 
   if ('data' in result && Array.isArray(result.data)) {
@@ -232,7 +271,7 @@ class AetherLocalRuntime {
       throw new Error('Local model failed to load');
     }
 
-    const prompt = formatChatPrompt(messages, this.chatTemplateModel);
+    const prompt = formatLocalChatPrompt(messages, this.chatTemplateModel);
     const result = await this.chatPipe(prompt, {
       max_new_tokens: Math.min(maxTokens, 512),
       temperature: Math.max(0.1, temperature),

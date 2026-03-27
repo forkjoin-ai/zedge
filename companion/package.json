@@ -22,7 +22,6 @@
     "onnxruntime-node": "^1.23.2"
   },
   "devDependencies": {
-    "@types/bun": "^1.3.6",
     "typescript": "^5.9.0"
   },
   "author": "AFFECTIVELY <support@affectively.ai>",

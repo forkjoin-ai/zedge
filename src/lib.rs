@@ -323,7 +323,7 @@ impl zed::Extension for ZedgeExtension {
                     "properties": {
                         "port": { "type": "number", "default": 7331 },
                         "preferredModel": { "type": "string", "default": "wasm-local" },
-                        "cloudRunDirect": { "type": "boolean", "default": true },
+                        "cloudRunDirect": { "type": "boolean", "default": false },
                         "babelfish": {
                             "type": "object",
                             "properties": {
@@ -338,7 +338,7 @@ impl zed::Extension for ZedgeExtension {
                 default_settings: serde_json::json!({
                     "port": 7331,
                     "preferredModel": "wasm-local",
-                    "cloudRunDirect": true,
+                    "cloudRunDirect": false,
                     "babelfish": {
                         "enabled": true,
                         "ambientSuggestions": true,

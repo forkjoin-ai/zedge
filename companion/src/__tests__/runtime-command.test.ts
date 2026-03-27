@@ -1,4 +1,4 @@
-import { describe, expect, test } from 'bun:test';
+import { describe, expect, test } from '@a0n/gnosis/test';
 import { dirname, resolve } from 'path';
 import { fileURLToPath } from 'url';
 import {

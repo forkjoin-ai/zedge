@@ -1,17 +1,17 @@
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
-import { getZedgeConfig } from "./config.ts";
+import { getZedgeConfig } from './config.ts';
 import {
   analyzePolyglotSourceString,
   type PolyglotAnalysisResult,
-} from "./babelfish-gnosis.ts";
-import { extractFunctions, translate } from "./babelfish-gnosis.ts";
+} from './babelfish-gnosis.ts';
+import { extractFunctions, translate } from './babelfish-gnosis.ts';
 import {
   getPolyglotCapabilityMatrix,
   type PolyglotCapabilityMatrix,
   type PolyglotCapabilityStatus,
-} from "./babelfish-gnosis.ts";
+} from './babelfish-gnosis.ts';
 
 export type BabelfishCodeMode =
   | 'translate-code'
@@ -545,8 +545,8 @@ export async function previewBabelfishCode(
     request.outputMode === 'rewrite_in_place_requested'
       ? ['rewrite_in_place']
       : request.outputMode === 'preview'
-        ? ['generate_files']
-        : [];
+      ? ['generate_files']
+      : [];
 
   if (request.outputMode === 'rewrite_in_place_requested') {
     warnings.push(
@@ -560,7 +560,10 @@ export async function previewBabelfishCode(
     );
   }
 
-  if (request.mode === 'rewrite-preview' && analysis.language !== request.targetLanguage) {
+  if (
+    request.mode === 'rewrite-preview' &&
+    analysis.language !== request.targetLanguage
+  ) {
     warnings.push(
       'Rewrite preview is cross-language; applying it will keep the existing file path while replacing contents.'
     );
@@ -585,12 +588,14 @@ export async function previewBabelfishCode(
       request.outputMode === 'generate_files'
         ? `Generated ${generated.generatedFiles.length} ${request.targetLanguage} file(s) from ${analysis.language}.`
         : request.outputMode === 'rewrite_in_place_requested'
-          ? `Prepared in-place rewrite preview for ${path.basename(
-              resolvedScope.filePath
-            )} from ${analysis.language} to ${request.targetLanguage}. Apply is required before any file mutation.`
-          : `Prepared ${request.mode} preview for ${path.basename(
-              resolvedScope.filePath
-            )} from ${analysis.language} to ${request.targetLanguage}.`,
+        ? `Prepared in-place rewrite preview for ${path.basename(
+            resolvedScope.filePath
+          )} from ${analysis.language} to ${
+            request.targetLanguage
+          }. Apply is required before any file mutation.`
+        : `Prepared ${request.mode} preview for ${path.basename(
+            resolvedScope.filePath
+          )} from ${analysis.language} to ${request.targetLanguage}.`,
     confidence: confidenceForStatus(operationStatus),
     warnings,
     ggSource: generated.ggSource || undefined,
@@ -622,9 +627,9 @@ export async function applyBabelfishCodePreview(
 
   if (!preview.allowedApplyModes.includes(request.applyMode)) {
     throw new Error(
-      `Preview ${request.previewId} only supports apply modes: ${preview.allowedApplyModes.join(
-        ', '
-      )}`
+      `Preview ${
+        request.previewId
+      } only supports apply modes: ${preview.allowedApplyModes.join(', ')}`
     );
   }
 
@@ -679,7 +684,10 @@ export async function translateBabelfishText(
       targetLanguage
     );
   } else {
-    translatedText = translatePlainText(resolvedScope.sourceText, targetLanguage);
+    translatedText = translatePlainText(
+      resolvedScope.sourceText,
+      targetLanguage
+    );
   }
 
   const translatedDiagnostics =
@@ -689,7 +697,10 @@ export async function translateBabelfishText(
           ...diagnostic,
           message:
             request.includeMarkdown ?? false
-              ? translateMarkdownPreservingCode(diagnostic.message, targetLanguage)
+              ? translateMarkdownPreservingCode(
+                  diagnostic.message,
+                  targetLanguage
+                )
               : translatePlainText(diagnostic.message, targetLanguage),
         }));
 
@@ -732,7 +743,9 @@ export async function explainBabelfishScope(
     lines.push(`Analysis warnings: ${analysis.errors.join('; ')}.`);
   }
 
-  const summary = `${path.basename(resolvedScope.filePath)} maps to ${functions.length} extracted function(s).`;
+  const summary = `${path.basename(resolvedScope.filePath)} maps to ${
+    functions.length
+  } extracted function(s).`;
   const englishExplanation = lines.join(' ');
   const explanation =
     request.audienceLanguage === 'en'

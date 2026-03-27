@@ -15,7 +15,7 @@ import {
   mkdirSync,
   unlinkSync,
 } from 'fs';
-import { getEdgeworkConfig } from "./config.ts";
+import { getEdgeworkConfig } from './config.ts';
 
 const CONFIG_DIR = join(homedir(), '.edgework');
 const TOKEN_FILE = join(CONFIG_DIR, 'token.json');
@@ -165,21 +165,23 @@ async function pollForDeviceToken(
       await sleep(authorization.intervalMs);
 
       try {
-        const tokenResponse = await fetch(`${baseUrl}${DEVICE_TOKEN_ENDPOINT}`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            client_id: 'zedge-companion',
-            device_code: authorization.deviceCode,
-            grant_type: 'urn:ietf:params:oauth:grant-type:device_code',
-          }),
-          signal: AbortSignal.timeout(15_000),
-        });
+        const tokenResponse = await fetch(
+          `${baseUrl}${DEVICE_TOKEN_ENDPOINT}`,
+          {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              client_id: 'zedge-companion',
+              device_code: authorization.deviceCode,
+              grant_type: 'urn:ietf:params:oauth:grant-type:device_code',
+            }),
+            signal: AbortSignal.timeout(15_000),
+          }
+        );
 
-        const tokenData =
-          (await tokenResponse.json()) as DeviceTokenResponse;
+        const tokenData = (await tokenResponse.json()) as DeviceTokenResponse;
 
         if (tokenData.error) {
           if (tokenData.error === 'authorization_pending') {

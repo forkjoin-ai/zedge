@@ -15,14 +15,14 @@ import {
   getEdgeworkConfig,
   saveZedgeConfig,
   getApiKey,
-} from "./config.ts";
+} from './config.ts';
 import {
   connectToMesh,
   disconnectFromMesh,
   getMeshNodes,
   getBridgeStatus,
-} from "./distributed-bridge.ts";
-import type { DistributedConfig } from "./distributed-bridge.ts";
+} from './distributed-bridge.ts';
+import type { DistributedConfig } from './distributed-bridge.ts';
 
 export interface ComputePoolStatus {
   joined: boolean;

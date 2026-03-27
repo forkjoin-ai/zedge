@@ -16,8 +16,11 @@
  * - Cannot modify constitution
  */
 
-import { voidMapStore } from "./void-map-store.ts";
-import { computeSystemVoidBoundary, type SystemVoidBoundary } from "./observatory-history.ts";
+import { voidMapStore } from './void-map-store.ts';
+import {
+  computeSystemVoidBoundary,
+  type SystemVoidBoundary,
+} from './observatory-history.ts';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -234,7 +237,7 @@ class AgentBreedingEngine {
     const fitnessData: AgentFitnessData[] = [];
 
     try {
-      const { listSessions } = await import("./cloud-agent-session.ts");
+      const { listSessions } = await import('./cloud-agent-session.ts');
       const sessions = listSessions(100);
 
       // Group by agent name
@@ -246,17 +249,21 @@ class AgentBreedingEngine {
       }
 
       for (const [name, agentSessions] of byAgent) {
-        const completed = agentSessions.filter((s) => s.status === 'completed').length;
+        const completed = agentSessions.filter(
+          (s) => s.status === 'completed'
+        ).length;
         const total = agentSessions.length;
         const durations = agentSessions
           .filter((s) => s.completedAt)
           .map((s) => (s.completedAt ?? s.startedAt) - s.startedAt);
-        const avgMs = durations.length > 0
-          ? durations.reduce((a, b) => a + b, 0) / durations.length
-          : 0;
+        const avgMs =
+          durations.length > 0
+            ? durations.reduce((a, b) => a + b, 0) / durations.length
+            : 0;
 
         // Get rejection rate from void map
-        const rejections = voidMapStore.query({ category: 'cloud-agent-failure' })
+        const rejections = voidMapStore
+          .query({ category: 'cloud-agent-failure' })
           .filter((e) => e.rejectedContent.includes(name)).length;
 
         fitnessData.push({
@@ -298,9 +305,15 @@ class AgentBreedingEngine {
    * c2: Mutate -- generate REAL topology mutation candidates.
    * Produces actual .gg source, compiles with Betty, checks beta1.
    */
-  private async mutate(underperformers: AgentFitnessData[]): Promise<BreedingCandidate[]> {
+  private async mutate(
+    underperformers: AgentFitnessData[]
+  ): Promise<BreedingCandidate[]> {
     const candidates: BreedingCandidate[] = [];
-    const strategies: Array<'tune' | 'restructure' | 'rewrite'> = ['tune', 'restructure', 'rewrite'];
+    const strategies: Array<'tune' | 'restructure' | 'rewrite'> = [
+      'tune',
+      'restructure',
+      'rewrite',
+    ];
 
     for (const agent of underperformers) {
       for (const strategy of strategies) {
@@ -315,14 +328,14 @@ class AgentBreedingEngine {
         let compiled = false;
         let beta1 = 0;
         try {
-          const { BettyCompiler } = await import(
-            '@a0n/gnosis/betty/compiler'
-          );
+          const { BettyCompiler } = await import('@a0n/gnosis/betty/compiler');
           const compiler = new BettyCompiler();
           const result = compiler.parse(topologySource);
-          compiled = !!result.ast && (result.diagnostics ?? []).filter(
-            (d: { severity: string }) => d.severity === 'error'
-          ).length === 0;
+          compiled =
+            !!result.ast &&
+            (result.diagnostics ?? []).filter(
+              (d: { severity: string }) => d.severity === 'error'
+            ).length === 0;
           if (result.ast) {
             beta1 = result.ast.nodes?.size ?? 0;
           }
@@ -358,16 +371,25 @@ class AgentBreedingEngine {
   /**
    * Generate actual .gg topology source for a mutation.
    */
-  private generateTopologyMutation(agent: AgentFitnessData, strategy: 'tune' | 'restructure' | 'rewrite'): string {
+  private generateTopologyMutation(
+    agent: AgentFitnessData,
+    strategy: 'tune' | 'restructure' | 'rewrite'
+  ): string {
     const name = agent.agentName.replace(/[^a-zA-Z0-9_]/g, '_');
 
     switch (strategy) {
       case 'tune':
         // Tune: adjust temperature and thresholds
         return `// Tuned topology for ${agent.agentName}
-// Success rate: ${(agent.successRate * 100).toFixed(1)}% -> target: ${((agent.successRate + 0.1) * 100).toFixed(1)}%
+// Success rate: ${(agent.successRate * 100).toFixed(1)}% -> target: ${(
+          (agent.successRate + 0.1) *
+          100
+        ).toFixed(1)}%
 (input:Source { type: 'task' })
-(analyze:Process { temperature: ${Math.max(0.1, 0.3 - agent.rejectionRate * 0.2).toFixed(2)} })
+(analyze:Process { temperature: ${Math.max(
+          0.1,
+          0.3 - agent.rejectionRate * 0.2
+        ).toFixed(2)} })
 (validate:Process { threshold: ${(0.6 + agent.successRate * 0.2).toFixed(2)} })
 (output:Sink { type: 'result' })
 
@@ -394,7 +416,9 @@ class AgentBreedingEngine {
       case 'rewrite':
         // Rewrite: full topology from scratch with fork/race/fold
         return `// Rewritten topology for ${agent.agentName}
-// Built from rejection patterns: ${agent.rejectionRate > 0.3 ? 'high rejection' : 'moderate'}
+// Built from rejection patterns: ${
+          agent.rejectionRate > 0.3 ? 'high rejection' : 'moderate'
+        }
 (input:Source { type: 'task' })
 (scanner:Process { depth: 'deep' })
 (fixer_a:Process { strategy: 'conservative' })
@@ -433,16 +457,28 @@ class AgentBreedingEngine {
   // --- Helpers ---
 
   private isConstitutionallyProtected(agentName: string): boolean {
-    const protected_names = ['architect-agent', 'safety-membrane', 'constitution'];
+    const protected_names = [
+      'architect-agent',
+      'safety-membrane',
+      'constitution',
+    ];
     return protected_names.some((p) => agentName.includes(p));
   }
 
   private describeMutation(agent: AgentFitnessData, strategy: string): string {
     switch (strategy) {
       case 'tune':
-        return `Adjust ${agent.agentName} temperature/threshold parameters to improve ${agent.successRate < 0.5 ? 'success rate' : 'duration'}`;
+        return `Adjust ${
+          agent.agentName
+        } temperature/threshold parameters to improve ${
+          agent.successRate < 0.5 ? 'success rate' : 'duration'
+        }`;
       case 'restructure':
-        return `Restructure ${agent.agentName} topology: add parallel branches for slow paths (avg ${Math.round(agent.avgDurationMs)}ms)`;
+        return `Restructure ${
+          agent.agentName
+        } topology: add parallel branches for slow paths (avg ${Math.round(
+          agent.avgDurationMs
+        )}ms)`;
       case 'rewrite':
         return `Rewrite ${agent.agentName} topology from scratch based on rejection patterns`;
       default:

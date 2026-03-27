@@ -1,4 +1,4 @@
-import { describe, expect, test } from 'bun:test';
+import { describe, expect, test } from '@a0n/gnosis/test';
 import {
   parseZedSettings,
   updateZedSettingsModelCatalog,
@@ -31,8 +31,10 @@ describe('Zed settings model sync', () => {
     expect(updatedText).not.toBeNull();
 
     const parsed = parseZedSettings(updatedText!);
-    const zedge = ((parsed.language_models as Record<string, unknown>)
-      .openai_compatible as Record<string, unknown>).Zedge as {
+    const zedge = (
+      (parsed.language_models as Record<string, unknown>)
+        .openai_compatible as Record<string, unknown>
+    ).Zedge as {
       available_models: Array<{ name: string }>;
     };
 
@@ -63,8 +65,10 @@ describe('Zed settings model sync', () => {
     expect(updatedText).not.toBeNull();
 
     const parsed = parseZedSettings(updatedText!);
-    const zedge = ((parsed.language_models as Record<string, unknown>)
-      .openai_compatible as Record<string, unknown>).Zedge as {
+    const zedge = (
+      (parsed.language_models as Record<string, unknown>)
+        .openai_compatible as Record<string, unknown>
+    ).Zedge as {
       available_models: Array<{ name: string }>;
     };
 

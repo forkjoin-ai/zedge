@@ -196,12 +196,16 @@ export async function main(): Promise<void> {
   };
   const companionSettingsJson = JSON.stringify(companionSettings, null, 2);
 
-  console.log('\n# ---- Companion Mode (local inference + tab completions) ----');
+  console.log(
+    '\n# ---- Companion Mode (local inference + tab completions) ----'
+  );
   console.log('# Start the companion sidecar:');
   console.log(
     '#   pnpm run gnode -- run open-source/zedge/companion/src/companion-supervisor.ts --export main'
   );
-  console.log('# Then use these settings for local inference + FIM tab completions:');
+  console.log(
+    '# Then use these settings for local inference + FIM tab completions:'
+  );
   console.log('#');
   console.log(companionSettingsJson);
   return;

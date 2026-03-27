@@ -1,4 +1,4 @@
-import { describe, test, expect } from 'bun:test';
+import { describe, test, expect } from '@a0n/gnosis/test';
 import { fimCache, fimCacheKey, speculativePrefetch } from '../fim-cache';
 
 describe('FIM Cache', () => {
@@ -78,8 +78,12 @@ describe('FIM Cache', () => {
     };
 
     speculativePrefetch(
-      'prefetch-test.ts', 10, 'prefix text', 'suffix text',
-      'test-model', inferFn
+      'prefetch-test.ts',
+      10,
+      'prefix text',
+      'suffix text',
+      'test-model',
+      inferFn
     );
 
     // Wait for async prefetch to complete

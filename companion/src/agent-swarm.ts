@@ -9,12 +9,15 @@
  * You watch them work in real time.
  */
 
-import { AgentParticipant, type AgentParticipantConfig } from "./agent-participant.ts";
-import { getRole, listRoles, type AgentRole } from "./agent-roles.ts";
-import type { CrdtBridge } from "./crdt-bridge.ts";
-import type { UcanBridge } from "./ucan-bridge.ts";
-import { voidMapStore } from "./void-map-store.ts";
-import { superinfer } from "./superinference.ts";
+import {
+  AgentParticipant,
+  type AgentParticipantConfig,
+} from './agent-participant.ts';
+import { getRole, listRoles, type AgentRole } from './agent-roles.ts';
+import type { CrdtBridge } from './crdt-bridge.ts';
+import type { UcanBridge } from './ucan-bridge.ts';
+import { voidMapStore } from './void-map-store.ts';
+import { superinfer } from './superinference.ts';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
@@ -166,7 +169,14 @@ export class AgentSwarm {
 
     const taskPromises = [...this.agents.values()]
       .filter((a) => a.status === 'working')
-      .map((a) => this.executeAgentTask(a, config.task, config.targetFiles, steering.negativePrompt));
+      .map((a) =>
+        this.executeAgentTask(
+          a,
+          config.task,
+          config.targetFiles,
+          steering.negativePrompt
+        )
+      );
 
     // Fire and don't block -- collapse() waits for completion
     this.taskCompletion = Promise.allSettled(taskPromises);
@@ -205,7 +215,9 @@ export class AgentSwarm {
             { role: 'system', content: agent.role.systemPrompt },
             {
               role: 'user',
-              content: `Task: ${task}${fileContext ? `\n\nCode context:${fileContext}` : ''}`,
+              content: `Task: ${task}${
+                fileContext ? `\n\nCode context:${fileContext}` : ''
+              }`,
             },
           ],
           temperature: 0.3,
@@ -300,8 +312,8 @@ export class AgentSwarm {
         durationMs: a.finishedAt
           ? a.finishedAt - a.startedAt
           : this.active
-            ? Date.now() - a.startedAt
-            : undefined,
+          ? Date.now() - a.startedAt
+          : undefined,
       })),
       startedAt: this.startedAt,
       completedAt: this.completedAt,

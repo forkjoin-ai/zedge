@@ -16,7 +16,7 @@
  * failure_strictly_more_informative: rejection carries N-1 bits.
  */
 
-import { voidMapStore, type VoidMapEntry } from "./void-map-store.ts";
+import { voidMapStore, type VoidMapEntry } from './void-map-store.ts';
 
 // ---------------------------------------------------------------------------
 // Types (matching @a0n/neural)
@@ -82,7 +82,13 @@ const DEFAULT_CONFIG: NeuralConfig = {
 };
 
 // Category → neuron mapping (5 categories = 5 neurons)
-const CATEGORIES = ['refactor', 'bug-fix', 'performance', 'readability', 'security'] as const;
+const CATEGORIES = [
+  'refactor',
+  'bug-fix',
+  'performance',
+  'readability',
+  'security',
+] as const;
 
 class NeuralBridge {
   private engine: any = null; // BuleyeanEngine when available
@@ -96,7 +102,10 @@ class NeuralBridge {
     // Initialize category boundaries (local God Formula computation)
     for (const cat of CATEGORIES) {
       this.categoryRejections.set(cat, 0);
-      this.categoryBoundaries.set(cat, new Array(DEFAULT_CONFIG.activationLevels).fill(0));
+      this.categoryBoundaries.set(
+        cat,
+        new Array(DEFAULT_CONFIG.activationLevels).fill(0)
+      );
     }
   }
 
@@ -153,7 +162,9 @@ class NeuralBridge {
     // If real engine is available, feed it
     if (this.engine) {
       try {
-        const catIndex = CATEGORIES.indexOf(category as typeof CATEGORIES[number]);
+        const catIndex = CATEGORIES.indexOf(
+          category as (typeof CATEGORIES)[number]
+        );
         if (catIndex >= 0) {
           const signal: RejectionSignal = {
             sourceNeuronId: `input-${catIndex}`,
@@ -202,9 +213,8 @@ class NeuralBridge {
 
       // Deficit: max - min of nonzero boundary entries
       const nonZero = boundary.filter((v) => v > 0);
-      const deficit = nonZero.length > 0
-        ? Math.max(...nonZero) - Math.min(...nonZero)
-        : 0;
+      const deficit =
+        nonZero.length > 0 ? Math.max(...nonZero) - Math.min(...nonZero) : 0;
 
       // Weight for steering: inverse of rejection density
       // High rejections → low weight (avoid this category)
@@ -232,16 +242,24 @@ class NeuralBridge {
     if (rejected.length === 0) return '';
 
     const lines: string[] = [];
-    lines.push('The following steering is derived from LEARNED rejection patterns (God Formula complement distribution):');
+    lines.push(
+      'The following steering is derived from LEARNED rejection patterns (God Formula complement distribution):'
+    );
 
     for (const s of rejected.sort((a, b) => a.weight - b.weight)) {
       const convergenceStatus = s.deficit < 2 ? 'converging' : 'learning';
       lines.push(
-        `- "${s.category}": ${s.rejections} rejections, weight=${s.weight.toFixed(3)}, deficit=${s.deficit} (${convergenceStatus})`
+        `- "${s.category}": ${
+          s.rejections
+        } rejections, weight=${s.weight.toFixed(3)}, deficit=${
+          s.deficit
+        } (${convergenceStatus})`
       );
     }
 
-    lines.push('Lower-weight categories should be avoided. Higher-weight categories are safer.');
+    lines.push(
+      'Lower-weight categories should be avoided. Higher-weight categories are safer.'
+    );
 
     return lines.join('\n');
   }
@@ -252,9 +270,10 @@ class NeuralBridge {
   getStatus(): NeuralBridgeStatus {
     const steering = this.getLearnedSteering();
     const deficits = steering.map((s) => s.deficit);
-    const meanDeficit = deficits.length > 0
-      ? deficits.reduce((a, b) => a + b, 0) / deficits.length
-      : 0;
+    const meanDeficit =
+      deficits.length > 0
+        ? deficits.reduce((a, b) => a + b, 0) / deficits.length
+        : 0;
 
     return {
       initialized: true,
@@ -271,7 +290,11 @@ class NeuralBridge {
    * Convert an emotion tag to a neural ModalityFrame shape.
    * For feeding emotional data into cross-modal fusion.
    */
-  emotionToFrame(emotion: string, valence: number, arousal: number): {
+  emotionToFrame(
+    emotion: string,
+    valence: number,
+    arousal: number
+  ): {
     modality: 'emotion';
     embedding: Float32Array;
     confidence: number;

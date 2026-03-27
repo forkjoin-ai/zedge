@@ -25,7 +25,7 @@ import {
   hmacSha256,
   encryptAes256Gcm,
   decryptAes256Gcm,
-} from "./crypto-utils.ts";
+} from './crypto-utils.ts';
 
 // ---------------------------------------------------------------------------
 // Types

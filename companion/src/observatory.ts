@@ -12,13 +12,13 @@
  * Single JSON snapshot + SSE stream for live updates.
  */
 
-import { voidMapStore } from "./void-map-store.ts";
-import { getEngramStore } from "./engram-store.ts";
-import { getPhase3Status } from "./wire-phase3.ts";
-import { analyzeCodeEmotion } from "./emotion-router.ts";
+import { voidMapStore } from './void-map-store.ts';
+import { getEngramStore } from './engram-store.ts';
+import { getPhase3Status } from './wire-phase3.ts';
+import { analyzeCodeEmotion } from './emotion-router.ts';
 import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { join, extname, relative } from 'node:path';
-import { recordSnapshot as persistSnapshot } from "./observatory-history.ts";
+import { recordSnapshot as persistSnapshot } from './observatory-history.ts';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -81,7 +81,9 @@ export interface ObservatorySnapshot {
 const observatoryClients = new Set<ReadableStreamDefaultController>();
 const startTime = Date.now();
 
-export function broadcastObservatoryEvent(event: Record<string, unknown>): void {
+export function broadcastObservatoryEvent(
+  event: Record<string, unknown>
+): void {
   const encoder = new TextEncoder();
   const payload = encoder.encode(`data: ${JSON.stringify(event)}\n\n`);
   for (const client of observatoryClients) {
@@ -105,9 +107,13 @@ export function createObservatoryStream(): ReadableStream {
       getObservatorySnapshot().then((snapshot) => {
         try {
           controller.enqueue(
-            encoder.encode(`data: ${JSON.stringify({ type: 'snapshot', ...snapshot })}\n\n`)
+            encoder.encode(
+              `data: ${JSON.stringify({ type: 'snapshot', ...snapshot })}\n\n`
+            )
           );
-        } catch { /* client disconnected */ }
+        } catch {
+          /* client disconnected */
+        }
       });
 
       heartbeat = setInterval(() => {
@@ -124,7 +130,9 @@ export function createObservatoryStream(): ReadableStream {
         getObservatorySnapshot().then((snapshot) => {
           try {
             controller.enqueue(
-              encoder.encode(`data: ${JSON.stringify({ type: 'snapshot', ...snapshot })}\n\n`)
+              encoder.encode(
+                `data: ${JSON.stringify({ type: 'snapshot', ...snapshot })}\n\n`
+              )
             );
           } catch {
             clearInterval(snapshotInterval);
@@ -147,11 +155,14 @@ export function createObservatoryStream(): ReadableStream {
  */
 export async function getObservatorySnapshot(): Promise<ObservatorySnapshot> {
   const now = new Date();
-  const twentyFourHoursAgo = new Date(now.getTime() - 24 * 60 * 60 * 1000).toISOString();
+  const twentyFourHoursAgo = new Date(
+    now.getTime() - 24 * 60 * 60 * 1000
+  ).toISOString();
 
   // Void map
   const voidStatus = voidMapStore.getStatus();
-  const recentVoidEntries = voidMapStore.query({ limit: 1000 })
+  const recentVoidEntries = voidMapStore
+    .query({ limit: 1000 })
     .filter((e) => e.timestamp > twentyFourHoursAgo);
   const categoryCounts: Record<string, number> = {};
   for (const { category, count } of voidStatus.topCategories) {
@@ -163,27 +174,38 @@ export async function getObservatorySnapshot(): Promise<ObservatorySnapshot> {
   // Engrams
   const engramStore = getEngramStore();
   const engramStatus = engramStore.getStatus();
-  const recentEngrams = engramStore.getAll()
+  const recentEngrams = engramStore
+    .getAll()
     .filter((e) => e.createdAt > twentyFourHoursAgo).length;
 
   // Emotion heatmap (sample source files from workspace)
   const emotionHeatmap = sampleEmotionHeatmap();
 
   // Agent sessions
-  const agentStats = { totalSessions: 0, completed: 0, failed: 0, avgDurationMs: 0 };
+  const agentStats = {
+    totalSessions: 0,
+    completed: 0,
+    failed: 0,
+    avgDurationMs: 0,
+  };
   try {
-    const { listSessions } = await import("./cloud-agent-session.ts");
+    const { listSessions } = await import('./cloud-agent-session.ts');
     const sessions = listSessions(100);
     agentStats.totalSessions = sessions.length;
-    agentStats.completed = sessions.filter((s) => s.status === 'completed').length;
+    agentStats.completed = sessions.filter(
+      (s) => s.status === 'completed'
+    ).length;
     agentStats.failed = sessions.filter((s) => s.status === 'failed').length;
     const durations = sessions
       .filter((s) => s.completedAt)
       .map((s) => (s.completedAt ?? s.startedAt) - s.startedAt);
-    agentStats.avgDurationMs = durations.length > 0
-      ? durations.reduce((a, b) => a + b, 0) / durations.length
-      : 0;
-  } catch { /* cloud-agent-session may not be loaded */ }
+    agentStats.avgDurationMs =
+      durations.length > 0
+        ? durations.reduce((a, b) => a + b, 0) / durations.length
+        : 0;
+  } catch {
+    /* cloud-agent-session may not be loaded */
+  }
 
   // Phase 3
   const phase3 = getPhase3Status();
@@ -191,9 +213,11 @@ export async function getObservatorySnapshot(): Promise<ObservatorySnapshot> {
   // Peer count
   let peersConnected = 0;
   try {
-    const { getMeshStatus } = await import("./p2p-mesh.ts");
+    const { getMeshStatus } = await import('./p2p-mesh.ts');
     peersConnected = getMeshStatus().peers.length;
-  } catch { /* mesh may not be running */ }
+  } catch {
+    /* mesh may not be running */
+  }
 
   // Auto-persist snapshot to history for trend analysis
   const snapshot = {
@@ -203,7 +227,9 @@ export async function getObservatorySnapshot(): Promise<ObservatorySnapshot> {
       categoryCounts,
       recentRejections: recentVoidEntries.length,
       steeringActive: steering.negativePrompt.length > 0,
-      topRejectedFiles: voidStatus.topFiles.slice(0, 5).map((f) => ({ file: f.filePath, count: f.count })),
+      topRejectedFiles: voidStatus.topFiles
+        .slice(0, 5)
+        .map((f) => ({ file: f.filePath, count: f.count })),
     },
     engrams: {
       total: engramStatus.totalEngrams,
@@ -237,10 +263,29 @@ export async function getObservatorySnapshot(): Promise<ObservatorySnapshot> {
 // Emotion Heatmap Sampler
 // ---------------------------------------------------------------------------
 
-const SOURCE_EXTENSIONS = new Set(['.ts', '.tsx', '.js', '.jsx', '.py', '.rs', '.go', '.gg']);
-const IGNORED_DIRS = new Set(['node_modules', '.git', 'dist', 'build', 'out', '.next', 'coverage']);
+const SOURCE_EXTENSIONS = new Set([
+  '.ts',
+  '.tsx',
+  '.js',
+  '.jsx',
+  '.py',
+  '.rs',
+  '.go',
+  '.gg',
+]);
+const IGNORED_DIRS = new Set([
+  'node_modules',
+  '.git',
+  'dist',
+  'build',
+  'out',
+  '.next',
+  'coverage',
+]);
 
-function sampleEmotionHeatmap(maxFiles = 20): ObservatorySnapshot['emotionHeatmap'] {
+function sampleEmotionHeatmap(
+  maxFiles = 20
+): ObservatorySnapshot['emotionHeatmap'] {
   const workspacePath = process.env.AEON_ROOT || process.cwd();
   const results: ObservatorySnapshot['emotionHeatmap'] = [];
 
@@ -273,7 +318,10 @@ function walkForHeatmap(
         const stat = statSync(fullPath);
         if (stat.isDirectory()) {
           walkForHeatmap(fullPath, root, results, maxFiles, depth + 1);
-        } else if (SOURCE_EXTENSIONS.has(extname(entry)) && stat.size < 50_000) {
+        } else if (
+          SOURCE_EXTENSIONS.has(extname(entry)) &&
+          stat.size < 50_000
+        ) {
           const content = readFileSync(fullPath, 'utf-8');
           const profile = analyzeCodeEmotion(content);
           if (profile.dominantEmotion !== 'neutral') {

@@ -20,9 +20,9 @@ import {
   federatedVoidSync,
   type DeficitExchange,
   type VoidSyncHandshake,
-} from "./federated-void-sync.ts";
-import { voidMapStore } from "./void-map-store.ts";
-import { getZedgeConfig } from "./config.ts";
+} from './federated-void-sync.ts';
+import { voidMapStore } from './void-map-store.ts';
+import { getZedgeConfig } from './config.ts';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -58,7 +58,9 @@ let lastMessageAt: number | null = null;
 /**
  * Connect to the void sync room via DashRelay.
  */
-export async function connectVoidSyncRoom(workspaceId: string): Promise<VoidSyncRoom> {
+export async function connectVoidSyncRoom(
+  workspaceId: string
+): Promise<VoidSyncRoom> {
   const config = getZedgeConfig();
   roomId = `void-sync.${workspaceId}`;
 
@@ -72,7 +74,9 @@ export async function connectVoidSyncRoom(workspaceId: string): Promise<VoidSync
       // crdtBridge.getDoc(roomId).getMap('deficits').set(msg.deviceId, msg)
       lastMessageAt = Date.now();
       // For now, log the broadcast
-      console.log(`[void-sync] Broadcasting deficit: device=${msg.deviceId} deficit=${msg.deficit} rounds=${msg.rounds}`);
+      console.log(
+        `[void-sync] Broadcasting deficit: device=${msg.deviceId} deficit=${msg.deficit} rounds=${msg.rounds}`
+      );
     },
   });
 
@@ -114,7 +118,8 @@ export function computeLineScopedDeficit(
   // Query void map for entries in this file + line range
   const entries = voidMapStore.query({ filePath });
   const inRange = entries.filter(
-    (e) => e.line !== undefined && e.line >= lineRange[0] && e.line <= lineRange[1]
+    (e) =>
+      e.line !== undefined && e.line >= lineRange[0] && e.line <= lineRange[1]
   );
 
   // Count unique categories rejected in this range
@@ -142,7 +147,9 @@ export function getFileDeficitMap(
   if (entries.length === 0) return [];
 
   // Find the max line mentioned
-  const maxLine = Math.max(...entries.filter((e) => e.line).map((e) => e.line ?? 0));
+  const maxLine = Math.max(
+    ...entries.filter((e) => e.line).map((e) => e.line ?? 0)
+  );
   if (maxLine === 0) return [];
 
   const deficits: LineScopedDeficit[] = [];

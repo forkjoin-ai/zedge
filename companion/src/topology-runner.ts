@@ -118,14 +118,17 @@ export async function runTopology(
 
   try {
     // Compile with Betty compiler
-    const { BettyCompiler } = await import(
-      '@a0n/gnosis/betty/compiler'
-    );
+    const { BettyCompiler } = await import('@a0n/gnosis/betty/compiler');
     const compiler = new BettyCompiler();
     const parseResult = compiler.parse(content);
 
     const diagnostics = (parseResult.diagnostics ?? []).map(
-      (d: { line: number; column: number; message: string; severity: string }) => ({
+      (d: {
+        line: number;
+        column: number;
+        message: string;
+        severity: string;
+      }) => ({
         line: d.line,
         column: d.column,
         message: d.message,
@@ -179,7 +182,12 @@ export async function runTopology(
         },
         logs: `TypeScript topology: ${tsResult.topology.nodes.length} nodes, ${tsResult.topology.edges.length} edges`,
         diagnostics: tsResult.diagnostics.map(
-          (d: { line: number; column?: number; message: string; severity?: string }) => ({
+          (d: {
+            line: number;
+            column?: number;
+            message: string;
+            severity?: string;
+          }) => ({
             line: d.line,
             column: d.column ?? 0,
             message: d.message,
@@ -216,11 +224,13 @@ export async function runTopology(
     return {
       success: true,
       payload: {
-        nodes: [...(parseResult.ast.nodes?.entries() ?? [])].map(([id, node]) => ({
-          id,
-          labels: node.labels,
-          properties: node.properties,
-        })),
+        nodes: [...(parseResult.ast.nodes?.entries() ?? [])].map(
+          ([id, node]) => ({
+            id,
+            labels: node.labels,
+            properties: node.properties,
+          })
+        ),
         edges: parseResult.ast.edges ?? [],
       },
       logs: `Topology: ${nodeCount} nodes, ${edgeCount} edges, beta1=${buleyNumber}`,

@@ -14,7 +14,7 @@
  * provides a functional local-only implementation that still tracks state.
  */
 
-import { getEdgeworkConfig, getApiKey } from "./config.ts";
+import { getEdgeworkConfig, getApiKey } from './config.ts';
 
 // --- Types matching distributed.rs ---
 

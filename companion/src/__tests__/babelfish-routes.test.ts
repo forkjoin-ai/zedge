@@ -1,10 +1,4 @@
-import {
-  beforeEach,
-  describe,
-  expect,
-  mock,
-  test,
-} from 'bun:test';
+import { beforeEach, describe, expect, mock, test } from '@a0n/gnosis/test';
 import { existsSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -57,7 +51,10 @@ mock.module('../babelfish-gnosis', () => ({
       },
     ],
   }),
-  analyzePolyglotSourceString: async (sourceText: string, filePath: string) => ({
+  analyzePolyglotSourceString: async (
+    sourceText: string,
+    filePath: string
+  ) => ({
     filePath,
     language: filePath.endsWith('.rs') ? 'rust' : 'typescript',
     functions: [
@@ -97,7 +94,10 @@ mock.module('../babelfish-gnosis', () => ({
 const { handleBabelfishRequest } = await import('../babelfish-routes');
 const { resetBabelfishStateForTest } = await import('../babelfish');
 
-function jsonRequest(pathname: string, body?: Record<string, unknown>): Request {
+function jsonRequest(
+  pathname: string,
+  body?: Record<string, unknown>
+): Request {
   return new Request(`http://localhost:7331${pathname}`, {
     method: body ? 'POST' : 'GET',
     headers: body ? { 'Content-Type': 'application/json' } : undefined,
@@ -120,10 +120,9 @@ describe('Babelfish HTTP routes', () => {
 
     const payload = await response?.json();
     expect(payload.registrySource).toBe('mock-registry');
-    expect(payload.languages.map((language: { id: string }) => language.id)).toEqual([
-      'typescript',
-      'rust',
-    ]);
+    expect(
+      payload.languages.map((language: { id: string }) => language.id)
+    ).toEqual(['typescript', 'rust']);
   });
 
   test('code preview returns the standardized payload and preview-only tokens cannot rewrite in place', async () => {

@@ -1,4 +1,4 @@
-import { describe, test, expect } from 'bun:test';
+import { describe, test, expect } from '@a0n/gnosis/test';
 import { writeFileSync, mkdirSync, rmSync, existsSync } from 'fs';
 import { join } from 'path';
 import { tmpdir } from 'os';
@@ -28,7 +28,9 @@ describe('Theme Engine', () => {
   test('getThemePalette shifts warm for confident code', () => {
     mkdirSync(testDir, { recursive: true });
     const filePath = join(testDir, 'confident.ts');
-    writeFileSync(filePath, `
+    writeFileSync(
+      filePath,
+      `
 describe('test', () => {
   test('a', () => { expect(1).toBe(1); });
   test('b', () => { expect(2).toBe(2); });
@@ -36,7 +38,8 @@ describe('test', () => {
   test('d', () => { expect(4).toBe(4); });
   test('e', () => { expect(5).toBe(5); });
 });
-`);
+`
+    );
 
     const palette = getThemePalette(filePath);
     expect(palette.mood).toBe('confident');
@@ -47,7 +50,9 @@ describe('test', () => {
 
   test('getThemePalette shifts cool for anxious code', () => {
     const filePath = join(testDir, 'anxious.ts');
-    writeFileSync(filePath, `
+    writeFileSync(
+      filePath,
+      `
 // BUG: critical race condition
 // DANGER: data corruption possible
 try {
@@ -56,7 +61,8 @@ try {
   // UNSAFE: swallowing error
   throw new Error('retry failed');
 }
-`);
+`
+    );
 
     const palette = getThemePalette(filePath);
     expect(['anxious', 'frustrated']).toContain(palette.mood);
@@ -65,13 +71,16 @@ try {
 
   test('getThemePalette shifts muted for frustrated code', () => {
     const filePath = join(testDir, 'frustrated.ts');
-    writeFileSync(filePath, `
+    writeFileSync(
+      filePath,
+      `
 // TODO: refactor this mess
 // FIXME: handle edge cases
 // HACK: workaround for upstream bug
 // TODO: clean up
 // FIXME: temporary
-`);
+`
+    );
 
     const palette = getThemePalette(filePath);
     expect(palette.mood).toBe('frustrated');
@@ -81,11 +90,14 @@ try {
 
   test('getThemePalette returns neutral for clean code', () => {
     const filePath = join(testDir, 'clean.ts');
-    writeFileSync(filePath, `
+    writeFileSync(
+      filePath,
+      `
 export function add(a: number, b: number): number {
   return a + b;
 }
-`);
+`
+    );
 
     const palette = getThemePalette(filePath);
     expect(palette.mood).toBe('neutral');

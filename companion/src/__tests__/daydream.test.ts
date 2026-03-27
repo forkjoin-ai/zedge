@@ -1,4 +1,4 @@
-import { describe, test, expect } from 'bun:test';
+import { describe, test, expect } from '@a0n/gnosis/test';
 import { daydreamEngine } from '../daydream';
 
 describe('Daydream Engine', () => {
@@ -41,9 +41,12 @@ describe('Daydream Engine', () => {
 
   test('triggerDream returns null when no file set', async () => {
     // Create a fresh engine to test without any prior notifyActivity
-    const { DaydreamEngine } = await import('../daydream').then(
-      (m) => m as unknown as { DaydreamEngine: new () => typeof daydreamEngine }
-    ).catch(() => ({ DaydreamEngine: null }));
+    const { DaydreamEngine } = await import('../daydream')
+      .then(
+        (m) =>
+          m as unknown as { DaydreamEngine: new () => typeof daydreamEngine }
+      )
+      .catch(() => ({ DaydreamEngine: null }));
 
     // Singleton engine may have a file from notifyActivity above
     // Just verify triggerDream with nonexistent file returns null

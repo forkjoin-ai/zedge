@@ -1,4 +1,4 @@
-import { describe, test, expect } from 'bun:test';
+import { describe, test, expect } from '@a0n/gnosis/test';
 import { writeFileSync, mkdirSync, rmSync, existsSync } from 'fs';
 import { join } from 'path';
 import { tmpdir } from 'os';
@@ -18,10 +18,13 @@ describe('Topology Runner', () => {
   test('runTopology compiles a valid .gg file', async () => {
     mkdirSync(testDir, { recursive: true });
     const filePath = join(testDir, 'test.gg');
-    writeFileSync(filePath, `
+    writeFileSync(
+      filePath,
+      `
 (input:Sensor { type: 'raw' })
 (output:Sink { type: 'json' })
-`);
+`
+    );
 
     const { runTopology } = await import('../topology-runner');
     const result = await runTopology({ filePath });

@@ -1,4 +1,5 @@
-import { describe, test, expect, afterEach } from 'bun:test';
+import { describe, test, expect, afterEach } from '@a0n/gnosis/test';
+import { hasCloudRunCoordinators } from '../coordinator-urls';
 import {
   getTierHealth,
   getProbeResults,
@@ -57,21 +58,17 @@ describe('Latency Probe', () => {
     }
   });
 
-  test('cloudRun health includes known models', () => {
+  test('cloudRun health reflects configured coordinators', () => {
     const health = getTierHealth();
-    const knownModels = [
-      'tinyllama-1.1b',
-      'mistral-7b',
-      'qwen-2.5-coder-7b',
-      'gemma3-4b-it',
-      'glm-4-9b',
-    ];
+    if (!hasCloudRunCoordinators()) {
+      expect(Object.keys(health.cloudRun)).toEqual([]);
+      return;
+    }
 
-    for (const model of knownModels) {
-      expect(model in health.cloudRun).toBe(true);
-      expect(health.cloudRun[model]).toBeDefined();
-      expect(typeof health.cloudRun[model].healthy).toBe('boolean');
-      expect(typeof health.cloudRun[model].latencyMs).toBe('number');
+    for (const [model, result] of Object.entries(health.cloudRun)) {
+      expect(model.length).toBeGreaterThan(0);
+      expect(typeof result.healthy).toBe('boolean');
+      expect(typeof result.latencyMs).toBe('number');
     }
   });
 

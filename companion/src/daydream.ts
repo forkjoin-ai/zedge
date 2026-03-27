@@ -15,12 +15,17 @@
  */
 
 import { readFileSync, existsSync } from 'node:fs';
-import { infer } from "./inference-bridge.ts";
-import type { ChatCompletionRequest } from "./inference-bridge.ts";
-import { getZedgeConfig } from "./config.ts";
-import { voidMapStore } from "./void-map-store.ts";
-import { analyzeCodeEmotion, routeByEmotion } from "./emotion-router.ts";
-import { broadcastCandidates, broadcastCycleComplete, broadcastAccepted, broadcastRejected } from "./daydream-annotations.ts";
+import { infer } from './inference-bridge.ts';
+import type { ChatCompletionRequest } from './inference-bridge.ts';
+import { getZedgeConfig } from './config.ts';
+import { voidMapStore } from './void-map-store.ts';
+import { analyzeCodeEmotion, routeByEmotion } from './emotion-router.ts';
+import {
+  broadcastCandidates,
+  broadcastCycleComplete,
+  broadcastAccepted,
+  broadcastRejected,
+} from './daydream-annotations.ts';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -223,7 +228,8 @@ Only suggest changes you are confident about. Be specific about the line number.
 
       // Parse suggestions
       const candidates: DaydreamCandidate[] = [];
-      const lineRegex = /\[LINE:(\d+)\]\s*\[CATEGORY:(refactor|bug-fix|performance|readability|security)\]\s*(.+)/g;
+      const lineRegex =
+        /\[LINE:(\d+)\]\s*\[CATEGORY:(refactor|bug-fix|performance|readability|security)\]\s*(.+)/g;
       let match;
 
       while ((match = lineRegex.exec(responseContent)) !== null) {

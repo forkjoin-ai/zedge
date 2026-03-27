@@ -1,4 +1,4 @@
-import { describe, expect, mock, test } from 'bun:test';
+import { describe, expect, mock, test } from '@a0n/gnosis/test';
 import { dispatch } from '../mcp-stdio';
 
 describe('Babelfish MCP stdio bridge', () => {
@@ -9,7 +9,8 @@ describe('Babelfish MCP stdio bridge', () => {
       method: 'tools/list',
     });
 
-    const tools = (response?.result as { tools: Array<{ name: string }> }).tools;
+    const tools = (response?.result as { tools: Array<{ name: string }> })
+      .tools;
     expect(tools.map((tool) => tool.name)).toContain(
       'zedge_babelfish_capabilities'
     );

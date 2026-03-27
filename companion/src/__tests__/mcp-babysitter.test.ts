@@ -1,4 +1,4 @@
-import { describe, expect, test } from 'bun:test';
+import { describe, expect, test } from '@a0n/gnosis/test';
 import {
   CONSECUTIVE_FAILURES_BEFORE_RESTART,
   STARTUP_GRACE_MS,
@@ -67,7 +67,12 @@ describe('MCP companion babysitter policy', () => {
       now,
       companionSpawnedAt: now - 25_000,
       consecutiveFailures: 99,
-      restartTimestamps: [now - 10_000, now - 20_000, now - 30_000, now - 40_000],
+      restartTimestamps: [
+        now - 10_000,
+        now - 20_000,
+        now - 30_000,
+        now - 40_000,
+      ],
       force: true,
     });
 

@@ -11,15 +11,22 @@
  * All inference is local/coordinator-based, zero paid AI.
  */
 
-import { getApiBaseUrl, getAuthHeaders, getZedgeConfig } from "./config.ts";
-import { CLOUD_RUN_COORDINATORS } from "./coordinator-urls.ts";
+import { getApiBaseUrl, getAuthHeaders, getZedgeConfig } from './config.ts';
+import {
+  CLOUD_RUN_COORDINATORS,
+  hasCloudRunCoordinatorForModel,
+} from './coordinator-urls.ts';
 import { appendFileSync, mkdirSync, writeFileSync } from 'fs';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
-import { getCloudRunAuthHeaders } from "./cloudrun-auth.ts";
-import { aetherLocalRuntime } from "./aether-local-runtime.ts";
-import { runWithCompanionActivity } from "./companion-activity.ts";
-import { getKnownZedgeModels } from "./model-catalog.ts";
+import { getCloudRunAuthHeaders } from './cloudrun-auth.ts';
+import { aetherLocalRuntime } from './aether-local-runtime.ts';
+import { runWithCompanionActivity } from './companion-activity.ts';
+import { getKnownZedgeModels } from './model-catalog.ts';
+import {
+  applySystemPromptBudget,
+  shouldSkipHeavySystemContext,
+} from './prompt-budget.ts';
 
 // --- Inference log file + in-memory ring buffer ---
 const __inference_dirname = dirname(fileURLToPath(import.meta.url));
@@ -39,7 +46,9 @@ function resolveInferenceLogFile(): string | null {
   const logFile = explicitLogFile ?? join(DEFAULT_LOG_DIR, 'inference.log');
   try {
     mkdirSync(dirname(logFile), { recursive: true });
-  } catch { /* Directory may already exist or be unwritable -- best-effort */ }
+  } catch {
+    /* Directory may already exist or be unwritable -- best-effort */
+  }
   return logFile;
 }
 
@@ -57,7 +66,9 @@ function logInference(line: string): void {
   }
   try {
     appendFileSync(logFile, entry + '\n');
-  } catch { /* Log file may be unwritable -- best-effort logging */ }
+  } catch {
+    /* Log file may be unwritable -- best-effort logging */
+  }
 }
 
 /** Get recent inference logs (most recent last) */
@@ -75,7 +86,9 @@ export function clearLogs(): void {
   }
   try {
     writeFileSync(logFile, '');
-  } catch { /* Log file may be unwritable -- best-effort cleanup */ }
+  } catch {
+    /* Log file may be unwritable -- best-effort cleanup */
+  }
 }
 
 export interface ChatMessage {
@@ -132,9 +145,7 @@ function isExplicitLocalOnlyModel(model: string): boolean {
 }
 
 function shouldUseLocalEmbeddingFallback(model: string): boolean {
-  return (
-    isExplicitLocalOnlyModel(model) || !REMOTE_EMBEDDING_MODELS.has(model)
-  );
+  return isExplicitLocalOnlyModel(model) || !REMOTE_EMBEDDING_MODELS.has(model);
 }
 
 function getEdgeRequestTimeoutMs(
@@ -172,6 +183,11 @@ const LOCAL_WASM_BUSY_BUFFER_MS = 15_000;
 const LOCAL_WASM_PREWARM_BUSY_MS = 5 * 60_000;
 const EDGE_NON_STREAMING_TOTAL_TIMEOUT_MS = 25_000;
 const EDGE_NON_STREAMING_COMPLETION_TIMEOUT_MS = 20_000;
+const REMOTE_MODEL_CACHE_TTL_MS = 60_000;
+
+let cachedRemoteModels: ModelInfo[] = [];
+let remoteModelCatalogFetchedAt = 0;
+let remoteModelCatalogRefreshPromise: Promise<void> | null = null;
 
 function isOpenAiSsePayload(payload: string): boolean {
   if (payload === '[DONE]') {
@@ -438,18 +454,14 @@ async function collapseEdgeStreamingResponse(
     });
   }
 
-  return createJsonChatCompletionResponse(
-    fallbackModel,
-    data.response ?? '',
-    {
-      id: typeof data.id === 'string' ? data.id : undefined,
-      created: typeof data.created === 'number' ? data.created : undefined,
-      completionTokens:
-        typeof data.token_count === 'number' ? data.token_count : undefined,
-      headers: upstreamHeaders,
-      status: response.status,
-    }
-  );
+  return createJsonChatCompletionResponse(fallbackModel, data.response ?? '', {
+    id: typeof data.id === 'string' ? data.id : undefined,
+    created: typeof data.created === 'number' ? data.created : undefined,
+    completionTokens:
+      typeof data.token_count === 'number' ? data.token_count : undefined,
+    headers: upstreamHeaders,
+    status: response.status,
+  });
 }
 
 /**
@@ -459,7 +471,7 @@ async function tryMeshInference(
   request: ChatCompletionRequest
 ): Promise<Response | null> {
   // Lazy import to avoid circular deps at module load time
-  const { meshInfer, getMeshStatus } = await import("./p2p-mesh.ts");
+  const { meshInfer, getMeshStatus } = await import('./p2p-mesh.ts');
   const status = getMeshStatus();
   if (!status.running || status.peers.length === 0) return null;
 
@@ -497,9 +509,10 @@ async function tryEdgeCoordinator(
   const authHeaders = getAuthHeaders();
   const headers = {
     'Content-Type': 'application/json',
-    'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
-    'Accept': 'text/event-stream, application/json',
-    'Origin': 'https://edge.affectively.ai',
+    'User-Agent':
+      'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+    Accept: 'text/event-stream, application/json',
+    Origin: 'https://edge.affectively.ai',
     'X-Requested-Model': request.model,
     ...authHeaders,
   };
@@ -518,18 +531,22 @@ async function tryEdgeCoordinator(
       // Use /ai/communicate -- this is the Glossolalia MOA endpoint with full
       // GGUF transformer inference. Supports stream=true for real per-token SSE.
       const url = `${edgeBase}/ai/communicate`;
-      const lastMsg = request.messages[request.messages.length - 1]?.content ?? '';
+      const lastUserMsg =
+        [...request.messages]
+          .reverse()
+          .find((message) => message.role === 'user')?.content ?? '';
+      const lastMsg =
+        request.messages[request.messages.length - 1]?.content ?? '';
       const communicateBody = {
-        prompt: lastMsg,
+        prompt: lastUserMsg || lastMsg,
+        messages: request.messages,
         model: request.model,
         max_tokens: request.max_tokens ?? 128,
         temperature: request.temperature ?? 0.7,
         stream: true,
       };
       logInference(
-        `[edge] → ${url} model=${request.model} stream=${
-          communicateBody.stream
-        } attempt=${attempt}`
+        `[edge] → ${url} model=${request.model} stream=${communicateBody.stream} attempt=${attempt}`
       );
 
       const edgeSignalController = new AbortController();
@@ -572,7 +589,11 @@ async function tryEdgeCoordinator(
       // with exponential backoff up to 15s between attempts.
       if (resp.status === 503 && attempt < MAX_RETRIES) {
         const baseDelay = Math.min(2000 * Math.pow(2, attempt), 15000);
-        logInference(`[edge] 503 engine cold start, retrying in ${baseDelay}ms (attempt ${attempt + 1}/${MAX_RETRIES})...`);
+        logInference(
+          `[edge] 503 engine cold start, retrying in ${baseDelay}ms (attempt ${
+            attempt + 1
+          }/${MAX_RETRIES})...`
+        );
         await new Promise((resolve) => setTimeout(resolve, baseDelay));
         continue;
       }
@@ -629,15 +650,15 @@ async function tryCloudRunCoordinator(
 
     if (attempt === 0) {
       logInference(
-        `[cloudrun] → ${coordinatorUrl}/v1/chat/completions model=${request.model} headers=${JSON.stringify(
-          Object.keys(authHeaders)
-        )}`
+        `[cloudrun] → ${coordinatorUrl}/v1/chat/completions model=${
+          request.model
+        } headers=${JSON.stringify(Object.keys(authHeaders))}`
       );
     } else {
       logInference(
-        `[cloudrun] → retry ${attempt}/${MAX_RETRIES} model=${request.model} headers=${JSON.stringify(
-          Object.keys(authHeaders)
-        )}`
+        `[cloudrun] → retry ${attempt}/${MAX_RETRIES} model=${
+          request.model
+        } headers=${JSON.stringify(Object.keys(authHeaders))}`
       );
     }
 
@@ -645,7 +666,8 @@ async function tryCloudRunCoordinator(
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        Accept: request.stream === true ? 'text/event-stream' : 'application/json',
+        Accept:
+          request.stream === true ? 'text/event-stream' : 'application/json',
         ...authHeaders,
       },
       body: JSON.stringify(request),
@@ -667,12 +689,16 @@ async function tryCloudRunCoordinator(
     // (e.g., 114 bytes with {"error": "Range out of bounds"}).
     const contentLength = resp.headers.get('content-length');
     if (resp.ok && contentLength && parseInt(contentLength) < 200) {
-      logInference(`[cloudrun] Rejecting small 200 response (${contentLength}B) -- likely error`);
+      logInference(
+        `[cloudrun] Rejecting small 200 response (${contentLength}B) -- likely error`
+      );
       if (attempt < MAX_RETRIES) {
-        await new Promise(r => setTimeout(r, 1000));
+        await new Promise((r) => setTimeout(r, 1000));
         continue;
       }
-      throw new Error(`Cloud Run returned error-sized response (${contentLength}B)`);
+      throw new Error(
+        `Cloud Run returned error-sized response (${contentLength}B)`
+      );
     }
 
     // 503 = container cold-starting, retry with backoff
@@ -1041,9 +1067,7 @@ export function createSSEProxyStream(
         rawLine: string,
         options: { terminateEvent?: boolean } = {}
       ) => {
-        const line = rawLine.endsWith('\r')
-          ? rawLine.slice(0, -1)
-          : rawLine;
+        const line = rawLine.endsWith('\r') ? rawLine.slice(0, -1) : rawLine;
 
         if (line.startsWith('data: ')) {
           const payload = line.slice(6).trim();
@@ -1056,10 +1080,7 @@ export function createSSEProxyStream(
             } else if (!firstDataLogged) {
               firstDataLogged = true;
               logInference(
-                `[sse-proxy] tier=${tier} first-data: ${payload.slice(
-                  0,
-                  200
-                )}`
+                `[sse-proxy] tier=${tier} first-data: ${payload.slice(0, 200)}`
               );
               // Emit chain debug info before first real token
               const chainInfo = attempts?.length
@@ -1134,7 +1155,10 @@ export function createSSEProxyStream(
             );
           } else {
             logInference(
-              `[sse-proxy] tier=${tier} filtered non-OpenAI data: ${payload.slice(0, 100)}`
+              `[sse-proxy] tier=${tier} filtered non-OpenAI data: ${payload.slice(
+                0,
+                100
+              )}`
             );
           }
         } else if (line === '') {
@@ -1151,8 +1175,7 @@ export function createSSEProxyStream(
           // Result: `*⠿ ▁▃▅▇████▇▅ 450t/s*`
           const prefillMatch = line.match(/^: prefill (\d+)\/(\d+)/);
           if (prefillMatch && !firstDataLogged) {
-            const sparks =
-              '\u2581\u2582\u2583\u2584\u2585\u2586\u2587\u2588';
+            const sparks = '\u2581\u2582\u2583\u2584\u2585\u2586\u2587\u2588';
             const pos = parseInt(prefillMatch[1], 10);
             const total = parseInt(prefillMatch[2], 10);
             const isStart = !emittedProgress;
@@ -1316,14 +1339,33 @@ export function createSSEProxyStream(
 // ---------------------------------------------------------------------------
 
 /** Known FIM token formats per model family */
-const FIM_TOKENS: Record<string, { prefix: string; suffix: string; middle: string }> = {
-  qwen: { prefix: '<|fim_prefix|>', suffix: '<|fim_suffix|>', middle: '<|fim_middle|>' },
-  starcoder: { prefix: '<fim_prefix>', suffix: '<fim_suffix>', middle: '<fim_middle>' },
+const FIM_TOKENS: Record<
+  string,
+  { prefix: string; suffix: string; middle: string }
+> = {
+  qwen: {
+    prefix: '<|fim_prefix|>',
+    suffix: '<|fim_suffix|>',
+    middle: '<|fim_middle|>',
+  },
+  starcoder: {
+    prefix: '<fim_prefix>',
+    suffix: '<fim_suffix>',
+    middle: '<fim_middle>',
+  },
   codellama: { prefix: '<PRE>', suffix: '<SUF>', middle: '<MID>' },
-  deepseek: { prefix: '<｜fim▁begin｜>', suffix: '<｜fim▁hole｜>', middle: '<｜fim▁end｜>' },
+  deepseek: {
+    prefix: '<｜fim▁begin｜>',
+    suffix: '<｜fim▁hole｜>',
+    middle: '<｜fim▁end｜>',
+  },
 };
 
-function getFimTokens(model: string): { prefix: string; suffix: string; middle: string } {
+function getFimTokens(model: string): {
+  prefix: string;
+  suffix: string;
+  middle: string;
+} {
   // Check more specific patterns first to avoid false matches on 'coder'
   if (model.includes('starcoder')) return FIM_TOKENS.starcoder;
   if (model.includes('codellama')) return FIM_TOKENS.codellama;
@@ -1376,14 +1418,17 @@ export async function inferFim(
   {
     const meshT0 = Date.now();
     try {
-      const { meshInfer, getMeshStatus } = await import("./p2p-mesh.ts");
+      const { meshInfer, getMeshStatus } = await import('./p2p-mesh.ts');
       const status = getMeshStatus();
       if (status.running && status.peers.length > 0) {
         const meshResult = await Promise.race([
           meshInfer({
             model,
             messages: [
-              { role: 'system', content: 'Complete the code. Output ONLY the completion.' },
+              {
+                role: 'system',
+                content: 'Complete the code. Output ONLY the completion.',
+              },
               { role: 'user', content: fimPrompt },
             ],
             max_tokens: maxTokens,
@@ -1392,8 +1437,16 @@ export async function inferFim(
           new Promise<null>((resolve) => setTimeout(() => resolve(null), 100)),
         ]);
         if (meshResult && meshResult.content) {
-          attempts.push({ tier: 'mesh', status: 'ok', ms: Date.now() - meshT0 });
-          logInference(`[fim:mesh] ${meshResult.content.length}c in ${Date.now() - meshT0}ms`);
+          attempts.push({
+            tier: 'mesh',
+            status: 'ok',
+            ms: Date.now() - meshT0,
+          });
+          logInference(
+            `[fim:mesh] ${meshResult.content.length}c in ${
+              Date.now() - meshT0
+            }ms`
+          );
           return {
             completion: meshResult.content,
             tier: 'mesh',
@@ -1403,9 +1456,19 @@ export async function inferFim(
           };
         }
       }
-      attempts.push({ tier: 'mesh', status: 'skipped', ms: Date.now() - meshT0, detail: 'no peers or timeout' });
+      attempts.push({
+        tier: 'mesh',
+        status: 'skipped',
+        ms: Date.now() - meshT0,
+        detail: 'no peers or timeout',
+      });
     } catch {
-      attempts.push({ tier: 'mesh', status: 'skipped', ms: Date.now() - meshT0, detail: 'mesh unavailable' });
+      attempts.push({
+        tier: 'mesh',
+        status: 'skipped',
+        ms: Date.now() - meshT0,
+        detail: 'mesh unavailable',
+      });
     }
   }
 
@@ -1420,7 +1483,10 @@ export async function inferFim(
   // Race Cloud Run vs WASM in parallel
   const cloudRunUrl = CLOUD_RUN_COORDINATORS[model];
 
-  const wasmPromise = (async (): Promise<{ completion: string; tier: InferenceTier } | null> => {
+  const wasmPromise = (async (): Promise<{
+    completion: string;
+    tier: InferenceTier;
+  } | null> => {
     const wt0 = Date.now();
     try {
       const content = await runWithCompanionActivity(
@@ -1459,13 +1525,21 @@ export async function inferFim(
       logInference(`[fim:wasm] ${content.length}c in ${Date.now() - wt0}ms`);
       return { completion: content, tier: 'wasm' };
     } catch (err) {
-      attempts.push({ tier: 'wasm', status: 'error', ms: Date.now() - wt0, detail: String(err) });
+      attempts.push({
+        tier: 'wasm',
+        status: 'error',
+        ms: Date.now() - wt0,
+        detail: String(err),
+      });
       return null;
     }
   })();
 
   const cloudRunPromise = cloudRunUrl
-    ? (async (): Promise<{ completion: string; tier: InferenceTier } | null> => {
+    ? (async (): Promise<{
+        completion: string;
+        tier: InferenceTier;
+      } | null> => {
         const ct0 = Date.now();
         try {
           const authHeaders = await getCloudRunAuthHeaders(cloudRunUrl);
@@ -1478,7 +1552,10 @@ export async function inferFim(
             body: JSON.stringify({
               model,
               messages: [
-                { role: 'system', content: 'Complete the code. Output ONLY the completion.' },
+                {
+                  role: 'system',
+                  content: 'Complete the code. Output ONLY the completion.',
+                },
                 { role: 'user', content: fimPrompt },
               ],
               max_tokens: maxTokens,
@@ -1489,14 +1566,25 @@ export async function inferFim(
           });
 
           if (!resp.ok) {
-            attempts.push({ tier: 'cloudrun', status: 'http_error', ms: Date.now() - ct0, detail: `${resp.status}` });
+            attempts.push({
+              tier: 'cloudrun',
+              status: 'http_error',
+              ms: Date.now() - ct0,
+              detail: `${resp.status}`,
+            });
             return null;
           }
 
-          const data = await resp.json() as ChatCompletionResponse;
+          const data = (await resp.json()) as ChatCompletionResponse;
           const content = data.choices?.[0]?.message?.content ?? '';
-          attempts.push({ tier: 'cloudrun', status: 'ok', ms: Date.now() - ct0 });
-          logInference(`[fim:cloudrun] ${content.length}c in ${Date.now() - ct0}ms`);
+          attempts.push({
+            tier: 'cloudrun',
+            status: 'ok',
+            ms: Date.now() - ct0,
+          });
+          logInference(
+            `[fim:cloudrun] ${content.length}c in ${Date.now() - ct0}ms`
+          );
           return { completion: content, tier: 'cloudrun' };
         } catch (err) {
           attempts.push({
@@ -1509,7 +1597,12 @@ export async function inferFim(
         }
       })()
     : (async () => {
-        attempts.push({ tier: 'cloudrun', status: 'skipped', ms: 0, detail: 'no coordinator URL' });
+        attempts.push({
+          tier: 'cloudrun',
+          status: 'skipped',
+          ms: 0,
+          detail: 'no coordinator URL',
+        });
         return null;
       })();
 
@@ -1528,7 +1621,12 @@ export async function inferFim(
 
   if (!winner) {
     // Echo fallback for FIM
-    attempts.push({ tier: 'echo', status: 'ok', ms: 0, detail: 'FIM all tiers failed' });
+    attempts.push({
+      tier: 'echo',
+      status: 'ok',
+      ms: 0,
+      detail: 'FIM all tiers failed',
+    });
     return {
       completion: '',
       tier: 'echo',
@@ -1539,7 +1637,9 @@ export async function inferFim(
   }
 
   logInference(
-    `--- FIM DONE tier=${winner.tier} ${winner.completion.length}c ${Date.now() - t0}ms`
+    `--- FIM DONE tier=${winner.tier} ${winner.completion.length}c ${
+      Date.now() - t0
+    }ms`
   );
 
   return {
@@ -1564,33 +1664,50 @@ export async function infer(
   request: ChatCompletionRequest
 ): Promise<TierResult> {
   // --- Engram Store: inject relevant memories into context ---
-  try {
-    const { getEngramStore } = await import("./engram-store.ts");
-    const store = getEngramStore();
-    if (store.size > 0) {
-      const lastUserMsg = [...request.messages].reverse().find((m) => m.role === 'user');
-      if (lastUserMsg && lastUserMsg.content.length > 10) {
-        const recalled = await store.recall(lastUserMsg.content, 3);
-        const memoryBlocks = recalled
-          .filter((r) => r.score > 0.3)
-          .map((r) => `[${r.engram.type}] ${r.engram.content}`)
-          .join('\n');
-        if (memoryBlocks.length > 0) {
-          const messages = [...request.messages];
-          const sysIdx = messages.findIndex((m) => m.role === 'system');
-          const memoryContext = `\n\n<agent_memory>\n${memoryBlocks}\n</agent_memory>`;
-          if (sysIdx >= 0) {
-            messages[sysIdx] = { ...messages[sysIdx], content: messages[sysIdx].content + memoryContext };
-          } else {
-            messages.unshift({ role: 'system', content: `You have persistent memory from previous sessions.${memoryContext}` });
+  if (!shouldSkipHeavySystemContext(request.model)) {
+    try {
+      const { getEngramStore } = await import('./engram-store.ts');
+      const store = getEngramStore();
+      if (store.size > 0) {
+        const lastUserMsg = [...request.messages]
+          .reverse()
+          .find((m) => m.role === 'user');
+        if (lastUserMsg && lastUserMsg.content.length > 10) {
+          const recalled = await store.recall(lastUserMsg.content, 3);
+          const memoryBlocks = recalled
+            .filter((r) => r.score > 0.3)
+            .map((r) => `[${r.engram.type}] ${r.engram.content}`)
+            .join('\n');
+          if (memoryBlocks.length > 0) {
+            const messages = [...request.messages];
+            const sysIdx = messages.findIndex((m) => m.role === 'system');
+            const memoryContext = `\n\n<agent_memory>\n${memoryBlocks}\n</agent_memory>`;
+            if (sysIdx >= 0) {
+              messages[sysIdx] = {
+                ...messages[sysIdx],
+                content: messages[sysIdx].content + memoryContext,
+              };
+            } else {
+              messages.unshift({
+                role: 'system',
+                content: `You have persistent memory from previous sessions.${memoryContext}`,
+              });
+            }
+            request = { ...request, messages };
           }
-          request = { ...request, messages };
         }
       }
+    } catch {
+      // Engram store not initialized -- proceed without memory
     }
-  } catch {
-    // Engram store not initialized -- proceed without memory
   }
+  request = {
+    ...request,
+    messages: applySystemPromptBudget(
+      request.model,
+      request.messages
+    ) as ChatCompletionRequest['messages'],
+  };
 
   const config = getZedgeConfig();
   const attempts: TierAttempt[] = [];
@@ -1711,7 +1828,7 @@ export async function infer(
   // Edge handles routing internally via /ai/communicate.
   // Cloud Run is a backup path for models the edge can't handle.
   const canCloudRun =
-    config.cloudRunDirect && !!CLOUD_RUN_COORDINATORS[request.model];
+    config.cloudRunDirect && hasCloudRunCoordinatorForModel(request.model);
   // Edge-first: always try edge, even for streaming. Cloud Run has cold starts
   // and weight errors. The edge path (Glossolalia MOA) is more reliable.
   const preferCloudRunForStreaming = false;
@@ -1756,7 +1873,10 @@ export async function infer(
       response: Response;
     } | null>;
     if (canCloudRun) {
-      cloudRunPromise = tryCloudRunCoordinator(request, cloudRunController.signal)
+      cloudRunPromise = tryCloudRunCoordinator(
+        request,
+        cloudRunController.signal
+      )
         .then(
           (response): { tier: InferenceTier; response: Response } | null => {
             if (response.ok) return { tier: 'cloudrun', response };
@@ -1878,27 +1998,40 @@ export function autoLearnFromInference(
 ): void {
   queueMicrotask(async () => {
     try {
-      const { getEngramStore } = await import("./engram-store.ts");
+      const { getEngramStore } = await import('./engram-store.ts');
       const store = getEngramStore();
 
-      const lastUserMsg = [...request.messages].reverse().find((m) => m.role === 'user');
+      const lastUserMsg = [...request.messages]
+        .reverse()
+        .find((m) => m.role === 'user');
       if (!lastUserMsg || lastUserMsg.content.length < 20) return;
 
       // Extract file paths mentioned in the conversation
-      const filePathMatch = lastUserMsg.content.match(/(?:[\w./\\-]+\.(?:ts|js|py|rs|go|tsx|jsx|css|html|gg))/);
+      const filePathMatch = lastUserMsg.content.match(
+        /(?:[\w./\\-]+\.(?:ts|js|py|rs|go|tsx|jsx|css|html|gg))/
+      );
       if (filePathMatch) {
         void store.remember({
           type: 'file-relationship',
-          content: `User asked about ${filePathMatch[0]}: ${lastUserMsg.content.slice(0, 200)}`,
+          content: `User asked about ${
+            filePathMatch[0]
+          }: ${lastUserMsg.content.slice(0, 200)}`,
           filePath: filePathMatch[0],
         });
       }
 
       // If response contains code patterns, store as code-pattern
-      if (responseContent.includes('function ') || responseContent.includes('class ') || responseContent.includes('export ')) {
+      if (
+        responseContent.includes('function ') ||
+        responseContent.includes('class ') ||
+        responseContent.includes('export ')
+      ) {
         void store.remember({
           type: 'code-pattern',
-          content: `Pattern discussed (tier: ${tier}): ${responseContent.slice(0, 300)}`,
+          content: `Pattern discussed (tier: ${tier}): ${responseContent.slice(
+            0,
+            300
+          )}`,
         });
       }
 
@@ -1910,7 +2043,9 @@ export function autoLearnFromInference(
           .join(' | ');
         void store.remember({
           type: 'conversation-summary',
-          content: `Multi-turn conversation (${request.messages.length} msgs): ${summary.slice(0, 400)}`,
+          content: `Multi-turn conversation (${
+            request.messages.length
+          } msgs): ${summary.slice(0, 400)}`,
         });
       }
     } catch {
@@ -1922,37 +2057,67 @@ export function autoLearnFromInference(
 /**
  * Get merged model list from remote + local + mesh peers
  */
-export async function getModels(): Promise<ModelInfo[]> {
-  const models: ModelInfo[] = [];
-  const seen = new Set<string>();
-
-  // Try to fetch remote model list from Edgework edge
-  // Use edge.affectively.ai directly with browser headers to bypass CF bot protection
+async function fetchRemoteModels(): Promise<ModelInfo[]> {
   for (const edgeBase of ['https://edge.affectively.ai', getApiBaseUrl()]) {
     try {
       const resp = await fetch(`${edgeBase}/v1/models`, {
         headers: {
           ...getAuthHeaders(),
-          'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
-          'Accept': 'application/json',
-          'Origin': 'https://edge.affectively.ai',
+          'User-Agent':
+            'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+          Accept: 'application/json',
+          Origin: 'https://edge.affectively.ai',
         },
         signal: AbortSignal.timeout(5_000),
       });
-      if (resp.ok) {
-        const data = (await resp.json()) as { data?: ModelInfo[] };
-        if (data.data) {
-          for (const m of data.data) {
-            if (!seen.has(m.id)) {
-              seen.add(m.id);
-              models.push(m);
-            }
-          }
-        }
-        break; // Got models from edge, no need to try fallback URL
+      if (!resp.ok) {
+        continue;
+      }
+
+      const data = (await resp.json()) as { data?: ModelInfo[] };
+      if (Array.isArray(data.data)) {
+        return data.data;
       }
     } catch {
       // This edge URL unavailable -- try next
+    }
+  }
+
+  return [];
+}
+
+function refreshRemoteModelCatalogInBackground(): void {
+  const now = Date.now();
+  if (
+    remoteModelCatalogRefreshPromise ||
+    now - remoteModelCatalogFetchedAt < REMOTE_MODEL_CACHE_TTL_MS
+  ) {
+    return;
+  }
+
+  remoteModelCatalogRefreshPromise = fetchRemoteModels()
+    .then((models) => {
+      cachedRemoteModels = models;
+      remoteModelCatalogFetchedAt = Date.now();
+    })
+    .catch(() => {
+      remoteModelCatalogFetchedAt = Date.now();
+    })
+    .finally(() => {
+      remoteModelCatalogRefreshPromise = null;
+    });
+}
+
+export async function getModels(): Promise<ModelInfo[]> {
+  refreshRemoteModelCatalogInBackground();
+
+  const models: ModelInfo[] = [];
+  const seen = new Set<string>();
+
+  for (const model of cachedRemoteModels) {
+    if (!seen.has(model.id)) {
+      seen.add(model.id);
+      models.push(model);
     }
   }
 
@@ -1970,7 +2135,7 @@ export async function getModels(): Promise<ModelInfo[]> {
 
   // Add mesh peer models
   try {
-    const { getMeshStatus } = await import("./p2p-mesh.ts");
+    const { getMeshStatus } = await import('./p2p-mesh.ts');
     const meshStatus = getMeshStatus();
     for (const peer of meshStatus.peers) {
       for (const modelId of peer.capabilities.models) {

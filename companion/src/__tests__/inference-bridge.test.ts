@@ -1,14 +1,35 @@
-import { describe, test, expect } from 'bun:test';
+import { describe, test, expect } from '@a0n/gnosis/test';
 import { mkdtempSync, readFileSync, writeFileSync } from 'fs';
 import { join } from 'path';
 import { tmpdir } from 'os';
 import { clearLogs, getModels, embed, infer } from '../inference-bridge';
+import { hasCloudRunCoordinators } from '../coordinator-urls';
 import type {
   InferenceTier,
   ChatCompletionResponse,
 } from '../inference-bridge';
 
 describe('Inference Bridge', () => {
+  test('getModels returns promptly even when the live edge catalog hangs', async () => {
+    const originalFetch = global.fetch;
+    global.fetch = (async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith('/v1/models')) {
+        return await new Promise<Response>(() => {});
+      }
+      return await originalFetch(input);
+    }) as typeof fetch;
+
+    const startedAt = Date.now();
+    try {
+      const models = await getModels();
+      expect(models.some((model) => model.id === 'wasm-local')).toBe(true);
+      expect(Date.now() - startedAt).toBeLessThan(250);
+    } finally {
+      global.fetch = originalFetch;
+    }
+  });
+
   test('getModels returns array with wasm-local', async () => {
     const models = await getModels();
     expect(Array.isArray(models)).toBe(true);
@@ -20,12 +41,16 @@ describe('Inference Bridge', () => {
     expect(wasmModel!.owned_by).toBe('edgework-wasm');
   }, 10_000);
 
-  test('getModels includes Cloud Run coordinator models', async () => {
+  test('getModels reflects direct Cloud Run coordinator availability', async () => {
     const models = await getModels();
     const cloudRunModels = models.filter(
       (m) => m.owned_by === 'edgework-cloudrun'
     );
-    expect(cloudRunModels.length).toBeGreaterThan(0);
+    if (hasCloudRunCoordinators()) {
+      expect(cloudRunModels.length).toBeGreaterThan(0);
+    } else {
+      expect(cloudRunModels.length).toBe(0);
+    }
 
     const modelIds = models.map((m) => m.id);
     expect(modelIds).toContain('tinyllama-1.1b');
@@ -119,11 +144,19 @@ describe('Inference Bridge', () => {
     const originalFetch = global.fetch;
     const requestBodies: Array<Record<string, unknown>> = [];
     const requestHeaders: Array<Headers> = [];
+    const messages = [
+      { role: 'system', content: 'Reply like a helpful assistant.' },
+      { role: 'user', content: 'My name is Taylor.' },
+      { role: 'assistant', content: 'Nice to meet you, Taylor.' },
+      { role: 'user', content: 'What is my name?' },
+    ] as const;
 
     global.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
       if (url.includes('/ai/communicate')) {
-        requestBodies.push(JSON.parse(String(init?.body ?? '{}')) as Record<string, unknown>);
+        requestBodies.push(
+          JSON.parse(String(init?.body ?? '{}')) as Record<string, unknown>
+        );
         requestHeaders.push(new Headers(init?.headers));
         const firstChunk = JSON.stringify({
           id: 'chatcmpl-edge-stream',
@@ -170,7 +203,7 @@ describe('Inference Bridge', () => {
     try {
       const result = await infer({
         model: 'tinyllama-1.1b',
-        messages: [{ role: 'user', content: 'hello' }],
+        messages: [...messages],
         stream: false,
         max_tokens: 32,
       });
@@ -178,6 +211,8 @@ describe('Inference Bridge', () => {
       expect(result.tier).toBe('edge');
       expect(requestBodies).toHaveLength(1);
       expect(requestBodies[0]?.stream).toBe(true);
+      expect(requestBodies[0]?.messages).toEqual(messages);
+      expect(requestBodies[0]?.prompt).toBe('What is my name?');
       expect(requestHeaders[0]?.get('accept')).toContain('text/event-stream');
       expect(result.response.headers.get('content-type')).toContain(
         'application/json'
@@ -190,82 +225,78 @@ describe('Inference Bridge', () => {
     }
   });
 
-  test(
-    'infer collapses edge SSE once finish_reason arrives even if upstream stays open',
-    async () => {
-      const originalFetch = global.fetch;
+  test('infer collapses edge SSE once finish_reason arrives even if upstream stays open', async () => {
+    const originalFetch = global.fetch;
 
-      global.fetch = (async (input: RequestInfo | URL) => {
-        const url = String(input);
-        if (!url.includes('/ai/communicate')) {
-          return new Response('unexpected', { status: 500 });
-        }
-
-        const encoder = new TextEncoder();
-        return new Response(
-          new ReadableStream<Uint8Array>({
-            start(controller) {
-              controller.enqueue(
-                encoder.encode(
-                  `data: ${JSON.stringify({
-                    id: 'chatcmpl-edge-open',
-                    object: 'chat.completion.chunk',
-                    created: 1000,
-                    model: 'tinyllama-1.1b',
-                    choices: [
-                      {
-                        index: 0,
-                        delta: { content: 'LIVE_OK' },
-                        finish_reason: null,
-                      },
-                    ],
-                  })}\n\n`
-                )
-              );
-              controller.enqueue(
-                encoder.encode(
-                  `data: ${JSON.stringify({
-                    id: 'chatcmpl-edge-open',
-                    object: 'chat.completion.chunk',
-                    created: 1000,
-                    model: 'tinyllama-1.1b',
-                    choices: [
-                      {
-                        index: 0,
-                        delta: {},
-                        finish_reason: 'stop',
-                      },
-                    ],
-                  })}\n\n`
-                )
-              );
-              // Leave the connection open after the logical completion.
-            },
-          }),
-          {
-            status: 200,
-            headers: { 'Content-Type': 'text/event-stream' },
-          }
-        );
-      }) as typeof fetch;
-
-      try {
-        const result = await infer({
-          model: 'tinyllama-1.1b',
-          messages: [{ role: 'user', content: 'Reply with exactly: LIVE_OK' }],
-          stream: false,
-          max_tokens: 8,
-          temperature: 0,
-        });
-
-        const data = (await result.response.json()) as ChatCompletionResponse;
-        expect(data.choices[0]?.message.content).toBe('LIVE_OK');
-      } finally {
-        global.fetch = originalFetch;
+    global.fetch = (async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (!url.includes('/ai/communicate')) {
+        return new Response('unexpected', { status: 500 });
       }
-    },
-    2_000
-  );
+
+      const encoder = new TextEncoder();
+      return new Response(
+        new ReadableStream<Uint8Array>({
+          start(controller) {
+            controller.enqueue(
+              encoder.encode(
+                `data: ${JSON.stringify({
+                  id: 'chatcmpl-edge-open',
+                  object: 'chat.completion.chunk',
+                  created: 1000,
+                  model: 'tinyllama-1.1b',
+                  choices: [
+                    {
+                      index: 0,
+                      delta: { content: 'LIVE_OK' },
+                      finish_reason: null,
+                    },
+                  ],
+                })}\n\n`
+              )
+            );
+            controller.enqueue(
+              encoder.encode(
+                `data: ${JSON.stringify({
+                  id: 'chatcmpl-edge-open',
+                  object: 'chat.completion.chunk',
+                  created: 1000,
+                  model: 'tinyllama-1.1b',
+                  choices: [
+                    {
+                      index: 0,
+                      delta: {},
+                      finish_reason: 'stop',
+                    },
+                  ],
+                })}\n\n`
+              )
+            );
+            // Leave the connection open after the logical completion.
+          },
+        }),
+        {
+          status: 200,
+          headers: { 'Content-Type': 'text/event-stream' },
+        }
+      );
+    }) as typeof fetch;
+
+    try {
+      const result = await infer({
+        model: 'tinyllama-1.1b',
+        messages: [{ role: 'user', content: 'Reply with exactly: LIVE_OK' }],
+        stream: false,
+        max_tokens: 8,
+        temperature: 0,
+      });
+
+      const data = (await result.response.json()) as ChatCompletionResponse;
+      expect(data.choices[0]?.message.content).toBe('LIVE_OK');
+    } finally {
+      global.fetch = originalFetch;
+    }
+  }, 2_000);
 
   test('infer falls back to wasm when edge returns only empty SSE content', async () => {
     const originalFetch = global.fetch;

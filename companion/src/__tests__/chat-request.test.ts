@@ -1,4 +1,4 @@
-import { describe, expect, test } from 'bun:test';
+import { describe, expect, test } from '@a0n/gnosis/test';
 import { shouldStreamChatCompletion } from '../chat-request';
 
 describe('shouldStreamChatCompletion', () => {

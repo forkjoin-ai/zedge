@@ -16,8 +16,8 @@
  *   7. On completion: results collected, rejections → void map
  */
 
-import { voidMapStore } from "./void-map-store.ts";
-import type { VfsMount } from "./vfs-bridge.ts";
+import { voidMapStore } from './void-map-store.ts';
+import type { VfsMount } from './vfs-bridge.ts';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -155,7 +155,10 @@ async function executeCloudAgent(
   config: CloudAgentConfig
 ): Promise<void> {
   session.status = 'running';
-  broadcastToSession(session.id, { type: 'agent-running', agentName: config.agentName });
+  broadcastToSession(session.id, {
+    type: 'agent-running',
+    agentName: config.agentName,
+  });
 
   const timeoutMs = config.timeoutMs ?? 120_000;
   const t0 = Date.now();
@@ -179,7 +182,11 @@ async function executeCloudAgent(
     }
 
     // --- Path 2: Try topology execution through Betty ---
-    const topologyResult = await tryTopologyExecution(session, config, timeoutMs);
+    const topologyResult = await tryTopologyExecution(
+      session,
+      config,
+      timeoutMs
+    );
 
     if (topologyResult) {
       session.result = topologyResult;
@@ -201,7 +208,11 @@ async function executeCloudAgent(
       reason: 'forge agent not deployed, topology not available',
     });
 
-    const superResult = await executeSuperinferenceFallback(session, config, timeoutMs);
+    const superResult = await executeSuperinferenceFallback(
+      session,
+      config,
+      timeoutMs
+    );
     session.result = superResult;
     session.status = 'completed';
     session.completedAt = Date.now();
@@ -244,7 +255,7 @@ async function tryForgeAgentTick(
   try {
     // Try to discover agent ports from forge
     const { discoverProjects } = await import(
-      "../../../aeon-forge/src/deploy/discovery.ts"
+      '../../../aeon-forge/src/deploy/discovery.ts'
     );
     const workspacePath = process.env.AEON_ROOT || process.cwd();
     const projects = await discoverProjects(workspacePath);
@@ -266,7 +277,7 @@ async function tryForgeAgentTick(
       env: {
         AEON_ROOT: workspacePath,
         AGENT_NAME: config.agentName,
-        ...process.env as Record<string, string>,
+        ...(process.env as Record<string, string>),
       },
       tickNumber: Date.now(),
     };
@@ -295,7 +306,8 @@ async function tryForgeAgentTick(
     return {
       filesModified: session.targetFiles,
       output: JSON.stringify(tickResult.outputs ?? {}, null, 2),
-      editsApplied: tickResult.actions?.filter((a) => a.type === 'deploy').length ?? 0,
+      editsApplied:
+        tickResult.actions?.filter((a) => a.type === 'deploy').length ?? 0,
       durationMs: tickResult.durationMs ?? Date.now() - session.startedAt,
       metrics: tickResult.entropy
         ? {
@@ -339,7 +351,7 @@ async function tryTopologyExecution(
     if (!existsSync(topologyPath)) return null;
 
     // Execute through topology runner
-    const { runTopology } = await import("./topology-runner.ts");
+    const { runTopology } = await import('./topology-runner.ts');
     const result = await runTopology({
       filePath: topologyPath,
       input: {
@@ -383,16 +395,23 @@ async function executeSuperinferenceFallback(
   const fileContents: Record<string, string> = {};
   for (const file of session.targetFiles.slice(0, 5)) {
     try {
-      fileContents[file] = readFileSync(resolve(workspacePath, file), 'utf-8').slice(0, 8000);
-    } catch { /* File may not exist */ }
+      fileContents[file] = readFileSync(
+        resolve(workspacePath, file),
+        'utf-8'
+      ).slice(0, 8000);
+    } catch {
+      /* File may not exist */
+    }
   }
 
   const fileContext = Object.entries(fileContents)
     .map(([path, content]) => `--- ${path} ---\n${content}`)
     .join('\n\n');
 
-  const { superinfer } = await import("./superinference.ts");
-  const { analyzeCodeEmotion, routeByEmotion } = await import("./emotion-router.ts");
+  const { superinfer } = await import('./superinference.ts');
+  const { analyzeCodeEmotion, routeByEmotion } = await import(
+    './emotion-router.ts'
+  );
 
   let strategy: 'fastest' | 'consensus' | 'constructive' = 'constructive';
   if (fileContext) {
@@ -413,7 +432,8 @@ async function executeSuperinferenceFallback(
         },
         {
           role: 'user',
-          content: fileContext || `Task: ${config.task}\n\nNo target files specified.`,
+          content:
+            fileContext || `Task: ${config.task}\n\nNo target files specified.`,
         },
       ],
       temperature: 0.3,
@@ -485,7 +505,9 @@ export function createSessionStream(sessionId: string): ReadableStream {
       const session = sessions.get(sessionId);
       if (session) {
         controller.enqueue(
-          encoder.encode(`data: ${JSON.stringify({ type: 'session-state', session })}\n\n`)
+          encoder.encode(
+            `data: ${JSON.stringify({ type: 'session-state', session })}\n\n`
+          )
         );
       }
 

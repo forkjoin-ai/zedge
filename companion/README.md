@@ -10,7 +10,7 @@ The fair brag is that it is more than a thin proxy. It handles inference routing
 
 The HTTP shell now rides on `x-gnosis`, and the default public listener path is a native `gnosis-uring` proxy in front of a loopback-only x-gnosis app shell. The companion API no longer carries its own standalone Node server loop or the old localhost OAuth callback server, and the checked-in launcher now runs the companion through `gnode` instead of a Bun-only shell.
 
-For local inference, the companion now routes its on-device fallback through Aether prompt/runtime helpers: SmolLM2 chat generation stays local-first, `wasm-local` is exposed as an explicit selectable model and now ships as the default `preferredModel`, and local embedding fallback upgrades from pure hash vectors to a MiniLM model path when the cache is available.
+For local inference, the companion now routes its on-device fallback through Aether prompt/runtime helpers: the verified TinyLlama chat path stays local-first for `wasm-local`, that selectable model now ships as the default `preferredModel`, and local embedding fallback upgrades from pure hash vectors to a MiniLM model path when the cache is available.
 
 The companion also now syncs the `language_models.openai_compatible.Zedge.available_models` block in local Zed settings from the live model catalog at startup, so model picker entries track current edge and local availability instead of drifting behind a hardcoded snippet.
 
@@ -66,7 +66,7 @@ The same config file also controls the public listener mode:
 
 `mode: "bun"` keeps the direct x-gnosis listener shape for backward compatibility. `mode: "gnosis-uring-proxy"` starts a loopback x-gnosis app shell and exposes the public port through the native Rust listener instead.
 
-For hermetic local runs and integration tests, environment overrides take precedence over the file config: `ZEDGE_COMPANION_PORT` forces the public companion port and `ZEDGE_LISTENER_MODE` forces either `bun` or `gnosis-uring-proxy` without editing `~/.edgework/zedge.json`.
+For hermetic local runs and integration tests, environment overrides take precedence over the file config: `ZEDGE_COMPANION_PORT` forces the public companion port and `ZEDGE_LISTENER_MODE` forces either `bun` or `gnosis-uring-proxy` without editing `~/.edgework/zedge.json`. The mesh discovery UDP port now derives from the companion port by default, so isolated sidecars do not all contend for `7332`; set `listener.discoveryPort` only when you need a non-derived shared discovery port.
 
 ## Auth Flow
 

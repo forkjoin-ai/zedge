@@ -5,9 +5,6 @@
  */
 
 import { spawn as nodeSpawn } from 'child_process';
-import { existsSync, readFileSync } from 'fs';
-import { join as pathJoin, dirname as pathDirname } from 'path';
-import { fileURLToPath } from 'url';
 import {
   XGnosisServer,
   type RequestPayload,
@@ -25,53 +22,61 @@ import {
   createSSEProxyStream,
   getRecentLogs,
   clearLogs,
-} from "./inference-bridge.ts";
-import type { TierAttempt } from "./inference-bridge.ts";
-import { aetherLocalRuntime } from "./aether-local-runtime.ts";
-import { getOwnedCompanionActivity } from "./companion-activity.ts";
-import { fimCache, fimCacheKey, speculativePrefetch } from "./fim-cache.ts";
-import { joinPool, leavePool, getPoolStatus } from "./compute-node.ts";
-import { getRecentFeedback, recordFeedback } from "./feedback-log.ts";
-import { getCompanionPort, getZedgeConfig } from "./config.ts";
-import { handleBabelfishRequest } from "./babelfish-routes.ts";
+} from './inference-bridge.ts';
+import type { TierAttempt } from './inference-bridge.ts';
+import { aetherLocalRuntime } from './aether-local-runtime.ts';
+import { getOwnedCompanionActivity } from './companion-activity.ts';
+import { fimCache, fimCacheKey, speculativePrefetch } from './fim-cache.ts';
+import { joinPool, leavePool, getPoolStatus } from './compute-node.ts';
+import { getRecentFeedback, recordFeedback } from './feedback-log.ts';
+import { getCompanionPort, getZedgeConfig } from './config.ts';
+import { handleBabelfishRequest } from './babelfish-routes.ts';
 import {
   startMesh,
   stopMesh,
   getMeshStatus,
   handlePeerRequest,
-} from "./p2p-mesh.ts";
-import { login, logout, whoami } from "./auth.ts";
+} from './p2p-mesh.ts';
+import { login, logout, whoami } from './auth.ts';
+import { hasCloudRunCoordinators } from './coordinator-urls.ts';
 import {
   getTierHealth,
   getProbeResults,
   getFastestTier,
-} from "./latency-probe.ts";
-import { runInferenceSelfTest } from "./selftest.ts";
-import { createResilientStream, getActiveSessions } from "./stream-reconnect.ts";
-import { superinfer, recursiveSuperinfer } from "./superinference.ts";
-import type { CollapseStrategy, RecursiveRequest } from "./superinference.ts";
+} from './latency-probe.ts';
+import { runInferenceSelfTest } from './selftest.ts';
+import {
+  createResilientStream,
+  getActiveSessions,
+} from './stream-reconnect.ts';
+import { superinfer, recursiveSuperinfer } from './superinference.ts';
+import type { CollapseStrategy, RecursiveRequest } from './superinference.ts';
 import {
   createSession,
   getSession,
   deleteSession,
   agentTurn,
-} from "./acp-agent.ts";
-import type { AgentCapabilities } from "./acp-agent.ts";
+} from './acp-agent.ts';
+import type { AgentCapabilities } from './acp-agent.ts';
 import {
   encode as binaryEncode,
   decode as binaryDecode,
   isValidFrame,
   CONTENT_TYPE as BINARY_CONTENT_TYPE,
-} from "./binary-protocol.ts";
-import type { ChatCompletionRequest } from "./inference-bridge.ts";
-import type { ForgeBridge } from "./forge-bridge.ts";
-import type { CeraBridge } from "./cera-bridge.ts";
+} from './binary-protocol.ts';
+import type { ChatCompletionRequest } from './inference-bridge.ts';
+import type { ForgeBridge } from './forge-bridge.ts';
+import type { CeraBridge } from './cera-bridge.ts';
 import {
   superinferWithPreset,
   getCompositionPreset,
   COMPOSITION_PRESETS,
-} from "./superinference.ts";
-import { shouldStreamChatCompletion } from "./chat-request.ts";
+} from './superinference.ts';
+import { shouldStreamChatCompletion } from './chat-request.ts';
+import {
+  applySystemPromptBudget,
+  shouldSkipHeavySystemContext,
+} from './prompt-budget.ts';
 // Gnosis modules -- lazy-loaded to avoid blocking the event loop at startup.
 // The file watcher, incremental checker, and betty compiler are CPU-heavy, and
 // scanning the entire workspace directory on import would delay the companion
@@ -105,63 +110,71 @@ export function startGnosisWatcher(): void {
   if (_gnosisInitStarted) return;
   _gnosisInitStarted = true;
 
-  import('@a0n/gnosis/ts-check-watcher').then(({ GnosisFileWatcher }) => {
-    _gnosisWatcher = new GnosisFileWatcher({
-      debounceMs: 500,
-      enableAutofix: true,
-    });
-    _gnosisWatcher.addListener((event: any) => {
-      if (event.type === 'check-complete' && event.result) {
-        const payload = JSON.stringify({
-          type: 'topology-update',
-          filePath: event.filePath,
-          timestamp: event.timestamp,
-          nodes: event.result.topology.nodes,
-          edges: event.result.topology.edges,
-          metrics: event.result.metrics,
-          diagnostics: event.result.diagnostics,
-          autofixes: event.autofixes ?? [],
-        });
-        const encoder = new TextEncoder();
-        for (const controller of gnosisSseClients) {
-          try {
-            controller.enqueue(encoder.encode(`data: ${payload}\n\n`));
-          } catch {
-            gnosisSseClients.delete(controller);
+  import('@a0n/gnosis/ts-check-watcher')
+    .then(({ GnosisFileWatcher }) => {
+      _gnosisWatcher = new GnosisFileWatcher({
+        debounceMs: 500,
+        enableAutofix: true,
+      });
+      _gnosisWatcher.addListener((event: any) => {
+        if (event.type === 'check-complete' && event.result) {
+          const payload = JSON.stringify({
+            type: 'topology-update',
+            filePath: event.filePath,
+            timestamp: event.timestamp,
+            nodes: event.result.topology.nodes,
+            edges: event.result.topology.edges,
+            metrics: event.result.metrics,
+            diagnostics: event.result.diagnostics,
+            autofixes: event.autofixes ?? [],
+          });
+          const encoder = new TextEncoder();
+          for (const controller of gnosisSseClients) {
+            try {
+              controller.enqueue(encoder.encode(`data: ${payload}\n\n`));
+            } catch {
+              gnosisSseClients.delete(controller);
+            }
+          }
+
+          // Auto-refresh code index on file change
+          if (event.filePath) {
+            import('./code-index.ts')
+              .then(({ codeIndex }) => {
+                void codeIndex.reindexFile(event.filePath);
+              })
+              .catch(() => {});
           }
         }
-
-        // Auto-refresh code index on file change
-        if (event.filePath) {
-          import("./code-index.ts").then(({ codeIndex }) => {
-            void codeIndex.reindexFile(event.filePath);
-          }).catch(() => {});
-        }
-      }
+      });
+      const workspaceRoot = process.env.AEON_ROOT || process.cwd();
+      void _gnosisWatcher.watchDirectory(workspaceRoot);
+      console.log(`[zedge] Gnosis file watcher started for ${workspaceRoot}`);
+    })
+    .catch((err) => {
+      console.warn(`[zedge] Gnosis file watcher failed to start: ${err}`);
     });
-    const workspaceRoot = process.env.AEON_ROOT || process.cwd();
-    void _gnosisWatcher.watchDirectory(workspaceRoot);
-    console.log(`[zedge] Gnosis file watcher started for ${workspaceRoot}`);
-  }).catch((err) => {
-    console.warn(`[zedge] Gnosis file watcher failed to start: ${err}`);
-  });
 }
-import type { VfsBridge } from "./vfs-bridge.ts";
-import type { CollabBridge, CollabPresenceUpdate } from "./collab-bridge.ts";
-import type { KernelBridge } from "./kernel-bridge.ts";
+import type { VfsBridge } from './vfs-bridge.ts';
+import type { CollabBridge, CollabPresenceUpdate } from './collab-bridge.ts';
+import type { KernelBridge } from './kernel-bridge.ts';
 import type {
   CapacitorBridge,
   ProjectionType,
   CodeBlock,
-} from "./capacitor-bridge.ts";
-import type { CrdtBridge } from "./crdt-bridge.ts";
-import { generateInvite, parseRoomUcan, isRoomUcanExpired } from "./ucan-scope.ts";
-import type { ZedgeAccessMode } from "./ucan-scope.ts";
-import type { UcanBridge, AgentMode } from "./ucan-bridge.ts";
+} from './capacitor-bridge.ts';
+import type { CrdtBridge } from './crdt-bridge.ts';
+import {
+  generateInvite,
+  parseRoomUcan,
+  isRoomUcanExpired,
+} from './ucan-scope.ts';
+import type { ZedgeAccessMode } from './ucan-scope.ts';
+import type { UcanBridge, AgentMode } from './ucan-bridge.ts';
 import type { UcanCapability } from '@affectively/auth';
-import { AgentParticipant } from "./agent-participant.ts";
-import type { AgentEdit, AgentReplacement } from "./agent-participant.ts";
-import { getMarketStatus } from "./compute-node.ts";
+import { AgentParticipant } from './agent-participant.ts';
+import type { AgentEdit, AgentReplacement } from './agent-participant.ts';
+import { getMarketStatus } from './compute-node.ts';
 
 // --- Shell exec helper (replaces Bun.spawn) ---
 
@@ -179,7 +192,8 @@ function execShell(
   const argsPortion = spaceIdx >= 0 ? command.slice(spaceIdx + 1) : '';
   if (SHELL_METACHAR_RE.test(argsPortion)) {
     return Promise.resolve({
-      output: 'Rejected: command arguments contain disallowed shell metacharacters',
+      output:
+        'Rejected: command arguments contain disallowed shell metacharacters',
       exitCode: 1,
     });
   }
@@ -202,7 +216,10 @@ function execShell(
 
     proc.on('close', (code) => {
       if (timer) clearTimeout(timer);
-      resolve({ output: Buffer.concat(chunks).toString('utf-8'), exitCode: code ?? 1 });
+      resolve({
+        output: Buffer.concat(chunks).toString('utf-8'),
+        exitCode: code ?? 1,
+      });
     });
     proc.on('error', (err) => {
       if (timer) clearTimeout(timer);
@@ -263,54 +280,6 @@ interface ForgeDeployRequestBody {
   project?: string;
 }
 
-// --- System prompt compaction for small models ---
-
-/**
- * Detect and replace bloated system prompts (CLAUDE.md, etc.) that overwhelm
- * small-context models. Zed injects project rules into system messages —
- * a 20K-token CLAUDE.md leaves almost nothing for a 7B model's context window.
- *
- * Strategy: if any system message exceeds the threshold, replace it with the
- * lean EDGEWORK.md content (cached on first use).
- */
-const SYSTEM_PROMPT_THRESHOLD = 2000; // chars — CLAUDE.md is ~15K+
-
-let _edgeworkPrompt: string | null = null;
-
-const _serverDirname = pathDirname(fileURLToPath(import.meta.url));
-
-function getEdgeworkPrompt(): string {
-  if (_edgeworkPrompt !== null) return _edgeworkPrompt;
-  try {
-    // Walk up from companion/src to find EDGEWORK.md at repo root
-    let dir = _serverDirname;
-    for (let i = 0; i < 10; i++) {
-      const candidate = pathJoin(dir, 'EDGEWORK.md');
-      if (existsSync(candidate)) {
-        _edgeworkPrompt = readFileSync(candidate, 'utf-8');
-        return _edgeworkPrompt!;
-      }
-      dir = pathDirname(dir);
-    }
-  } catch {
-    // Fall through to default
-  }
-  _edgeworkPrompt =
-    'You are a coding assistant for a repository with project-specific orchestration. Prefer repo-owned task runners and documented workflows over raw tool invocations. Be concise and code-focused.';
-  return _edgeworkPrompt;
-}
-
-function compactSystemPrompts(
-  messages: Array<{ role: string; content: string }>
-): Array<{ role: string; content: string }> {
-  return messages.map((msg) => {
-    if (msg.role === 'system' && msg.content.length > SYSTEM_PROMPT_THRESHOLD) {
-      return { role: 'system', content: getEdgeworkPrompt() };
-    }
-    return msg;
-  });
-}
-
 // --- Helpers ---
 
 function jsonResponse(data: unknown, status = 200): Response {
@@ -338,7 +307,9 @@ function detectHostRuntime(): 'gnode' | 'bun' | 'node' {
   if (process.env.GNODE_RUNTIME === '1') {
     return 'gnode';
   }
-  if (process.argv.some((arg) => arg.endsWith('/gnode.js') || arg === 'gnode')) {
+  if (
+    process.argv.some((arg) => arg.endsWith('/gnode.js') || arg === 'gnode')
+  ) {
     return 'gnode';
   }
   if (typeof Bun !== 'undefined') {
@@ -458,7 +429,13 @@ async function extractResponseData(
       object: 'chat.completion',
       created: Math.floor(Date.now() / 1000),
       model,
-      choices: [{ index: 0, message: { role: 'assistant', content }, finish_reason: 'stop' }],
+      choices: [
+        {
+          index: 0,
+          message: { role: 'assistant', content },
+          finish_reason: 'stop',
+        },
+      ],
       usage: { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 },
     };
   }
@@ -487,6 +464,8 @@ export async function handleWebRequest(req: Request): Promise<Response> {
     const config = getZedgeConfig();
     const pool = getPoolStatus();
     const mesh = getMeshStatus();
+    const cloudRunDirectEnabled =
+      config.cloudRunDirect && hasCloudRunCoordinators();
     return jsonResponse({
       status: 'ok',
       version: '2.0.0',
@@ -510,10 +489,12 @@ export async function handleWebRequest(req: Request): Promise<Response> {
         totalMemoryMb: mesh.totalCapacity.totalMemoryMb,
       },
       inference: {
-        tiers: ['mesh', 'edge', 'cloudrun', 'wasm', 'echo'],
+        tiers: cloudRunDirectEnabled
+          ? ['mesh', 'edge', 'cloudrun', 'wasm', 'echo']
+          : ['mesh', 'edge', 'wasm', 'echo'],
         meshAvailable: mesh.running && mesh.peers.length > 0,
         edgeAvailable: true,
-        cloudRunDirect: config.cloudRunDirect,
+        cloudRunDirect: cloudRunDirectEnabled,
         wasmLocal: true,
         localRuntime: {
           pid: process.pid,
@@ -569,7 +550,12 @@ export async function handleWebRequest(req: Request): Promise<Response> {
     };
     const rating = body.rating;
 
-    if (typeof rating !== 'number' || !Number.isInteger(rating) || rating < 1 || rating > 5) {
+    if (
+      typeof rating !== 'number' ||
+      !Number.isInteger(rating) ||
+      rating < 1 ||
+      rating > 5
+    ) {
       return jsonResponse(
         { error: 'rating must be an integer between 1 and 5' },
         400
@@ -748,7 +734,7 @@ export async function handleWebRequest(req: Request): Promise<Response> {
   // ==================== Code Index ====================
 
   if (path === '/code-index/search' && req.method === 'POST') {
-    const { codeIndex } = await import("./code-index.ts");
+    const { codeIndex } = await import('./code-index.ts');
     const body = (await req.json()) as { query?: string; topK?: number };
     if (!body.query) return jsonResponse({ error: 'query is required' }, 400);
     const results = await codeIndex.search(body.query, body.topK ?? 5);
@@ -766,9 +752,10 @@ export async function handleWebRequest(req: Request): Promise<Response> {
   }
 
   if (path === '/code-index/related' && req.method === 'GET') {
-    const { codeIndex } = await import("./code-index.ts");
+    const { codeIndex } = await import('./code-index.ts');
     const filePath = url.searchParams.get('file');
-    if (!filePath) return jsonResponse({ error: 'file query param is required' }, 400);
+    if (!filePath)
+      return jsonResponse({ error: 'file query param is required' }, 400);
     const results = await codeIndex.getRelatedContext(filePath, 5);
     return jsonResponse({
       results: results.map((r) => ({
@@ -784,7 +771,7 @@ export async function handleWebRequest(req: Request): Promise<Response> {
   }
 
   if (path === '/code-index/stats' && req.method === 'GET') {
-    const { codeIndex } = await import("./code-index.ts");
+    const { codeIndex } = await import('./code-index.ts');
     return jsonResponse(codeIndex.getStats());
   }
 
@@ -906,8 +893,14 @@ export async function handleWebRequest(req: Request): Promise<Response> {
         return jsonResponse({ error: 'sourceText is required' }, 400);
       const filePath3 = body.filePath ?? 'inline.ts';
       const gnosis3 = await ensureGnosisModules();
-      const result = await gnosis3.checkTypeScriptWithGnosis(body.sourceText, filePath3);
-      const suggestions = gnosis3.generateAutofixSuggestions(result, body.sourceText);
+      const result = await gnosis3.checkTypeScriptWithGnosis(
+        body.sourceText,
+        filePath3
+      );
+      const suggestions = gnosis3.generateAutofixSuggestions(
+        result,
+        body.sourceText
+      );
       return jsonResponse({
         diagnostics: result.diagnostics,
         suggestions,
@@ -925,7 +918,7 @@ export async function handleWebRequest(req: Request): Promise<Response> {
   }
 
   if (path === '/gnosis/viz' && req.method === 'GET') {
-    const { default: serveGnosisViz } = await import("./gnosis-viz.ts");
+    const { default: serveGnosisViz } = await import('./gnosis-viz.ts');
     return serveGnosisViz(url);
   }
 
@@ -949,7 +942,9 @@ export async function handleWebRequest(req: Request): Promise<Response> {
       },
       cancel(controller) {
         if (heartbeatInterval) clearInterval(heartbeatInterval);
-        gnosisSseClients.delete(controller as unknown as ReadableStreamDefaultController);
+        gnosisSseClients.delete(
+          controller as unknown as ReadableStreamDefaultController
+        );
       },
     });
     return new Response(stream, {
@@ -1124,6 +1119,7 @@ export async function handleWebRequest(req: Request): Promise<Response> {
   // Chat completions
   if (path === '/v1/chat/completions' && req.method === 'POST') {
     const body = (await req.json()) as ChatRequestBody;
+    const model = body.model ?? getZedgeConfig().preferredModel;
     const rawMessages = (body.messages ?? []) as Array<{
       role: string;
       content: unknown;
@@ -1132,7 +1128,7 @@ export async function handleWebRequest(req: Request): Promise<Response> {
     // Zed's OpenAI-compatible provider sends content as an array of
     // content parts: [{type:"text", text:"..."}]. Normalize to plain
     // strings so coordinators (which expect OpenAI string format) don't choke.
-    const normalizedMessages = rawMessages.map((msg) => {
+    let messages = rawMessages.map((msg) => {
       if (Array.isArray(msg.content)) {
         const text = msg.content
           .filter((p: { type?: string }) => p.type === 'text')
@@ -1142,54 +1138,61 @@ export async function handleWebRequest(req: Request): Promise<Response> {
       }
       return { role: msg.role, content: String(msg.content ?? '') };
     }) as ChatCompletionRequest['messages'];
-    const messages = compactSystemPrompts(
-      normalizedMessages
-    ) as ChatCompletionRequest['messages'];
 
     // --- Auto-attach codebase context ---
     // Extract the last user message, search the semantic code index, and
     // inject the top relevant blocks as additional context. This makes every
     // chat message codebase-aware without requiring explicit @-references.
-    try {
-      const lastUserMsg = [...messages].reverse().find((m) => m.role === 'user');
-      if (lastUserMsg && lastUserMsg.content.length > 10) {
-        const { codeIndex } = await import("./code-index.ts");
-        const stats = codeIndex.getStats();
-        if (stats.indexedBlocks > 0) {
-          const results = await codeIndex.search(lastUserMsg.content, 5);
-          if (results.length > 0) {
-            const contextBlocks = results
-              .filter((r) => r.score > 0.3)
-              .map(
-                (r) =>
-                  `--- ${r.block.relativePath}:${r.block.startLine}-${r.block.endLine} (${r.block.kind}) ---\n${r.block.content}`
-              )
-              .join('\n\n');
-            if (contextBlocks.length > 0) {
-              // Append context to the system message, or create one
-              const systemIdx = messages.findIndex((m) => m.role === 'system');
-              const contextSuffix = `\n\n<codebase_context>\n${contextBlocks}\n</codebase_context>`;
-              if (systemIdx >= 0) {
-                messages[systemIdx] = {
-                  ...messages[systemIdx],
-                  content: messages[systemIdx].content + contextSuffix,
-                };
-              } else {
-                messages.unshift({
-                  role: 'system',
-                  content: `You are a coding assistant with access to the user's codebase.${contextSuffix}`,
-                });
+    if (!shouldSkipHeavySystemContext(model)) {
+      try {
+        const lastUserMsg = [...messages]
+          .reverse()
+          .find((m) => m.role === 'user');
+        if (lastUserMsg && lastUserMsg.content.length > 10) {
+          const { codeIndex } = await import('./code-index.ts');
+          const stats = codeIndex.getStats();
+          if (stats.indexedBlocks > 0) {
+            const results = await codeIndex.search(lastUserMsg.content, 5);
+            if (results.length > 0) {
+              const contextBlocks = results
+                .filter((r) => r.score > 0.3)
+                .map(
+                  (r) =>
+                    `--- ${r.block.relativePath}:${r.block.startLine}-${r.block.endLine} (${r.block.kind}) ---\n${r.block.content}`
+                )
+                .join('\n\n');
+              if (contextBlocks.length > 0) {
+                // Append context to the system message, or create one.
+                const systemIdx = messages.findIndex(
+                  (m) => m.role === 'system'
+                );
+                const contextSuffix = `\n\n<codebase_context>\n${contextBlocks}\n</codebase_context>`;
+                if (systemIdx >= 0) {
+                  messages[systemIdx] = {
+                    ...messages[systemIdx],
+                    content: messages[systemIdx].content + contextSuffix,
+                  };
+                } else {
+                  messages.unshift({
+                    role: 'system',
+                    content: `You are a coding assistant with access to the user's codebase.${contextSuffix}`,
+                  });
+                }
               }
             }
           }
         }
+      } catch {
+        // Code index may not be initialized yet -- proceed without context
       }
-    } catch {
-      // Code index may not be initialized yet -- proceed without context
     }
+    messages = applySystemPromptBudget(
+      model,
+      messages
+    ) as ChatCompletionRequest['messages'];
 
     const request: ChatCompletionRequest = {
-      model: body.model ?? getZedgeConfig().preferredModel,
+      model,
       messages,
       stream: shouldStreamChatCompletion(
         body.stream,
@@ -1233,7 +1236,12 @@ export async function handleWebRequest(req: Request): Promise<Response> {
       // Fallback: when the winning tier returned JSON instead of SSE, convert
       // the completed response into OpenAI-style SSE chunks for Zed.
       const data = await extractResponseData(result.response, request.model);
-      const content = (data as Record<string, unknown> & { choices?: Array<{ message?: { content?: string } }> })?.choices?.[0]?.message?.content ?? '';
+      const content =
+        (
+          data as Record<string, unknown> & {
+            choices?: Array<{ message?: { content?: string } }>;
+          }
+        )?.choices?.[0]?.message?.content ?? '';
       const id = data.id ?? `chatcmpl-${Date.now()}`;
       const created = data.created ?? Math.floor(Date.now() / 1000);
       const model = data.model ?? request.model;
@@ -1319,26 +1327,30 @@ export async function handleWebRequest(req: Request): Promise<Response> {
     const data = await extractResponseData(result.response);
 
     // Auto-learn from this conversation (non-blocking)
-    const responseContent = (data as Record<string, unknown> & { choices?: Array<{ message?: { content?: string } }> })?.choices?.[0]?.message?.content ?? '';
+    const responseContent =
+      (
+        data as Record<string, unknown> & {
+          choices?: Array<{ message?: { content?: string } }>;
+        }
+      )?.choices?.[0]?.message?.content ?? '';
     if (responseContent) {
-      import("./inference-bridge.ts").then(({ autoLearnFromInference }) => {
-        autoLearnFromInference(request, responseContent, result.tier);
-      }).catch(() => {});
+      import('./inference-bridge.ts')
+        .then(({ autoLearnFromInference }) => {
+          autoLearnFromInference(request, responseContent, result.tier);
+        })
+        .catch(() => {});
     }
 
-    return new Response(
-      JSON.stringify(data),
-      {
-        status: 200,
-        headers: {
-          'Content-Type': 'application/json',
-          'Access-Control-Allow-Origin': '*',
-          'X-Zedge-Tier': result.tier,
-          ...result.upstreamHeaders,
-          ...attemptHeaders,
-        },
-      }
-    );
+    return new Response(JSON.stringify(data), {
+      status: 200,
+      headers: {
+        'Content-Type': 'application/json',
+        'Access-Control-Allow-Origin': '*',
+        'X-Zedge-Tier': result.tier,
+        ...result.upstreamHeaders,
+        ...attemptHeaders,
+      },
+    });
   }
 
   // Code completions (FIM — fill-in-middle)
@@ -1390,7 +1402,9 @@ export async function handleWebRequest(req: Request): Promise<Response> {
             object: 'text_completion',
             created: Math.floor(Date.now() / 1000),
             model: cached.model,
-            choices: [{ text: cached.completion, index: 0, finish_reason: 'stop' }],
+            choices: [
+              { text: cached.completion, index: 0, finish_reason: 'stop' },
+            ],
             usage: { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 },
           }),
           {
@@ -1405,7 +1419,13 @@ export async function handleWebRequest(req: Request): Promise<Response> {
       }
 
       // Cache miss — race Cloud Run + WASM
-      const fimResult = await inferFim(prefix, suffix, model, maxTokens, temperature);
+      const fimResult = await inferFim(
+        prefix,
+        suffix,
+        model,
+        maxTokens,
+        temperature
+      );
 
       // Populate cache
       fimCache.set(cacheKey, {
@@ -1424,7 +1444,9 @@ export async function handleWebRequest(req: Request): Promise<Response> {
         model,
         async (p, s, m) => {
           const r = await inferFim(p, s, m, maxTokens, temperature);
-          return r.completion ? { completion: r.completion, tier: r.tier } : null;
+          return r.completion
+            ? { completion: r.completion, tier: r.tier }
+            : null;
         }
       );
 
@@ -1435,7 +1457,9 @@ export async function handleWebRequest(req: Request): Promise<Response> {
           object: 'text_completion',
           created: Math.floor(Date.now() / 1000),
           model: fimResult.model,
-          choices: [{ text: fimResult.completion, index: 0, finish_reason: 'stop' }],
+          choices: [
+            { text: fimResult.completion, index: 0, finish_reason: 'stop' },
+          ],
           usage: { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 },
         }),
         {
@@ -1471,19 +1495,16 @@ export async function handleWebRequest(req: Request): Promise<Response> {
     const result = await infer(request);
     const completionAttemptHeaders = buildAttemptHeaders(result.attempts);
     const data = await extractResponseData(result.response);
-    return new Response(
-      JSON.stringify(data),
-      {
-        status: 200,
-        headers: {
-          'Content-Type': 'application/json',
-          'Access-Control-Allow-Origin': '*',
-          'X-Zedge-Tier': result.tier,
-          ...result.upstreamHeaders,
-          ...completionAttemptHeaders,
-        },
-      }
-    );
+    return new Response(JSON.stringify(data), {
+      status: 200,
+      headers: {
+        'Content-Type': 'application/json',
+        'Access-Control-Allow-Origin': '*',
+        'X-Zedge-Tier': result.tier,
+        ...result.upstreamHeaders,
+        ...completionAttemptHeaders,
+      },
+    });
   }
 
   // Models list
@@ -1638,25 +1659,32 @@ export async function handleWebRequest(req: Request): Promise<Response> {
     if (!body.instruction) {
       return jsonResponse({ error: 'instruction is required' }, 400);
     }
-    const { executeMultiFileEdit } = await import("./multi-file-agent.ts");
+    const { executeMultiFileEdit } = await import('./multi-file-agent.ts');
     const result = await executeMultiFileEdit({
       instruction: body.instruction,
       workspacePath: process.env.AEON_ROOT || process.cwd(),
       targetFiles: body.target_files,
       model: body.model,
     });
-    return jsonResponse(result, result.failedCount > 0 && result.appliedCount === 0 ? 400 : 200);
+    return jsonResponse(
+      result,
+      result.failedCount > 0 && result.appliedCount === 0 ? 400 : 200
+    );
   }
 
   // ==================== Agent Swarm ====================
 
   if (path === '/agent/swarm/start' && req.method === 'POST') {
-    const body = (await req.json()) as { task?: string; roles?: string[]; target_files?: string[] };
+    const body = (await req.json()) as {
+      task?: string;
+      roles?: string[];
+      target_files?: string[];
+    };
     if (!body.task || !body.roles?.length) {
       return jsonResponse({ error: 'task and roles[] are required' }, 400);
     }
-    const { AgentSwarm } = await import("./agent-swarm.ts");
-    const { CrdtBridge } = await import("./crdt-bridge.ts");
+    const { AgentSwarm } = await import('./agent-swarm.ts');
+    const { CrdtBridge } = await import('./crdt-bridge.ts');
     // Create a lightweight swarm (no full CRDT init needed for status tracking)
     const swarm = new AgentSwarm({} as InstanceType<typeof CrdtBridge>);
     try {
@@ -1667,13 +1695,16 @@ export async function handleWebRequest(req: Request): Promise<Response> {
       });
       return jsonResponse(status);
     } catch (err) {
-      return jsonResponse({ error: err instanceof Error ? err.message : String(err) }, 400);
+      return jsonResponse(
+        { error: err instanceof Error ? err.message : String(err) },
+        400
+      );
     }
   }
 
   if (path === '/agent/swarm/roles' && req.method === 'GET') {
-    const { AgentSwarm } = await import("./agent-swarm.ts");
-    const { AGENT_ROLES } = await import("./agent-roles.ts");
+    const { AgentSwarm } = await import('./agent-swarm.ts');
+    const { AGENT_ROLES } = await import('./agent-roles.ts');
     return jsonResponse({
       roles: AgentSwarm.listRoles(),
       details: Object.values(AGENT_ROLES).map((r) => ({
@@ -1690,7 +1721,7 @@ export async function handleWebRequest(req: Request): Promise<Response> {
   // ==================== Theme Engine ====================
 
   if (path === '/theme/current' && req.method === 'GET') {
-    const { getThemePalette } = await import("./theme-engine.ts");
+    const { getThemePalette } = await import('./theme-engine.ts');
     const filePath = url.searchParams.get('file') ?? undefined;
     return jsonResponse(getThemePalette(filePath));
   }
@@ -1707,7 +1738,7 @@ export async function handleWebRequest(req: Request): Promise<Response> {
     if (!body.agent_name || !body.task) {
       return jsonResponse({ error: 'agent_name and task are required' }, 400);
     }
-    const { startCloudAgent } = await import("./cloud-agent-session.ts");
+    const { startCloudAgent } = await import('./cloud-agent-session.ts');
     const session = await startCloudAgent({
       agentName: body.agent_name,
       task: body.task,
@@ -1718,14 +1749,14 @@ export async function handleWebRequest(req: Request): Promise<Response> {
   }
 
   if (path === '/cloud-agent/sessions' && req.method === 'GET') {
-    const { listSessions } = await import("./cloud-agent-session.ts");
+    const { listSessions } = await import('./cloud-agent-session.ts');
     return jsonResponse({ sessions: listSessions() });
   }
 
   if (path.startsWith('/cloud-agent/session/') && req.method === 'GET') {
     const sessionId = path.split('/').pop();
     if (!sessionId) return jsonResponse({ error: 'session ID required' }, 400);
-    const { getSession } = await import("./cloud-agent-session.ts");
+    const { getSession } = await import('./cloud-agent-session.ts');
     const session = getSession(sessionId);
     if (!session) return jsonResponse({ error: 'Session not found' }, 404);
     return jsonResponse(session);
@@ -1734,7 +1765,7 @@ export async function handleWebRequest(req: Request): Promise<Response> {
   if (path.startsWith('/cloud-agent/stream/') && req.method === 'GET') {
     const sessionId = path.split('/').pop();
     if (!sessionId) return jsonResponse({ error: 'session ID required' }, 400);
-    const { createSessionStream } = await import("./cloud-agent-session.ts");
+    const { createSessionStream } = await import('./cloud-agent-session.ts');
     return new Response(createSessionStream(sessionId), {
       headers: {
         'Content-Type': 'text/event-stream',
@@ -1748,7 +1779,7 @@ export async function handleWebRequest(req: Request): Promise<Response> {
   if (path.startsWith('/cloud-agent/cancel/') && req.method === 'POST') {
     const sessionId = path.split('/').pop();
     if (!sessionId) return jsonResponse({ error: 'session ID required' }, 400);
-    const { cancelSession } = await import("./cloud-agent-session.ts");
+    const { cancelSession } = await import('./cloud-agent-session.ts');
     return jsonResponse({ cancelled: cancelSession(sessionId) });
   }
 
@@ -1760,8 +1791,9 @@ export async function handleWebRequest(req: Request): Promise<Response> {
       input?: unknown;
       strategy?: 'cannon' | 'linear';
     };
-    if (!body.file_path) return jsonResponse({ error: 'file_path is required' }, 400);
-    const { runTopology } = await import("./topology-runner.ts");
+    if (!body.file_path)
+      return jsonResponse({ error: 'file_path is required' }, 400);
+    const { runTopology } = await import('./topology-runner.ts');
     const result = await runTopology({
       filePath: body.file_path,
       input: body.input,
@@ -1771,7 +1803,7 @@ export async function handleWebRequest(req: Request): Promise<Response> {
   }
 
   if (path === '/gnosis/run/stream' && req.method === 'GET') {
-    const { createRunStream } = await import("./topology-runner.ts");
+    const { createRunStream } = await import('./topology-runner.ts');
     return new Response(createRunStream(), {
       headers: {
         'Content-Type': 'text/event-stream',
@@ -1785,12 +1817,12 @@ export async function handleWebRequest(req: Request): Promise<Response> {
   // ==================== Observatory ====================
 
   if (path === '/observatory' && req.method === 'GET') {
-    const { getObservatorySnapshot } = await import("./observatory.ts");
+    const { getObservatorySnapshot } = await import('./observatory.ts');
     return jsonResponse(await getObservatorySnapshot());
   }
 
   if (path === '/observatory/stream' && req.method === 'GET') {
-    const { createObservatoryStream } = await import("./observatory.ts");
+    const { createObservatoryStream } = await import('./observatory.ts');
     return new Response(createObservatoryStream(), {
       headers: {
         'Content-Type': 'text/event-stream',
@@ -1802,52 +1834,82 @@ export async function handleWebRequest(req: Request): Promise<Response> {
   }
 
   if (path === '/observatory/trends' && req.method === 'GET') {
-    const { computeTrends } = await import("./observatory-history.ts");
+    const { computeTrends } = await import('./observatory-history.ts');
     return jsonResponse({ trends: computeTrends() });
   }
 
   if (path === '/observatory/void-boundary' && req.method === 'GET') {
-    const { computeSystemVoidBoundary } = await import("./observatory-history.ts");
+    const { computeSystemVoidBoundary } = await import(
+      './observatory-history.ts'
+    );
     return jsonResponse(computeSystemVoidBoundary());
   }
 
   if (path === '/observatory/history' && req.method === 'GET') {
     const limitParam = url.searchParams.get('limit');
-    const { getHistory, getHistorySize } = await import("./observatory-history.ts");
+    const { getHistory, getHistorySize } = await import(
+      './observatory-history.ts'
+    );
     const limit = limitParam ? parseInt(limitParam, 10) : 50;
-    return jsonResponse({ entries: getHistory(limit), total: getHistorySize() });
+    return jsonResponse({
+      entries: getHistory(limit),
+      total: getHistorySize(),
+    });
   }
 
   // ==================== Federated Void Sync ====================
 
   if (path === '/void-sync/status' && req.method === 'GET') {
-    const { federatedVoidSync } = await import("./federated-void-sync.ts");
+    const { federatedVoidSync } = await import('./federated-void-sync.ts');
     return jsonResponse(federatedVoidSync.getStatus());
   }
 
   if (path === '/void-sync/handshake' && req.method === 'POST') {
-    const { federatedVoidSync } = await import("./federated-void-sync.ts");
-    const body = (await req.json()) as { target_device_id?: string; ucan_token?: string };
+    const { federatedVoidSync } = await import('./federated-void-sync.ts');
+    const body = (await req.json()) as {
+      target_device_id?: string;
+      ucan_token?: string;
+    };
     if (!body.target_device_id || !body.ucan_token) {
-      return jsonResponse({ error: 'target_device_id and ucan_token required' }, 400);
+      return jsonResponse(
+        { error: 'target_device_id and ucan_token required' },
+        400
+      );
     }
-    const handshake = federatedVoidSync.initiateHandshake(body.target_device_id, body.ucan_token);
+    const handshake = federatedVoidSync.initiateHandshake(
+      body.target_device_id,
+      body.ucan_token
+    );
     return jsonResponse(handshake);
   }
 
   if (path === '/void-sync/accept' && req.method === 'POST') {
-    const { federatedVoidSync } = await import("./federated-void-sync.ts");
-    const body = (await req.json()) as { from_device_id?: string; ucan_token?: string };
+    const { federatedVoidSync } = await import('./federated-void-sync.ts');
+    const body = (await req.json()) as {
+      from_device_id?: string;
+      ucan_token?: string;
+    };
     if (!body.from_device_id || !body.ucan_token) {
-      return jsonResponse({ error: 'from_device_id and ucan_token required' }, 400);
+      return jsonResponse(
+        { error: 'from_device_id and ucan_token required' },
+        400
+      );
     }
-    const accepted = federatedVoidSync.acceptHandshake(body.from_device_id, body.ucan_token);
+    const accepted = federatedVoidSync.acceptHandshake(
+      body.from_device_id,
+      body.ucan_token
+    );
     return jsonResponse({ accepted });
   }
 
   if (path === '/void-sync/receive' && req.method === 'POST') {
-    const { federatedVoidSync } = await import("./federated-void-sync.ts");
-    const body = (await req.json()) as { device_id?: string; deficit?: number; rounds?: number; model_id?: string };
+    const { federatedVoidSync } = await import('./federated-void-sync.ts');
+    const body = (await req.json()) as {
+      device_id?: string;
+      deficit?: number;
+      rounds?: number;
+      model_id?: string;
+    };
     if (body.device_id === undefined || body.deficit === undefined) {
       return jsonResponse({ error: 'device_id and deficit required' }, 400);
     }
@@ -1863,27 +1925,28 @@ export async function handleWebRequest(req: Request): Promise<Response> {
   }
 
   if (path === '/void-sync/handshakes' && req.method === 'GET') {
-    const { federatedVoidSync } = await import("./federated-void-sync.ts");
+    const { federatedVoidSync } = await import('./federated-void-sync.ts');
     return jsonResponse({ handshakes: federatedVoidSync.getHandshakes() });
   }
 
   // Void sync transport (DashRelay room + line-scoped deficits)
   if (path === '/void-sync/connect' && req.method === 'POST') {
     const body = (await req.json()) as { workspace_id?: string };
-    if (!body.workspace_id) return jsonResponse({ error: 'workspace_id required' }, 400);
-    const { connectVoidSyncRoom } = await import("./void-sync-transport.ts");
+    if (!body.workspace_id)
+      return jsonResponse({ error: 'workspace_id required' }, 400);
+    const { connectVoidSyncRoom } = await import('./void-sync-transport.ts');
     const room = await connectVoidSyncRoom(body.workspace_id);
     return jsonResponse(room);
   }
 
   if (path === '/void-sync/disconnect' && req.method === 'POST') {
-    const { disconnectVoidSyncRoom } = await import("./void-sync-transport.ts");
+    const { disconnectVoidSyncRoom } = await import('./void-sync-transport.ts');
     disconnectVoidSyncRoom();
     return jsonResponse({ disconnected: true });
   }
 
   if (path === '/void-sync/room' && req.method === 'GET') {
-    const { getRoomStatus } = await import("./void-sync-transport.ts");
+    const { getRoomStatus } = await import('./void-sync-transport.ts');
     return jsonResponse(getRoomStatus());
   }
 
@@ -1891,10 +1954,16 @@ export async function handleWebRequest(req: Request): Promise<Response> {
     const filePath = url.searchParams.get('file');
     const startLine = url.searchParams.get('start');
     const endLine = url.searchParams.get('end');
-    if (!filePath) return jsonResponse({ error: 'file query param required' }, 400);
-    const { computeLineScopedDeficit, getFileDeficitMap } = await import("./void-sync-transport.ts");
+    if (!filePath)
+      return jsonResponse({ error: 'file query param required' }, 400);
+    const { computeLineScopedDeficit, getFileDeficitMap } = await import(
+      './void-sync-transport.ts'
+    );
     if (startLine && endLine) {
-      const deficit = computeLineScopedDeficit(filePath, [parseInt(startLine, 10), parseInt(endLine, 10)]);
+      const deficit = computeLineScopedDeficit(filePath, [
+        parseInt(startLine, 10),
+        parseInt(endLine, 10),
+      ]);
       return jsonResponse(deficit);
     }
     const deficits = getFileDeficitMap(filePath);
@@ -1904,22 +1973,25 @@ export async function handleWebRequest(req: Request): Promise<Response> {
   // ==================== Agent Breeding ====================
 
   if (path === '/breeding/status' && req.method === 'GET') {
-    const { agentBreeding } = await import("./agent-breeding.ts");
+    const { agentBreeding } = await import('./agent-breeding.ts');
     return jsonResponse(agentBreeding.getStatus());
   }
 
   if (path === '/breeding/run' && req.method === 'POST') {
-    const { agentBreeding } = await import("./agent-breeding.ts");
+    const { agentBreeding } = await import('./agent-breeding.ts');
     try {
       const cycle = await agentBreeding.runCycle();
       return jsonResponse(cycle);
     } catch (err) {
-      return jsonResponse({ error: err instanceof Error ? err.message : String(err) }, 400);
+      return jsonResponse(
+        { error: err instanceof Error ? err.message : String(err) },
+        400
+      );
     }
   }
 
   if (path === '/breeding/stream' && req.method === 'GET') {
-    const { createBreedingStream } = await import("./agent-breeding.ts");
+    const { createBreedingStream } = await import('./agent-breeding.ts');
     return new Response(createBreedingStream(), {
       headers: {
         'Content-Type': 'text/event-stream',
@@ -1995,20 +2067,19 @@ export async function handleWebRequest(req: Request): Promise<Response> {
 
   if (path === '/selftest/inference' && req.method === 'GET') {
     const model =
-      url.searchParams.get('model') ??
-      getZedgeConfig().preferredModel;
+      url.searchParams.get('model') ?? getZedgeConfig().preferredModel;
     return jsonResponse(await runInferenceSelfTest(model));
   }
 
   // ==================== Neural Bridge ====================
 
   if (path === '/neural/status' && req.method === 'GET') {
-    const { neuralBridge } = await import("./neural-bridge.ts");
+    const { neuralBridge } = await import('./neural-bridge.ts');
     return jsonResponse(neuralBridge.getStatus());
   }
 
   if (path === '/neural/steering' && req.method === 'GET') {
-    const { neuralBridge } = await import("./neural-bridge.ts");
+    const { neuralBridge } = await import('./neural-bridge.ts');
     return jsonResponse({
       steering: neuralBridge.getLearnedSteering(),
       prompt: neuralBridge.getLearnedSteeringPrompt(),
@@ -2016,7 +2087,7 @@ export async function handleWebRequest(req: Request): Promise<Response> {
   }
 
   if (path === '/neural/categories' && req.method === 'GET') {
-    const { neuralBridge } = await import("./neural-bridge.ts");
+    const { neuralBridge } = await import('./neural-bridge.ts');
     return jsonResponse({ categories: neuralBridge.getLearnedSteering() });
   }
 
@@ -2184,7 +2255,9 @@ export async function handleWebRequest(req: Request): Promise<Response> {
 
   // Daydream annotation stream -- live suggestions pushed to editor
   if (path === '/cera/daydream/annotations' && req.method === 'GET') {
-    const { createAnnotationStream, getAnnotationClientCount } = await import("./daydream-annotations.ts");
+    const { createAnnotationStream, getAnnotationClientCount } = await import(
+      './daydream-annotations.ts'
+    );
     return new Response(createAnnotationStream(), {
       headers: {
         'Content-Type': 'text/event-stream',
@@ -2195,29 +2268,37 @@ export async function handleWebRequest(req: Request): Promise<Response> {
     });
   }
 
-  if (path === '/cera/daydream/annotations/diagnostics' && req.method === 'GET') {
-    const { daydreamEngine } = await import("./daydream.ts");
-    const { convertToDiagnostics } = await import("./daydream-annotations.ts");
+  if (
+    path === '/cera/daydream/annotations/diagnostics' &&
+    req.method === 'GET'
+  ) {
+    const { daydreamEngine } = await import('./daydream.ts');
+    const { convertToDiagnostics } = await import('./daydream-annotations.ts');
     const fileParam = url.searchParams.get('file');
-    if (!fileParam) return jsonResponse({ error: 'file query param required' }, 400);
-    const candidates = daydreamEngine.getCandidates().filter((c) => c.filePath === fileParam);
-    const fileUri = fileParam.startsWith('file://') ? fileParam : `file://${fileParam}`;
+    if (!fileParam)
+      return jsonResponse({ error: 'file query param required' }, 400);
+    const candidates = daydreamEngine
+      .getCandidates()
+      .filter((c) => c.filePath === fileParam);
+    const fileUri = fileParam.startsWith('file://')
+      ? fileParam
+      : `file://${fileParam}`;
     const diagnostics = convertToDiagnostics(candidates, fileUri);
     return jsonResponse({ diagnostics, count: diagnostics.length });
   }
 
   if (path === '/cera/daydream/status' && req.method === 'GET') {
-    const { daydreamEngine } = await import("./daydream.ts");
+    const { daydreamEngine } = await import('./daydream.ts');
     return jsonResponse(daydreamEngine.getStatus());
   }
 
   if (path === '/cera/daydream/candidates' && req.method === 'GET') {
-    const { daydreamEngine } = await import("./daydream.ts");
+    const { daydreamEngine } = await import('./daydream.ts');
     return jsonResponse(daydreamEngine.getCandidates());
   }
 
   if (path === '/cera/daydream/dream' && req.method === 'POST') {
-    const { daydreamEngine } = await import("./daydream.ts");
+    const { daydreamEngine } = await import('./daydream.ts');
     const body = (await req.json()) as { file_path?: string };
     const cycle = await daydreamEngine.triggerDream(body.file_path);
     return jsonResponse({
@@ -2227,7 +2308,7 @@ export async function handleWebRequest(req: Request): Promise<Response> {
   }
 
   if (path === '/cera/daydream/accept' && req.method === 'POST') {
-    const { daydreamEngine } = await import("./daydream.ts");
+    const { daydreamEngine } = await import('./daydream.ts');
     const body = (await req.json()) as { id?: string; apply?: boolean };
     if (!body.id) return jsonResponse({ error: 'id is required' }, 400);
     const candidate = daydreamEngine.acceptCandidate(body.id);
@@ -2237,7 +2318,7 @@ export async function handleWebRequest(req: Request): Promise<Response> {
     let editResult = null;
     if (body.apply !== false) {
       try {
-        const { executeMultiFileEdit } = await import("./multi-file-agent.ts");
+        const { executeMultiFileEdit } = await import('./multi-file-agent.ts');
         editResult = await executeMultiFileEdit({
           instruction: candidate.suggestion,
           workspacePath: process.env.AEON_ROOT || process.cwd(),
@@ -2252,7 +2333,7 @@ export async function handleWebRequest(req: Request): Promise<Response> {
   }
 
   if (path === '/cera/daydream/reject' && req.method === 'POST') {
-    const { daydreamEngine } = await import("./daydream.ts");
+    const { daydreamEngine } = await import('./daydream.ts');
     const body = (await req.json()) as { id?: string };
     if (!body.id) return jsonResponse({ error: 'id is required' }, 400);
     const candidate = daydreamEngine.rejectCandidate(body.id);
@@ -2261,7 +2342,7 @@ export async function handleWebRequest(req: Request): Promise<Response> {
   }
 
   if (path === '/cera/daydream/activity' && req.method === 'POST') {
-    const { daydreamEngine } = await import("./daydream.ts");
+    const { daydreamEngine } = await import('./daydream.ts');
     const body = (await req.json()) as { file_path?: string };
     daydreamEngine.notifyActivity(body.file_path);
     return jsonResponse({ notified: true });
@@ -2269,24 +2350,24 @@ export async function handleWebRequest(req: Request): Promise<Response> {
 
   // Phase 3 wiring status
   if (path === '/phase3/status' && req.method === 'GET') {
-    const { getPhase3Status } = await import("./wire-phase3.ts");
+    const { getPhase3Status } = await import('./wire-phase3.ts');
     return jsonResponse(getPhase3Status());
   }
 
   if (path === '/phase3/wire' && req.method === 'POST') {
-    const { wirePhase3 } = await import("./wire-phase3.ts");
+    const { wirePhase3 } = await import('./wire-phase3.ts');
     const status = await wirePhase3();
     return jsonResponse(status);
   }
 
   // Void Map endpoints -- persistent rejection memory
   if (path === '/void-map/status' && req.method === 'GET') {
-    const { voidMapStore } = await import("./void-map-store.ts");
+    const { voidMapStore } = await import('./void-map-store.ts');
     return jsonResponse(voidMapStore.getStatus());
   }
 
   if (path === '/void-map/query' && req.method === 'GET') {
-    const { voidMapStore } = await import("./void-map-store.ts");
+    const { voidMapStore } = await import('./void-map-store.ts');
     const fileParam = url.searchParams.get('file') ?? undefined;
     const categoryParam = url.searchParams.get('category') ?? undefined;
     const limitParam = url.searchParams.get('limit');
@@ -2299,20 +2380,23 @@ export async function handleWebRequest(req: Request): Promise<Response> {
   }
 
   if (path === '/void-map/steering' && req.method === 'GET') {
-    const { voidMapStore } = await import("./void-map-store.ts");
+    const { voidMapStore } = await import('./void-map-store.ts');
     const fileParam = url.searchParams.get('file') ?? undefined;
     return jsonResponse(voidMapStore.getSteeringVector(fileParam));
   }
 
   if (path === '/void-map/compact' && req.method === 'POST') {
-    const { voidMapStore } = await import("./void-map-store.ts");
+    const { voidMapStore } = await import('./void-map-store.ts');
     const removed = voidMapStore.compact();
     return jsonResponse({ compacted: true, removedEntries: removed });
   }
 
   if (path === '/void-map/export' && req.method === 'POST') {
-    const { exportForTraining } = await import("./void-map-export.ts");
-    const body = (await req.json()) as { file_path?: string; category?: string };
+    const { exportForTraining } = await import('./void-map-export.ts');
+    const body = (await req.json()) as {
+      file_path?: string;
+      category?: string;
+    };
     const result = exportForTraining({
       filePath: body.file_path,
       category: body.category,
@@ -2321,22 +2405,31 @@ export async function handleWebRequest(req: Request): Promise<Response> {
   }
 
   if (path === '/void-map/export/records' && req.method === 'GET') {
-    const { exportRecords } = await import("./void-map-export.ts");
+    const { exportRecords } = await import('./void-map-export.ts');
     const fileParam = url.searchParams.get('file') ?? undefined;
     const categoryParam = url.searchParams.get('category') ?? undefined;
-    const records = exportRecords({ filePath: fileParam, category: categoryParam });
+    const records = exportRecords({
+      filePath: fileParam,
+      category: categoryParam,
+    });
     return jsonResponse({ records, count: records.length });
   }
 
   // Emotion profile endpoint
   if (path.startsWith('/emotion/profile') && req.method === 'GET') {
     const filePath = url.searchParams.get('file');
-    if (!filePath) return jsonResponse({ error: 'file query param required' }, 400);
-    const { analyzeCodeEmotion, routeByEmotion } = await import("./emotion-router.ts");
+    if (!filePath)
+      return jsonResponse({ error: 'file query param required' }, 400);
+    const { analyzeCodeEmotion, routeByEmotion } = await import(
+      './emotion-router.ts'
+    );
     try {
       const { readFileSync } = await import('fs');
       const { resolve } = await import('path');
-      const fullPath = resolve(process.env.AEON_ROOT || process.cwd(), filePath);
+      const fullPath = resolve(
+        process.env.AEON_ROOT || process.cwd(),
+        filePath
+      );
       const content = readFileSync(fullPath, 'utf-8');
       const profile = analyzeCodeEmotion(content);
       const route = routeByEmotion(profile);
@@ -2348,24 +2441,35 @@ export async function handleWebRequest(req: Request): Promise<Response> {
 
   // Engram store endpoints
   if (path === '/engram/status' && req.method === 'GET') {
-    const { getEngramStore } = await import("./engram-store.ts");
+    const { getEngramStore } = await import('./engram-store.ts');
     return jsonResponse(getEngramStore().getStatus());
   }
 
   if (path === '/engram/recall' && req.method === 'POST') {
-    const { getEngramStore } = await import("./engram-store.ts");
+    const { getEngramStore } = await import('./engram-store.ts');
     const body = (await req.json()) as { query?: string; top_k?: number };
     if (!body.query) return jsonResponse({ error: 'query is required' }, 400);
     const results = await getEngramStore().recall(body.query, body.top_k ?? 5);
-    return jsonResponse({ results: results.map((r) => ({ score: r.score, ...r.engram })) });
+    return jsonResponse({
+      results: results.map((r) => ({ score: r.score, ...r.engram })),
+    });
   }
 
   if (path === '/engram/remember' && req.method === 'POST') {
-    const { getEngramStore } = await import("./engram-store.ts");
-    const body = (await req.json()) as { type?: string; content?: string; file_path?: string };
-    if (!body.content) return jsonResponse({ error: 'content is required' }, 400);
+    const { getEngramStore } = await import('./engram-store.ts');
+    const body = (await req.json()) as {
+      type?: string;
+      content?: string;
+      file_path?: string;
+    };
+    if (!body.content)
+      return jsonResponse({ error: 'content is required' }, 400);
     const engram = await getEngramStore().remember({
-      type: (body.type ?? 'code-pattern') as 'conversation-summary' | 'code-pattern' | 'user-preference' | 'file-relationship',
+      type: (body.type ?? 'code-pattern') as
+        | 'conversation-summary'
+        | 'code-pattern'
+        | 'user-preference'
+        | 'file-relationship',
       content: body.content,
       filePath: body.file_path,
     });
@@ -2373,7 +2477,7 @@ export async function handleWebRequest(req: Request): Promise<Response> {
   }
 
   if (path === '/engram/forget' && req.method === 'DELETE') {
-    const { getEngramStore } = await import("./engram-store.ts");
+    const { getEngramStore } = await import('./engram-store.ts');
     const id = url.searchParams.get('id');
     if (!id) return jsonResponse({ error: 'id query param required' }, 400);
     const removed = getEngramStore().forget(id);
@@ -3514,7 +3618,7 @@ function requestPayloadToWebRequest(request: RequestPayload): Request {
   const query = request.query ?? '';
   const headers = new Headers();
   for (const [key, value] of Object.entries(request.headers)) {
-    headers.set(key, value);
+    headers.set(key, String(value));
   }
 
   const init: RequestInit = {
@@ -3546,7 +3650,7 @@ async function webResponseToPayload(
 }
 
 export const zedgeControlSurface: XGnosisControlSurface = {
-  async handleRequest(request) {
+  async handleRequest(request: RequestPayload) {
     if (request.path.startsWith('/.aeon/')) {
       return null;
     }

@@ -1,4 +1,4 @@
-import { describe, test, expect } from 'bun:test';
+import { describe, test, expect } from '@a0n/gnosis/test';
 import {
   convertToDiagnostics,
   broadcastCandidates,
@@ -23,7 +23,10 @@ const mockCandidate: DaydreamCandidate = {
 
 describe('Daydream Annotations', () => {
   test('convertToDiagnostics produces hint-severity diagnostics', () => {
-    const diagnostics = convertToDiagnostics([mockCandidate], 'file:///test/file.ts');
+    const diagnostics = convertToDiagnostics(
+      [mockCandidate],
+      'file:///test/file.ts'
+    );
 
     expect(diagnostics.length).toBe(1);
     expect(diagnostics[0].severity).toBe(4); // Hint
@@ -39,11 +42,26 @@ describe('Daydream Annotations', () => {
   test('convertToDiagnostics handles multiple candidates', () => {
     const candidates: DaydreamCandidate[] = [
       mockCandidate,
-      { ...mockCandidate, id: 'dream-test-2', line: 10, category: 'bug-fix', suggestion: 'Check for null' },
-      { ...mockCandidate, id: 'dream-test-3', line: 55, category: 'security', suggestion: 'Sanitize input' },
+      {
+        ...mockCandidate,
+        id: 'dream-test-2',
+        line: 10,
+        category: 'bug-fix',
+        suggestion: 'Check for null',
+      },
+      {
+        ...mockCandidate,
+        id: 'dream-test-3',
+        line: 55,
+        category: 'security',
+        suggestion: 'Sanitize input',
+      },
     ];
 
-    const diagnostics = convertToDiagnostics(candidates, 'file:///test/file.ts');
+    const diagnostics = convertToDiagnostics(
+      candidates,
+      'file:///test/file.ts'
+    );
     expect(diagnostics.length).toBe(3);
     expect(diagnostics[0].code).toBe('dream-test-1');
     expect(diagnostics[1].code).toBe('dream-test-2');
@@ -58,13 +76,15 @@ describe('Daydream Annotations', () => {
   test('broadcast functions do not throw without clients', () => {
     // No clients connected -- broadcasts should be no-ops
     expect(() => broadcastCandidates([mockCandidate])).not.toThrow();
-    expect(() => broadcastCycleComplete({
-      filePath: '/test/file.ts',
-      candidates: [mockCandidate],
-      durationMs: 100,
-      model: 'test',
-      timestamp: Date.now(),
-    })).not.toThrow();
+    expect(() =>
+      broadcastCycleComplete({
+        filePath: '/test/file.ts',
+        candidates: [mockCandidate],
+        durationMs: 100,
+        model: 'test',
+        timestamp: Date.now(),
+      })
+    ).not.toThrow();
     expect(() => broadcastAccepted(mockCandidate)).not.toThrow();
     expect(() => broadcastRejected(mockCandidate)).not.toThrow();
   });

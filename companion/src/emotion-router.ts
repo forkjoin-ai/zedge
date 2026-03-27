@@ -13,8 +13,8 @@
  * enabling correlation analysis.
  */
 
-import type { CollapseStrategy } from "./superinference.ts";
-import type { AmygdalaTag } from "./capacitor-bridge.ts";
+import type { CollapseStrategy } from './superinference.ts';
+import type { AmygdalaTag } from './capacitor-bridge.ts';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -165,18 +165,27 @@ export function analyzeCodeEmotion(content: string): EmotionalProfile {
 /**
  * Route a task based on the emotional profile of the target code.
  */
-export function routeByEmotion(profile: EmotionalProfile): EmotionRouteDecision {
+export function routeByEmotion(
+  profile: EmotionalProfile
+): EmotionRouteDecision {
   const { dominantEmotion, avgValence, avgArousal } = profile;
 
   // High anxiety + high arousal -> consensus, careful
-  if (dominantEmotion === 'anxiety' || (avgArousal > 0.6 && avgValence < -0.2)) {
+  if (
+    dominantEmotion === 'anxiety' ||
+    (avgArousal > 0.6 && avgValence < -0.2)
+  ) {
     return {
       strategy: 'consensus',
       modelCount: 3,
       confidenceThreshold: 0.8,
       daydreamPriority: 1.5,
       daydreamCategory: 'bug-fix',
-      reasoning: `Code shows signs of anxiety (arousal=${avgArousal.toFixed(2)}, valence=${avgValence.toFixed(2)}). Using consensus strategy with higher confidence threshold.`,
+      reasoning: `Code shows signs of anxiety (arousal=${avgArousal.toFixed(
+        2
+      )}, valence=${avgValence.toFixed(
+        2
+      )}). Using consensus strategy with higher confidence threshold.`,
     };
   }
 
@@ -188,7 +197,9 @@ export function routeByEmotion(profile: EmotionalProfile): EmotionRouteDecision 
       confidenceThreshold: 0.6,
       daydreamPriority: 2.0,
       daydreamCategory: 'refactor',
-      reasoning: `Code shows signs of frustration (valence=${avgValence.toFixed(2)}). Prioritizing refactoring suggestions and using constructive strategy.`,
+      reasoning: `Code shows signs of frustration (valence=${avgValence.toFixed(
+        2
+      )}). Prioritizing refactoring suggestions and using constructive strategy.`,
     };
   }
 
@@ -199,7 +210,9 @@ export function routeByEmotion(profile: EmotionalProfile): EmotionRouteDecision 
       modelCount: 1,
       confidenceThreshold: 0.5,
       daydreamPriority: 0.5,
-      reasoning: `Code shows high confidence (valence=${avgValence.toFixed(2)}). Using fast strategy with lower daydream priority.`,
+      reasoning: `Code shows high confidence (valence=${avgValence.toFixed(
+        2
+      )}). Using fast strategy with lower daydream priority.`,
     };
   }
 
@@ -221,7 +234,9 @@ export function routeByEmotion(profile: EmotionalProfile): EmotionRouteDecision 
  * Analyze emotional profile from Capacitor AmygdalaTag data.
  * Uses real sensor/tagging data instead of heuristic pattern matching.
  */
-export function analyzeCodeEmotionFromCapacitor(tags: AmygdalaTag[]): EmotionalProfile {
+export function analyzeCodeEmotionFromCapacitor(
+  tags: AmygdalaTag[]
+): EmotionalProfile {
   if (tags.length === 0) {
     return {
       dominantEmotion: 'neutral',
@@ -254,7 +269,8 @@ export function analyzeCodeEmotionFromCapacitor(tags: AmygdalaTag[]): EmotionalP
 
   // Volatility: standard deviation of valence across tags
   const valenceVariance =
-    tags.reduce((acc, t) => acc + (t.valence - avgValence) ** 2, 0) / tags.length;
+    tags.reduce((acc, t) => acc + (t.valence - avgValence) ** 2, 0) /
+    tags.length;
   const volatility = Math.sqrt(valenceVariance);
 
   return {
@@ -350,15 +366,17 @@ export function buildCodeVoidBoundary(
  * - Distributed weights (mixed emotional state) -> `constructive`
  *   No single emotion dominates the complement -- diverse perspectives help.
  */
-export function routeByComplement(
-  boundary: CodeEmotionVoidBoundary
-): { strategy: CollapseStrategy; reason: string } {
+export function routeByComplement(boundary: CodeEmotionVoidBoundary): {
+  strategy: CollapseStrategy;
+  reason: string;
+} {
   const { rounds, entries } = boundary;
 
   if (rounds === 0 || entries.size === 0) {
     return {
       strategy: 'fastest',
-      reason: 'Empty void boundary -- no emotional history, defaulting to fastest.',
+      reason:
+        'Empty void boundary -- no emotional history, defaulting to fastest.',
     };
   }
 
@@ -393,7 +411,9 @@ export function routeByComplement(
     // meaning it is novel or uncommon. Proceed with caution.
     return {
       strategy: 'consensus',
-      reason: `Dominant complement weight ratio ${dominanceRatio.toFixed(2)} indicates novel emotional territory -- using consensus for safety.`,
+      reason: `Dominant complement weight ratio ${dominanceRatio.toFixed(
+        2
+      )} indicates novel emotional territory -- using consensus for safety.`,
     };
   }
 
@@ -401,13 +421,19 @@ export function routeByComplement(
     // Weights are spread across emotions -- mixed state needs diverse models.
     return {
       strategy: 'constructive',
-      reason: `Distributed complement weights (entropy=${entropy.toFixed(2)}, dominance=${dominanceRatio.toFixed(2)}) -- using constructive for diverse perspectives.`,
+      reason: `Distributed complement weights (entropy=${entropy.toFixed(
+        2
+      )}, dominance=${dominanceRatio.toFixed(
+        2
+      )}) -- using constructive for diverse perspectives.`,
     };
   }
 
   // Middle ground: habituated, known territory.
   return {
     strategy: 'fastest',
-    reason: `Habituated emotional state (dominance=${dominanceRatio.toFixed(2)}, entropy=${entropy.toFixed(2)}) -- using fastest for routine work.`,
+    reason: `Habituated emotional state (dominance=${dominanceRatio.toFixed(
+      2
+    )}, entropy=${entropy.toFixed(2)}) -- using fastest for routine work.`,
   };
 }

@@ -18,7 +18,7 @@
  * - Heartbeat over the same connection (no separate UDP)
  */
 
-import type { PeerNode } from "./p2p-mesh.ts";
+import type { PeerNode } from './p2p-mesh.ts';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -109,7 +109,9 @@ export function decodeFrame(buf: Uint8Array): BinaryFrame | null {
 export class MeshTransportManager {
   private connections = new Map<string, MeshConnection>();
   private nextSeq = 0;
-  private onFrameHandler: ((peerId: string, frame: BinaryFrame) => void) | null = null;
+  private onFrameHandler:
+    | ((peerId: string, frame: BinaryFrame) => void)
+    | null = null;
 
   /** Register a handler for incoming frames */
   onFrame(handler: (peerId: string, frame: BinaryFrame) => void): void {
@@ -193,7 +195,10 @@ export class MeshTransportManager {
     const conn = this.connections.get(peerId);
     if (!conn?.ready) return false;
 
-    if (conn.transport === 'websocket' && conn.ws?.readyState === WebSocket.OPEN) {
+    if (
+      conn.transport === 'websocket' &&
+      conn.ws?.readyState === WebSocket.OPEN
+    ) {
       const encoded = encodeFrame(frame);
       conn.ws.send(encoded);
       conn.bytesSent += encoded.length;

@@ -1,4 +1,4 @@
-import { describe, test, expect } from 'bun:test';
+import { describe, test, expect } from '@a0n/gnosis/test';
 import { CrdtEncryptionProvider } from '../crdt-encryption';
 // Use a minimal doc mock since yjs is shimmed
 const mockDoc = {

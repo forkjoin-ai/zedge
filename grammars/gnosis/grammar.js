@@ -17,11 +17,7 @@ module.exports = grammar({
     source_file: ($) => repeat($._statement),
 
     _statement: ($) =>
-      choice(
-        $.node_declaration,
-        $.edge_declaration,
-        $.imperative_statement,
-      ),
+      choice($.node_declaration, $.edge_declaration, $.imperative_statement),
 
     // Node declaration: (name: Type { prop: 'value', prop2: 'value2' })
     node_declaration: ($) =>
@@ -30,27 +26,17 @@ module.exports = grammar({
         $.identifier,
         optional(seq(':', $.type_name)),
         optional($.property_block),
-        ')',
+        ')'
       ),
 
     // Edge: (source)-[:EDGE_TYPE { props }]->(target)
     // Also: (source)-[:EDGE_TYPE]->(target | target2 | target3)
     edge_declaration: ($) =>
-      seq(
-        $.node_ref_group,
-        $.edge_connector,
-        $.node_ref_group,
-      ),
+      seq($.node_ref_group, $.edge_connector, $.node_ref_group),
 
     // Edge connector: -[:TYPE { props }]->
     edge_connector: ($) =>
-      seq(
-        '-[',
-        ':',
-        $.edge_type,
-        optional($.property_block),
-        ']->',
-      ),
+      seq('-[', ':', $.edge_type, optional($.property_block), ']->'),
 
     // Edge types -- the core of fork/race/fold
     edge_type: ($) =>
@@ -72,7 +58,7 @@ module.exports = grammar({
         'METACOG',
         'SLIVER',
         'LAMINAR',
-        $.identifier, // Custom edge types
+        $.identifier // Custom edge types
       ),
 
     // Imperative statements (standalone keywords)
@@ -80,7 +66,7 @@ module.exports = grammar({
       seq(
         $.imperative_keyword,
         optional($.identifier),
-        optional($.property_block),
+        optional($.property_block)
       ),
 
     imperative_keyword: ($) =>
@@ -99,42 +85,27 @@ module.exports = grammar({
         'ENTANGLE',
         'SUPERPOSE',
         'OBSERVE',
-        'METACOG',
+        'METACOG'
       ),
 
     // Node reference group: (a) or (a | b | c)
     node_ref_group: ($) =>
-      seq(
-        '(',
-        $.identifier,
-        repeat(seq('|', $.identifier)),
-        ')',
-      ),
+      seq('(', $.identifier, repeat(seq('|', $.identifier)), ')'),
 
     // Property block: { key: 'value', key2: 'value2' }
     property_block: ($) =>
       seq(
         '{',
         optional(seq($.property, repeat(seq(',', $.property)), optional(','))),
-        '}',
+        '}'
       ),
 
-    property: ($) =>
-      seq($.identifier, ':', $._value),
+    property: ($) => seq($.identifier, ':', $._value),
 
-    _value: ($) =>
-      choice(
-        $.string,
-        $.number,
-        $.identifier,
-      ),
+    _value: ($) => choice($.string, $.number, $.identifier),
 
     // String: 'text' or "text"
-    string: ($) =>
-      choice(
-        seq("'", /[^']*/, "'"),
-        seq('"', /[^"]*/, '"'),
-      ),
+    string: ($) => choice(seq("'", /[^']*/, "'"), seq('"', /[^"]*/, '"')),
 
     // Number
     number: ($) => /\d+(\.\d+)?/,
@@ -147,9 +118,6 @@ module.exports = grammar({
 
     // Comments
     comment: ($) =>
-      choice(
-        seq('//', /.*/),
-        seq('/*', /[^*]*\*+([^/*][^*]*\*+)*/, '/'),
-      ),
+      choice(seq('//', /.*/), seq('/*', /[^*]*\*+([^/*][^*]*\*+)*/, '/')),
   },
 });

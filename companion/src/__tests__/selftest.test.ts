@@ -1,4 +1,4 @@
-import { describe, expect, test } from 'bun:test';
+import { describe, expect, test } from '@a0n/gnosis/test';
 import { collectSseSample } from '../selftest';
 
 function streamFromLines(lines: string[]): ReadableStream<Uint8Array> {

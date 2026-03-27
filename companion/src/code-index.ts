@@ -14,7 +14,7 @@
 
 import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { join, relative, extname } from 'node:path';
-import { embed } from "./inference-bridge.ts";
+import { embed } from './inference-bridge.ts';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -55,31 +55,89 @@ export interface CodeIndexStats {
 // ---------------------------------------------------------------------------
 
 const SOURCE_EXTENSIONS = new Set([
-  '.ts', '.tsx', '.js', '.jsx', '.mjs', '.cjs',
-  '.rs', '.py', '.go', '.java', '.kt', '.swift',
-  '.c', '.cpp', '.h', '.hpp', '.cs',
-  '.rb', '.php', '.lua', '.zig', '.gg',
-  '.css', '.scss', '.html', '.svelte', '.vue',
-  '.json', '.toml', '.yaml', '.yml',
-  '.sh', '.bash', '.zsh',
-  '.sql', '.graphql', '.proto',
+  '.ts',
+  '.tsx',
+  '.js',
+  '.jsx',
+  '.mjs',
+  '.cjs',
+  '.rs',
+  '.py',
+  '.go',
+  '.java',
+  '.kt',
+  '.swift',
+  '.c',
+  '.cpp',
+  '.h',
+  '.hpp',
+  '.cs',
+  '.rb',
+  '.php',
+  '.lua',
+  '.zig',
+  '.gg',
+  '.css',
+  '.scss',
+  '.html',
+  '.svelte',
+  '.vue',
+  '.json',
+  '.toml',
+  '.yaml',
+  '.yml',
+  '.sh',
+  '.bash',
+  '.zsh',
+  '.sql',
+  '.graphql',
+  '.proto',
 ]);
 
 const IGNORED_DIRS = new Set([
-  'node_modules', '.git', 'dist', 'build', 'out', '.next',
-  '__pycache__', '.venv', 'venv', 'target', '.turbo',
-  '.edgework', '.claude', 'coverage',
+  'node_modules',
+  '.git',
+  'dist',
+  'build',
+  'out',
+  '.next',
+  '__pycache__',
+  '.venv',
+  'venv',
+  'target',
+  '.turbo',
+  '.edgework',
+  '.claude',
+  'coverage',
 ]);
 
 const MAX_FILE_SIZE = 100_000; // 100KB -- skip huge files
 const MAX_BLOCK_LINES = 80; // Blocks longer than this get chunked
 const EXTENSION_TO_LANGUAGE: Record<string, string> = {
-  '.ts': 'typescript', '.tsx': 'typescript', '.js': 'javascript', '.jsx': 'javascript',
-  '.rs': 'rust', '.py': 'python', '.go': 'go', '.java': 'java',
-  '.kt': 'kotlin', '.swift': 'swift', '.c': 'c', '.cpp': 'cpp',
-  '.cs': 'csharp', '.rb': 'ruby', '.php': 'php', '.lua': 'lua',
-  '.zig': 'zig', '.gg': 'gnosis', '.css': 'css', '.html': 'html',
-  '.sh': 'shell', '.sql': 'sql', '.graphql': 'graphql', '.proto': 'protobuf',
+  '.ts': 'typescript',
+  '.tsx': 'typescript',
+  '.js': 'javascript',
+  '.jsx': 'javascript',
+  '.rs': 'rust',
+  '.py': 'python',
+  '.go': 'go',
+  '.java': 'java',
+  '.kt': 'kotlin',
+  '.swift': 'swift',
+  '.c': 'c',
+  '.cpp': 'cpp',
+  '.cs': 'csharp',
+  '.rb': 'ruby',
+  '.php': 'php',
+  '.lua': 'lua',
+  '.zig': 'zig',
+  '.gg': 'gnosis',
+  '.css': 'css',
+  '.html': 'html',
+  '.sh': 'shell',
+  '.sql': 'sql',
+  '.graphql': 'graphql',
+  '.proto': 'protobuf',
 };
 
 // ---------------------------------------------------------------------------
@@ -120,7 +178,8 @@ function parseFileIntoBlocks(
 
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
-    const isBoundary = boundaryPattern.test(line.trimStart()) && line.search(/\S/) < 4;
+    const isBoundary =
+      boundaryPattern.test(line.trimStart()) && line.search(/\S/) < 4;
 
     if (isBoundary && i > currentStart) {
       // Emit previous block
@@ -137,8 +196,12 @@ function parseFileIntoBlocks(
         });
       }
       currentStart = i;
-      currentKind = line.includes('class') ? 'class'
-        : line.includes('function') || line.includes('fn ') || line.includes('def ') ? 'function'
+      currentKind = line.includes('class')
+        ? 'class'
+        : line.includes('function') ||
+          line.includes('fn ') ||
+          line.includes('def ')
+        ? 'function'
         : 'block';
     }
 
@@ -181,7 +244,9 @@ function parseFileIntoBlocks(
 // ---------------------------------------------------------------------------
 
 /** Extract embedding vector from the local embedding endpoint */
-export async function computeEmbedding(text: string): Promise<Float32Array | null> {
+export async function computeEmbedding(
+  text: string
+): Promise<Float32Array | null> {
   try {
     const resp = await embed(text, 'local');
     const data = (await resp.json()) as {
@@ -239,7 +304,11 @@ class SemanticCodeIndex {
         try {
           const content = readFileSync(filePath, 'utf-8');
           const relativePath = relative(root, filePath);
-          const codeBlocks = parseFileIntoBlocks(content, filePath, relativePath);
+          const codeBlocks = parseFileIntoBlocks(
+            content,
+            filePath,
+            relativePath
+          );
 
           for (const block of codeBlocks) {
             // Compute embedding for blocks with meaningful content
@@ -352,7 +421,8 @@ class SemanticCodeIndex {
     try {
       const entries = readdirSync(dir, { withFileTypes: true });
       for (const entry of entries) {
-        if (entry.name.startsWith('.') && entry.name !== '.editorconfig') continue;
+        if (entry.name.startsWith('.') && entry.name !== '.editorconfig')
+          continue;
         if (IGNORED_DIRS.has(entry.name)) continue;
 
         const fullPath = join(dir, entry.name);

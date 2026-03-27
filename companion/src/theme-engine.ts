@@ -16,7 +16,12 @@
 
 import { readFileSync, existsSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { analyzeCodeEmotion, routeByEmotion, type EmotionalProfile, type EmotionRouteDecision } from "./emotion-router.ts";
+import {
+  analyzeCodeEmotion,
+  routeByEmotion,
+  type EmotionalProfile,
+  type EmotionRouteDecision,
+} from './emotion-router.ts';
 
 // ---------------------------------------------------------------------------
 // Base AeonOS Palette (from shared-ui/src/styles/tokens/aeon.css)
@@ -64,16 +69,16 @@ const BASE_PALETTE: ThemePalette = {
     hover: '#18181b',
   },
   accent: {
-    primary: '#3b82f6',   // Signal Blue
+    primary: '#3b82f6', // Signal Blue
     hover: '#60a5fa',
     muted: 'rgba(59, 130, 246, 0.15)',
     text: '#93c5fd',
   },
   gnosis: {
-    fork: '#10b981',     // emerald
-    race: '#f59e0b',     // amber
-    fold: '#06b6d4',     // cyan
-    vent: '#ef4444',     // red
+    fork: '#10b981', // emerald
+    race: '#f59e0b', // amber
+    fold: '#06b6d4', // cyan
+    vent: '#ef4444', // red
   },
 };
 
@@ -119,7 +124,9 @@ function hslToHex(h: number, s: number, l: number): string {
 
   if (s === 0) {
     const v = Math.round(l * 255);
-    return `#${v.toString(16).padStart(2, '0')}${v.toString(16).padStart(2, '0')}${v.toString(16).padStart(2, '0')}`;
+    return `#${v.toString(16).padStart(2, '0')}${v
+      .toString(16)
+      .padStart(2, '0')}${v.toString(16).padStart(2, '0')}`;
   }
 
   const q = l < 0.5 ? l * (1 + s) : l + s - l * s;
@@ -128,7 +135,9 @@ function hslToHex(h: number, s: number, l: number): string {
   const g = Math.round(hue2rgb(p, q, h / 360) * 255);
   const b = Math.round(hue2rgb(p, q, h / 360 - 1 / 3) * 255);
 
-  return `#${r.toString(16).padStart(2, '0')}${g.toString(16).padStart(2, '0')}${b.toString(16).padStart(2, '0')}`;
+  return `#${r.toString(16).padStart(2, '0')}${g
+    .toString(16)
+    .padStart(2, '0')}${b.toString(16).padStart(2, '0')}`;
 }
 
 function shiftHue(hex: string, deltaH: number, deltaS = 0, deltaL = 0): string {
@@ -154,10 +163,18 @@ function applyMoodShift(profile: EmotionalProfile): ThemePalette {
     palette.accent.primary = shiftHue(BASE_PALETTE.accent.primary, -15, 0.05);
     palette.accent.hover = shiftHue(BASE_PALETTE.accent.hover, -15, 0.05);
     palette.accent.text = shiftHue(BASE_PALETTE.accent.text, -15, 0.05);
-  } else if (dominantEmotion === 'anxiety' || (avgArousal > 0.6 && avgValence < -0.2)) {
+  } else if (
+    dominantEmotion === 'anxiety' ||
+    (avgArousal > 0.6 && avgValence < -0.2)
+  ) {
     // Cooler, calmer -- deeper blue (increase hue slightly, reduce saturation)
     palette.mood = 'anxious';
-    palette.accent.primary = shiftHue(BASE_PALETTE.accent.primary, 10, -0.1, -0.03);
+    palette.accent.primary = shiftHue(
+      BASE_PALETTE.accent.primary,
+      10,
+      -0.1,
+      -0.03
+    );
     palette.accent.hover = shiftHue(BASE_PALETTE.accent.hover, 10, -0.1, -0.03);
     palette.accent.text = shiftHue(BASE_PALETTE.accent.text, 10, -0.1);
   } else if (dominantEmotion === 'frustration' || avgValence < -0.3) {

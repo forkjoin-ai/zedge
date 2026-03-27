@@ -13,7 +13,7 @@
  * learning loop formalized in ch17 arxiv manuscript.
  */
 
-import { voidMapStore, type VoidMapEntry } from "./void-map-store.ts";
+import { voidMapStore, type VoidMapEntry } from './void-map-store.ts';
 import { writeFileSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { homedir } from 'node:os';
@@ -47,7 +47,9 @@ export interface ExportResult {
  * Each unique (filePath, category) pair becomes one training prompt.
  * All rejected suggestions for that pair become the rejectedResponses.
  */
-export function convertToRejectionRecords(entries: VoidMapEntry[]): RejectionRecord[] {
+export function convertToRejectionRecords(
+  entries: VoidMapEntry[]
+): RejectionRecord[] {
   // Group by file + category
   const groups = new Map<string, VoidMapEntry[]>();
 

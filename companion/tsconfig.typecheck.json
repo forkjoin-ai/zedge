@@ -4,9 +4,15 @@
     "noEmit": true,
     "incremental": false,
     "composite": false,
-    "rootDir": "../../.."
+    "rootDir": "../../..",
+    "jsx": "react-jsx"
   },
   "include": ["src/**/*.ts"],
-  "exclude": ["dist", "node_modules", "src/**/*.test.ts", "src/**/__tests__/**"],
+  "exclude": [
+    "dist",
+    "node_modules",
+    "src/**/*.test.ts",
+    "src/**/__tests__/**"
+  ],
   "references": []
 }

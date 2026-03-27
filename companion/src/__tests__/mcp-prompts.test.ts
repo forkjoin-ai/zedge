@@ -1,4 +1,4 @@
-import { describe, expect, mock, test } from 'bun:test';
+import { describe, expect, mock, test } from '@a0n/gnosis/test';
 import { readFileSync } from 'fs';
 import { dispatch } from '../mcp-stdio';
 
@@ -14,7 +14,10 @@ function getExtensionSlashCommands(): string[] {
 }
 
 function getRustSlashCommandDispatches(): string[] {
-  const libRs = readFileSync(new URL('../../../src/lib.rs', import.meta.url), 'utf8');
+  const libRs = readFileSync(
+    new URL('../../../src/lib.rs', import.meta.url),
+    'utf8'
+  );
   const matchBlock = libRs.match(
     /fn run_slash_command\([\s\S]*?match command\.name\.as_str\(\) \{([\s\S]*?)\n\s*}\n\s*fn complete_slash_command_argument/
   );
@@ -60,7 +63,9 @@ describe('Zedge MCP prompt surface', () => {
   });
 
   test('keeps Rust slash-command dispatch aligned with extension.toml', () => {
-    expect(getRustSlashCommandDispatches()).toEqual(getExtensionSlashCommands());
+    expect(getRustSlashCommandDispatches()).toEqual(
+      getExtensionSlashCommands()
+    );
   });
 
   test('returns a prompt payload for zedge-selftest', async () => {
@@ -116,9 +121,8 @@ describe('Zedge MCP prompt surface', () => {
         },
       });
 
-      const content = (
-        response?.result as { content: Array<{ text: string }> }
-      ).content[0]?.text;
+      const content = (response?.result as { content: Array<{ text: string }> })
+        .content[0]?.text;
       expect(content).toContain('"ok": true');
     } finally {
       globalThis.fetch = originalFetch;
@@ -154,9 +158,8 @@ describe('Zedge MCP prompt surface', () => {
         },
       });
 
-      const content = (
-        response?.result as { content: Array<{ text: string }> }
-      ).content[0]?.text;
+      const content = (response?.result as { content: Array<{ text: string }> })
+        .content[0]?.text;
       expect(content).toContain(
         'Ran open-source/gnosis/topologies/services/isolation-tests.gg'
       );
@@ -201,9 +204,8 @@ describe('Zedge MCP prompt surface', () => {
         },
       });
 
-      const content = (
-        response?.result as { content: Array<{ text: string }> }
-      ).content[0]?.text;
+      const content = (response?.result as { content: Array<{ text: string }> })
+        .content[0]?.text;
       expect(content).toContain('"status": "recorded"');
     } finally {
       globalThis.fetch = originalFetch;

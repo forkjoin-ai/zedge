@@ -12,7 +12,7 @@
  *   → Accept/reject through MCP tools
  */
 
-import type { DaydreamCandidate, DaydreamCycle } from "./daydream.ts";
+import type { DaydreamCandidate, DaydreamCycle } from './daydream.ts';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -36,7 +36,11 @@ export interface DaydreamDiagnostic {
 }
 
 export interface DaydreamAnnotationEvent {
-  type: 'daydream-candidate' | 'daydream-cycle-complete' | 'daydream-accepted' | 'daydream-rejected';
+  type:
+    | 'daydream-candidate'
+    | 'daydream-cycle-complete'
+    | 'daydream-accepted'
+    | 'daydream-rejected';
   candidate?: DaydreamCandidate;
   cycle?: {
     filePath: string;
@@ -53,11 +57,15 @@ export interface DaydreamAnnotationEvent {
 
 const sseClients = new Set<ReadableStreamDefaultController>();
 
-export function addAnnotationClient(controller: ReadableStreamDefaultController): void {
+export function addAnnotationClient(
+  controller: ReadableStreamDefaultController
+): void {
   sseClients.add(controller);
 }
 
-export function removeAnnotationClient(controller: ReadableStreamDefaultController): void {
+export function removeAnnotationClient(
+  controller: ReadableStreamDefaultController
+): void {
   sseClients.delete(controller);
 }
 

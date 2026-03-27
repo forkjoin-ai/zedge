@@ -214,9 +214,7 @@ function defaultSend(message: unknown): void {
 
 let sendHandler: SendHandler = defaultSend;
 
-export function setGnosisLspSendForTest(
-  handler: SendHandler | null
-): void {
+export function setGnosisLspSendForTest(handler: SendHandler | null): void {
   sendHandler = handler ?? defaultSend;
 }
 

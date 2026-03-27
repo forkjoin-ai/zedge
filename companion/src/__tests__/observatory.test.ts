@@ -1,4 +1,4 @@
-import { describe, test, expect } from 'bun:test';
+import { describe, test, expect } from '@a0n/gnosis/test';
 
 describe('Observatory', () => {
   test('getObservatorySnapshot returns valid shape', async () => {

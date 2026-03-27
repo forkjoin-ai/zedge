@@ -1,4 +1,4 @@
-import { describe, test, expect, beforeEach } from 'bun:test';
+import { describe, test, expect, beforeEach } from '@a0n/gnosis/test';
 import { writeFileSync, existsSync, rmSync, mkdirSync, readFileSync } from 'fs';
 import { join } from 'path';
 import { homedir } from 'os';
@@ -45,7 +45,9 @@ describe('Void Map Store', () => {
     // Query by category
     const categoryResults = voidMapStore.query({ category: 'readability' });
     expect(categoryResults.length).toBeGreaterThanOrEqual(1);
-    expect(categoryResults[categoryResults.length - 1].rejectedContent).toContain('helper function');
+    expect(
+      categoryResults[categoryResults.length - 1].rejectedContent
+    ).toContain('helper function');
   });
 
   test('getStatus returns valid shape', async () => {

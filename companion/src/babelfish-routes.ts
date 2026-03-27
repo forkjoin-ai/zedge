@@ -1,11 +1,11 @@
-import { getZedgeConfig } from "./config.ts";
+import { getZedgeConfig } from './config.ts';
 import {
   applyBabelfishCodePreview,
   explainBabelfishScope,
   getBabelfishCapabilities,
   previewBabelfishCode,
   translateBabelfishText,
-} from "./babelfish.ts";
+} from './babelfish.ts';
 
 interface BabelfishCodePreviewRequestBody {
   scope?: {
@@ -112,7 +112,10 @@ export async function handleBabelfishRequest(
       return jsonResponse(result);
     } catch (err) {
       return jsonResponse(
-        { error: err instanceof Error ? err.message : 'Babelfish preview failed' },
+        {
+          error:
+            err instanceof Error ? err.message : 'Babelfish preview failed',
+        },
         400
       );
     }
@@ -134,7 +137,9 @@ export async function handleBabelfishRequest(
       return jsonResponse(result);
     } catch (err) {
       return jsonResponse(
-        { error: err instanceof Error ? err.message : 'Babelfish apply failed' },
+        {
+          error: err instanceof Error ? err.message : 'Babelfish apply failed',
+        },
         400
       );
     }
@@ -159,7 +164,9 @@ export async function handleBabelfishRequest(
       return jsonResponse(
         {
           error:
-            err instanceof Error ? err.message : 'Babelfish text translation failed',
+            err instanceof Error
+              ? err.message
+              : 'Babelfish text translation failed',
         },
         400
       );
@@ -173,13 +180,17 @@ export async function handleBabelfishRequest(
       const result = await explainBabelfishScope({
         scope: body.scope,
         audienceLanguage:
-          body.audienceLanguage ?? getZedgeConfig().babelfish.defaultHumanLanguage,
+          body.audienceLanguage ??
+          getZedgeConfig().babelfish.defaultHumanLanguage,
         includeGg: body.includeGg,
       });
       return jsonResponse(result);
     } catch (err) {
       return jsonResponse(
-        { error: err instanceof Error ? err.message : 'Babelfish explain failed' },
+        {
+          error:
+            err instanceof Error ? err.message : 'Babelfish explain failed',
+        },
         400
       );
     }

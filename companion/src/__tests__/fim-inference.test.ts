@@ -1,4 +1,4 @@
-import { describe, test, expect } from 'bun:test';
+import { describe, test, expect } from '@a0n/gnosis/test';
 import { buildFimPrompt, inferFim } from '../inference-bridge';
 
 describe('FIM Inference', () => {
@@ -39,7 +39,13 @@ describe('FIM Inference', () => {
   });
 
   test('inferFim returns a result with attempts array', async () => {
-    const result = await inferFim('const x = ', ';', 'wasm-local-test', 32, 0.1);
+    const result = await inferFim(
+      'const x = ',
+      ';',
+      'wasm-local-test',
+      32,
+      0.1
+    );
     expect(result).toHaveProperty('completion');
     expect(result).toHaveProperty('tier');
     expect(result).toHaveProperty('model');

@@ -1,4 +1,4 @@
-import { describe, test, expect } from 'bun:test';
+import { describe, test, expect } from '@a0n/gnosis/test';
 
 describe('Make It Real -- Breeding, Sync, Observatory History', () => {
   // Path 1: Breeding generates REAL topology source and compiles with Betty
@@ -58,7 +58,8 @@ describe('Make It Real -- Breeding, Sync, Observatory History', () => {
   // Path 2: DashRelay transport wired to federated sync
   describe('Real Sync', () => {
     test('connectVoidSyncRoom wires federated sync broadcast', async () => {
-      const { connectVoidSyncRoom, disconnectVoidSyncRoom, getRoomStatus } = await import('../void-sync-transport');
+      const { connectVoidSyncRoom, disconnectVoidSyncRoom, getRoomStatus } =
+        await import('../void-sync-transport');
       const { federatedVoidSync } = await import('../federated-void-sync');
 
       await connectVoidSyncRoom('real-sync-test');
@@ -75,7 +76,9 @@ describe('Make It Real -- Breeding, Sync, Observatory History', () => {
 
     test('line-scoped deficit updates with new rejections', async () => {
       const { voidMapStore } = await import('../void-map-store');
-      const { computeLineScopedDeficit } = await import('../void-sync-transport');
+      const { computeLineScopedDeficit } = await import(
+        '../void-sync-transport'
+      );
 
       // Record line-specific rejections
       voidMapStore.record({
@@ -103,15 +106,37 @@ describe('Make It Real -- Breeding, Sync, Observatory History', () => {
   // Path 3: Observatory history tracks trends over time
   describe('Real Observatory History', () => {
     test('recordSnapshot persists entries', async () => {
-      const { recordSnapshot, getHistorySize } = await import('../observatory-history');
+      const { recordSnapshot, getHistorySize } = await import(
+        '../observatory-history'
+      );
 
       const before = getHistorySize();
       recordSnapshot({
         timestamp: new Date().toISOString(),
-        voidMap: { totalRejections: 10, categoryCounts: { readability: 5 }, recentRejections: 3, steeringActive: true, topRejectedFiles: [] },
-        engrams: { total: 20, byType: { 'code-pattern': 10, 'conversation-summary': 5, 'user-preference': 3, 'file-relationship': 2 }, recentEngrams: 4 },
+        voidMap: {
+          totalRejections: 10,
+          categoryCounts: { readability: 5 },
+          recentRejections: 3,
+          steeringActive: true,
+          topRejectedFiles: [],
+        },
+        engrams: {
+          total: 20,
+          byType: {
+            'code-pattern': 10,
+            'conversation-summary': 5,
+            'user-preference': 3,
+            'file-relationship': 2,
+          },
+          recentEngrams: 4,
+        },
         emotionHeatmap: [],
-        agents: { totalSessions: 5, completed: 3, failed: 1, avgDurationMs: 1000 },
+        agents: {
+          totalSessions: 5,
+          completed: 3,
+          failed: 1,
+          avgDurationMs: 1000,
+        },
         phase3: { wired: true, trainerActive: false, rejectionsProcessed: 10 },
         health: { companionUptime: 60000, peersConnected: 0, mcpToolCount: 30 },
       });
@@ -136,7 +161,9 @@ describe('Make It Real -- Breeding, Sync, Observatory History', () => {
     });
 
     test('computeSystemVoidBoundary returns meta-rejection-surface', async () => {
-      const { computeSystemVoidBoundary } = await import('../observatory-history');
+      const { computeSystemVoidBoundary } = await import(
+        '../observatory-history'
+      );
       const boundary = computeSystemVoidBoundary();
 
       expect(boundary).toHaveProperty('timestamp');

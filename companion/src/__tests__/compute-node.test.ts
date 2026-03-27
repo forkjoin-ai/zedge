@@ -1,4 +1,4 @@
-import { describe, test, expect, beforeEach } from 'bun:test';
+import { describe, test, expect, beforeEach } from '@a0n/gnosis/test';
 import { getPoolStatus, recordServedRequest } from '../compute-node';
 
 describe('Compute Node', () => {

@@ -284,7 +284,9 @@ export function fromFloat32(
 export function toFloat32(tensor: Tensor): Float32Array {
   if (tensor.descriptor.dataType !== DataType.F32) {
     throw new Error(
-      `Cannot convert ${DATA_TYPE_NAMES[tensor.descriptor.dataType]} to Float32 directly`
+      `Cannot convert ${
+        DATA_TYPE_NAMES[tensor.descriptor.dataType]
+      } to Float32 directly`
     );
   }
   return new Float32Array(tensor.data);

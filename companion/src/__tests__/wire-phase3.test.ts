@@ -1,4 +1,4 @@
-import { describe, test, expect } from 'bun:test';
+import { describe, test, expect } from '@a0n/gnosis/test';
 
 describe('Phase 3 Wiring (wire-phase3.ts)', () => {
   test('wirePhase3 initializes and returns status', async () => {

@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
+import { afterEach, beforeEach, describe, expect, test } from '@a0n/gnosis/test';
 import { mkdtempSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
@@ -43,9 +43,9 @@ describe('companion activity tracking', () => {
     expect(
       getOwnedCompanionActivity(process.pid + 1, activity.startedAt + 1)
     ).toBe(null);
-    expect(
-      getOwnedCompanionActivity(process.pid, activity.busyUntil + 1)
-    ).toBe(null);
+    expect(getOwnedCompanionActivity(process.pid, activity.busyUntil + 1)).toBe(
+      null
+    );
   });
 
   test('does not clear a newer activity when an older scope finishes', () => {

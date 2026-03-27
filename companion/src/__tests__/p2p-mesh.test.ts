@@ -1,4 +1,4 @@
-import { describe, test, expect, afterEach } from 'bun:test';
+import { describe, test, expect, afterEach } from '@a0n/gnosis/test';
 import { getMeshStatus, computeLayerAssignments, stopMesh } from '../p2p-mesh';
 import type { PeerNode, LayerAssignment } from '../p2p-mesh';
 

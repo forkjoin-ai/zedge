@@ -1,4 +1,4 @@
-import { describe, test, expect, beforeEach, mock } from 'bun:test';
+import { describe, test, expect, beforeEach, mock } from '@a0n/gnosis/test';
 
 // Mock DashRelay
 mock.module('@dashrelay/client', () => ({

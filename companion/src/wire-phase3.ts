@@ -10,10 +10,10 @@
  * Every rejection trains the local model. Every conversation builds memory.
  */
 
-import { voidMapStore, type VoidMapEntry } from "./void-map-store.ts";
-import { convertToRejectionRecords } from "./void-map-export.ts";
-import { getEngramStore } from "./engram-store.ts";
-import { neuralBridge } from "./neural-bridge.ts";
+import { voidMapStore, type VoidMapEntry } from './void-map-store.ts';
+import { convertToRejectionRecords } from './void-map-export.ts';
+import { getEngramStore } from './engram-store.ts';
+import { neuralBridge } from './neural-bridge.ts';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -115,9 +115,14 @@ export async function wirePhase3(): Promise<Phase3Status> {
   try {
     const store = getEngramStore();
     // Wire embedding function for semantic recall
-    const { computeEmbedding } = await import("./code-index.ts").then(
-      (m) => m as unknown as { computeEmbedding: (text: string) => Promise<Float32Array | null> }
-    ).catch(() => ({ computeEmbedding: null }));
+    const { computeEmbedding } = await import('./code-index.ts')
+      .then(
+        (m) =>
+          m as unknown as {
+            computeEmbedding: (text: string) => Promise<Float32Array | null>;
+          }
+      )
+      .catch(() => ({ computeEmbedding: null }));
     if (computeEmbedding) {
       store.setEmbedFunction(computeEmbedding);
     }
@@ -139,7 +144,8 @@ export function getPhase3Status(): Phase3Status {
   return {
     wired,
     buleyeanTrainerActive: trainerAvailable,
-    neuralBridgeActive: neuralStatus.engineAvailable || neuralStatus.totalRejectionsFed > 0,
+    neuralBridgeActive:
+      neuralStatus.engineAvailable || neuralStatus.totalRejectionsFed > 0,
     voidMapCallbackRegistered: true,
     engramStoreInitialized: store.size >= 0,
     totalRejectionsProcessed: rejectionsProcessed,
@@ -158,8 +164,12 @@ function createMemoryStorage() {
   const data = new Map<string, string>();
   return {
     get: async (key: string) => data.get(key) ?? null,
-    set: async (key: string, value: string) => { data.set(key, value); },
-    delete: async (key: string) => { data.delete(key); },
+    set: async (key: string, value: string) => {
+      data.set(key, value);
+    },
+    delete: async (key: string) => {
+      data.delete(key);
+    },
     list: async (prefix: string) =>
       [...data.keys()].filter((k) => k.startsWith(prefix)),
     has: async (key: string) => data.has(key),

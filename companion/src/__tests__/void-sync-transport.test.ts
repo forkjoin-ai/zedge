@@ -1,8 +1,10 @@
-import { describe, test, expect } from 'bun:test';
+import { describe, test, expect } from '@a0n/gnosis/test';
 
 describe('Void Sync Transport', () => {
   test('connectVoidSyncRoom returns room status', async () => {
-    const { connectVoidSyncRoom, disconnectVoidSyncRoom } = await import('../void-sync-transport');
+    const { connectVoidSyncRoom, disconnectVoidSyncRoom } = await import(
+      '../void-sync-transport'
+    );
     const room = await connectVoidSyncRoom('test-workspace');
 
     expect(room.roomId).toBe('void-sync.test-workspace');
@@ -13,7 +15,8 @@ describe('Void Sync Transport', () => {
   });
 
   test('getRoomStatus reflects connection state', async () => {
-    const { getRoomStatus, connectVoidSyncRoom, disconnectVoidSyncRoom } = await import('../void-sync-transport');
+    const { getRoomStatus, connectVoidSyncRoom, disconnectVoidSyncRoom } =
+      await import('../void-sync-transport');
 
     await connectVoidSyncRoom('status-test');
     expect(getRoomStatus().connected).toBe(true);

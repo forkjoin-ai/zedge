@@ -1,4 +1,4 @@
-import { describe, test, expect, beforeEach, afterEach } from 'bun:test';
+import { describe, test, expect, beforeEach, afterEach } from '@a0n/gnosis/test';
 import { VfsBridge } from '../vfs-bridge';
 import { join } from 'node:path';
 import {

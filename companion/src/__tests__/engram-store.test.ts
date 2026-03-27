@@ -1,4 +1,4 @@
-import { describe, test, expect } from 'bun:test';
+import { describe, test, expect } from '@a0n/gnosis/test';
 import { existsSync, rmSync } from 'fs';
 import { join } from 'path';
 import { tmpdir } from 'os';
@@ -12,7 +12,8 @@ describe('Engram Store', () => {
 
     await store.remember({
       type: 'code-pattern',
-      content: 'Always use async/await instead of raw promises in this codebase',
+      content:
+        'Always use async/await instead of raw promises in this codebase',
     });
 
     await store.remember({
@@ -45,11 +46,14 @@ describe('Engram Store', () => {
 
   test('forget removes engram by ID', async () => {
     const { EngramStore } = await import('../engram-store');
-    const store = new EngramStore(join(tmpdir(), `engram-forget-${Date.now()}`));
+    const store = new EngramStore(
+      join(tmpdir(), `engram-forget-${Date.now()}`)
+    );
 
     const engram = await store.remember({
       type: 'conversation-summary',
-      content: 'Discussed refactoring the inference bridge for better error handling',
+      content:
+        'Discussed refactoring the inference bridge for better error handling',
     });
 
     expect(store.size).toBe(1);
@@ -60,7 +64,9 @@ describe('Engram Store', () => {
 
   test('forgetBefore removes old engrams', async () => {
     const { EngramStore } = await import('../engram-store');
-    const store = new EngramStore(join(tmpdir(), `engram-forget-before-${Date.now()}`));
+    const store = new EngramStore(
+      join(tmpdir(), `engram-forget-before-${Date.now()}`)
+    );
 
     await store.remember({
       type: 'code-pattern',

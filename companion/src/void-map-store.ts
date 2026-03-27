@@ -111,7 +111,11 @@ class VoidMapStore {
   }
 
   /** Query entries by file path and/or category */
-  query(opts?: { filePath?: string; category?: string; limit?: number }): VoidMapEntry[] {
+  query(opts?: {
+    filePath?: string;
+    category?: string;
+    limit?: number;
+  }): VoidMapEntry[] {
     let results = this.entries;
 
     if (opts?.filePath) {
@@ -131,7 +135,10 @@ class VoidMapStore {
     const fileCounts = new Map<string, number>();
 
     for (const entry of this.entries) {
-      categoryCounts.set(entry.category, (categoryCounts.get(entry.category) ?? 0) + 1);
+      categoryCounts.set(
+        entry.category,
+        (categoryCounts.get(entry.category) ?? 0) + 1
+      );
       fileCounts.set(entry.filePath, (fileCounts.get(entry.filePath) ?? 0) + 1);
     }
 
@@ -169,12 +176,18 @@ class VoidMapStore {
     // Count categories across file-specific and global
     const fileCategoryCounts = new Map<string, number>();
     for (const e of fileEntries) {
-      fileCategoryCounts.set(e.category, (fileCategoryCounts.get(e.category) ?? 0) + 1);
+      fileCategoryCounts.set(
+        e.category,
+        (fileCategoryCounts.get(e.category) ?? 0) + 1
+      );
     }
 
     const globalCategoryCounts = new Map<string, number>();
     for (const e of allEntries) {
-      globalCategoryCounts.set(e.category, (globalCategoryCounts.get(e.category) ?? 0) + 1);
+      globalCategoryCounts.set(
+        e.category,
+        (globalCategoryCounts.get(e.category) ?? 0) + 1
+      );
     }
 
     // Build rejected categories (file-specific first, then global)
@@ -189,7 +202,10 @@ class VoidMapStore {
 
     // Global patterns (higher threshold)
     for (const [category, count] of globalCategoryCounts) {
-      if (count >= STEERING_MIN_REJECTIONS && !rejectedCategories.find((r) => r.category === category)) {
+      if (
+        count >= STEERING_MIN_REJECTIONS &&
+        !rejectedCategories.find((r) => r.category === category)
+      ) {
         rejectedCategories.push({ category, count });
       }
     }
@@ -203,7 +219,9 @@ class VoidMapStore {
     }
 
     const lines: string[] = [];
-    lines.push('The developer has a history of rejecting the following types of suggestions:');
+    lines.push(
+      'The developer has a history of rejecting the following types of suggestions:'
+    );
 
     for (const { category, count } of rejectedCategories.slice(0, 5)) {
       // Get recent examples for this category
@@ -212,10 +230,16 @@ class VoidMapStore {
         .slice(-2)
         .map((e) => e.rejectedContent.slice(0, 80));
 
-      lines.push(`- "${category}" suggestions (rejected ${count} times). Examples: ${examples.join('; ')}`);
+      lines.push(
+        `- "${category}" suggestions (rejected ${count} times). Examples: ${examples.join(
+          '; '
+        )}`
+      );
     }
 
-    lines.push('Avoid generating suggestions in these categories unless absolutely critical.');
+    lines.push(
+      'Avoid generating suggestions in these categories unless absolutely critical.'
+    );
 
     return {
       negativePrompt: lines.join('\n'),
@@ -230,11 +254,14 @@ class VoidMapStore {
     // Keep only the most recent entry per file+category+content combo
     const seen = new Map<string, VoidMapEntry>();
     for (const entry of this.entries) {
-      const key = `${entry.filePath}:${entry.category}:${entry.rejectedContent.slice(0, 50)}`;
+      const key = `${entry.filePath}:${
+        entry.category
+      }:${entry.rejectedContent.slice(0, 50)}`;
       seen.set(key, entry); // Overwrites older with newer
     }
     this.entries = [...seen.values()].sort(
-      (a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
+      (a, b) =>
+        new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
     );
     this.rewrite();
     return before - this.entries.length;
@@ -289,7 +316,8 @@ class VoidMapStore {
   private rewrite(): void {
     this.ensureDir();
     try {
-      const content = this.entries.map((e) => JSON.stringify(e)).join('\n') + '\n';
+      const content =
+        this.entries.map((e) => JSON.stringify(e)).join('\n') + '\n';
       writeFileSync(VOID_MAP_FILE, content);
     } catch {
       // Best effort

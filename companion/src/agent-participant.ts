@@ -12,8 +12,8 @@
  * for CRDT room access.
  */
 
-import type { CrdtBridge, CrdtFileHandle } from "./crdt-bridge.ts";
-import type { UcanBridge, AgentMode } from "./ucan-bridge.ts";
+import type { CrdtBridge, CrdtFileHandle } from './crdt-bridge.ts';
+import type { UcanBridge, AgentMode } from './ucan-bridge.ts';
 
 // ---------------------------------------------------------------------------
 // Types

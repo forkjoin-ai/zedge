@@ -8,13 +8,13 @@
 import type {
   ExtendedForgoEvent,
   ForgeEventBus,
-} from "../../../aeon-forge/src/deploy/event-bus.ts";
+} from '../../../aeon-forge/src/deploy/event-bus.ts';
 import type {
   PerturbationEngine,
   PerturbationCycle,
-} from "../../../../shared-utils/src/laminar/perturbation-engine.ts";
-import type { CodeMutationOutput } from "../../../../shared-utils/src/laminar/code-laminar.ts";
-import { voidMapStore } from "./void-map-store.ts";
+} from '../../../../shared-utils/src/laminar/perturbation-engine.ts';
+import type { CodeMutationOutput } from '../../../../shared-utils/src/laminar/code-laminar.ts';
+import { voidMapStore } from './void-map-store.ts';
 
 // ── Types ────────────────────────────────────────────────────
 
@@ -115,7 +115,9 @@ export class CeraBridge {
     voidMapStore.record({
       filePath: mutationFilePath,
       category: 'cera-mutation',
-      rejectedContent: pending.mutation.description ?? JSON.stringify(pending.mutation).slice(0, 200),
+      rejectedContent:
+        pending.mutation.description ??
+        JSON.stringify(pending.mutation).slice(0, 200),
       source: 'cera',
     });
 

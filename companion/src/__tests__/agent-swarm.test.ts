@@ -1,4 +1,4 @@
-import { describe, test, expect } from 'bun:test';
+import { describe, test, expect } from '@a0n/gnosis/test';
 
 describe('Agent Roles', () => {
   test('listRoles returns all built-in roles', async () => {

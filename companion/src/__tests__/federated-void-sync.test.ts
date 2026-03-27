@@ -1,4 +1,4 @@
-import { describe, test, expect } from 'bun:test';
+import { describe, test, expect } from '@a0n/gnosis/test';
 
 describe('Federated Void Sync', () => {
   test('UCAN mutual handshake required for deficit exchange', async () => {

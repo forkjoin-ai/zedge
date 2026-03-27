@@ -12,8 +12,8 @@
  * Reference: docs/ebooks/24-superinference-quantum-inspired-distributed-compute/
  */
 
-import type { ChatCompletionRequest, ChatMessage } from "./inference-bridge.ts";
-import { infer } from "./inference-bridge.ts";
+import type { ChatCompletionRequest, ChatMessage } from './inference-bridge.ts';
+import { infer } from './inference-bridge.ts';
 
 // --- Types ---
 
@@ -266,6 +266,10 @@ export function getLayerZone(layer: number): LayerZone {
   return 'style'; // Default to style for out-of-range
 }
 
+function elapsedMs(startTime: number): number {
+  return Math.max(1, Date.now() - startTime);
+}
+
 // --- Core Engine ---
 
 /**
@@ -308,7 +312,7 @@ export async function superinfer(
       winningModel: result.model,
       strategy: req.strategy,
       modelResults: [result],
-      durationMs: Date.now() - startTime,
+      durationMs: elapsedMs(startTime),
       confidence: 1.0,
     };
   }
@@ -356,7 +360,7 @@ async function raceFastest(
       winningModel: winner.model,
       strategy: 'fastest',
       modelResults: results,
-      durationMs: Date.now() - startTime,
+      durationMs: elapsedMs(startTime),
       confidence: 1.0, // No consensus possible with fastest
     };
   } catch {
@@ -366,7 +370,7 @@ async function raceFastest(
       winningModel: 'none',
       strategy: 'fastest',
       modelResults: results,
-      durationMs: Date.now() - startTime,
+      durationMs: elapsedMs(startTime),
       confidence: 0,
     };
   }
@@ -398,7 +402,7 @@ async function raceConsensus(
       winningModel: 'none',
       strategy: 'consensus',
       modelResults: [],
-      durationMs: Date.now() - startTime,
+      durationMs: elapsedMs(startTime),
       confidence: 0,
     };
   }
@@ -411,7 +415,7 @@ async function raceConsensus(
     winningModel: winner.model,
     strategy: 'consensus',
     modelResults: completed,
-    durationMs: Date.now() - startTime,
+    durationMs: elapsedMs(startTime),
     confidence,
   };
 }
@@ -442,7 +446,7 @@ async function raceConstructive(
       winningModel: 'none',
       strategy: 'constructive',
       modelResults: [],
-      durationMs: Date.now() - startTime,
+      durationMs: elapsedMs(startTime),
       confidence: 0,
     };
   }
@@ -455,7 +459,7 @@ async function raceConstructive(
     winningModel: completed[0].model, // Primary model
     strategy: 'constructive',
     modelResults: completed,
-    durationMs: Date.now() - startTime,
+    durationMs: elapsedMs(startTime),
     confidence,
   };
 }
@@ -656,7 +660,7 @@ async function inferModel(
       model,
       content,
       tier: result.tier,
-      durationMs: Date.now() - start,
+      durationMs: elapsedMs(start),
       finished: true,
     };
   } catch {
@@ -664,7 +668,7 @@ async function inferModel(
       model,
       content: '',
       tier: 'error',
-      durationMs: Date.now() - start,
+      durationMs: elapsedMs(start),
       finished: false,
     };
   }

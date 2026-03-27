@@ -63,7 +63,9 @@ export function detectBabelfishLanguageForUri(uri: string): string | null {
   return EXTENSION_TO_LANGUAGE[extension] ?? null;
 }
 
-export function buildBabelfishHintDiagnostic(uri: string): LspDiagnosticHint | null {
+export function buildBabelfishHintDiagnostic(
+  uri: string
+): LspDiagnosticHint | null {
   const language = detectBabelfishLanguageForUri(uri);
   if (!language) {
     return null;
@@ -89,7 +91,10 @@ export function buildBabelfishCodeActions(
     return [];
   }
 
-  const scope = { kind: 'file', filePath: uri.startsWith('file://') ? uri.slice(7) : uri };
+  const scope = {
+    kind: 'file',
+    filePath: uri.startsWith('file://') ? uri.slice(7) : uri,
+  };
 
   return [
     {

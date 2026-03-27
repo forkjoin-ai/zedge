@@ -11,12 +11,17 @@
  * Scheduling: Hot-seat — reduce contribution under high local load
  */
 
-import { getCompanionPort, getZedgeConfig } from "./config.ts";
-import { recordServedRequest } from "./compute-node.ts";
-import type { ChatCompletionRequest } from "./inference-bridge.ts";
+import { getCompanionPort, getZedgeConfig } from './config.ts';
+import { recordServedRequest } from './compute-node.ts';
+import type { ChatCompletionRequest } from './inference-bridge.ts';
 import { createSocket, type Socket } from 'dgram';
 import { hostname, cpus, totalmem, freemem } from 'os';
-import { meshTransport, FRAME_INFERENCE, decodeFrame, encodeFrame } from "./ws-mesh-transport.ts";
+import {
+  meshTransport,
+  FRAME_INFERENCE,
+  decodeFrame,
+  encodeFrame,
+} from './ws-mesh-transport.ts';
 
 // --- Types ---
 
@@ -65,7 +70,7 @@ export interface MeshInferenceResult {
 // --- Constants ---
 
 const MDNS_PORT = 5353;
-const BROADCAST_PORT = 7332; // Discovery broadcast port
+const DEFAULT_DISCOVERY_PORT = 7332;
 const HEARTBEAT_INTERVAL_MS = 10_000;
 const PEER_TIMEOUT_MS = 30_000;
 const SERVICE_TYPE = '_zedge._tcp.local';
@@ -77,12 +82,14 @@ const meshState: {
   nodeId: string;
   peers: Map<string, PeerNode>;
   broadcastSocket: Socket | null;
+  discoveryPort: number;
   heartbeatInterval: ReturnType<typeof setInterval> | null;
 } = {
   running: false,
   nodeId: generateNodeId(),
   peers: new Map(),
   broadcastSocket: null,
+  discoveryPort: DEFAULT_DISCOVERY_PORT,
   heartbeatInterval: null,
 };
 
@@ -95,19 +102,36 @@ export function startMesh(): MeshStatus {
   if (meshState.running) return getMeshStatus();
 
   meshState.running = true;
+  meshState.discoveryPort = getDiscoveryPort();
 
   // Start UDP broadcast for discovery
   try {
-    const socket = createSocket('udp4');
+    const socket = createSocket({ type: 'udp4', reuseAddr: true });
     socket.on('message', handleDiscoveryMessage);
-    socket.on('error', (err) => {
-      console.error('[zedge:mesh] Broadcast socket error:', err.message);
+    socket.on('error', (err: NodeJS.ErrnoException) => {
+      if (err.code === 'EADDRINUSE') {
+        console.warn(
+          `[zedge:mesh] Discovery UDP :${meshState.discoveryPort} already in use; continuing without a local discovery listener`
+        );
+      } else {
+        console.error('[zedge:mesh] Broadcast socket error:', err.message);
+      }
+      if (meshState.broadcastSocket === socket) {
+        meshState.broadcastSocket = null;
+      }
+      try {
+        socket.close();
+      } catch {
+        // Best-effort cleanup only.
+      }
     });
-    socket.bind(BROADCAST_PORT, () => {
+    socket.bind({ port: meshState.discoveryPort, exclusive: false }, () => {
+      meshState.broadcastSocket = socket;
       socket.setBroadcast(true);
-      console.log(`[zedge:mesh] Discovery listener on UDP :${BROADCAST_PORT}`);
+      console.log(
+        `[zedge:mesh] Discovery listener on UDP :${meshState.discoveryPort}`
+      );
     });
-    meshState.broadcastSocket = socket;
   } catch (err) {
     console.warn('[zedge:mesh] Could not start broadcast socket:', err);
   }
@@ -146,6 +170,7 @@ export function stopMesh(): MeshStatus {
     meshState.broadcastSocket.close();
     meshState.broadcastSocket = null;
   }
+  meshState.discoveryPort = getDiscoveryPort();
 
   meshTransport.disconnectAll();
   meshState.running = false;
@@ -271,7 +296,7 @@ export async function handlePeerRequest(
   request: ChatCompletionRequest
 ): Promise<Response> {
   // Import infer lazily to avoid circular dependency
-  const { infer } = await import("./inference-bridge.ts");
+  const { infer } = await import('./inference-bridge.ts');
   const result = await infer(request);
 
   // Record as served request for token earning
@@ -402,7 +427,7 @@ function broadcastMessage(message: DiscoveryMessage): void {
     buf,
     0,
     buf.length,
-    BROADCAST_PORT,
+    meshState.discoveryPort,
     '255.255.255.255',
     (err) => {
       if (err) {
@@ -410,6 +435,10 @@ function broadcastMessage(message: DiscoveryMessage): void {
       }
     }
   );
+}
+
+function getDiscoveryPort(): number {
+  return getZedgeConfig().listener.discoveryPort ?? DEFAULT_DISCOVERY_PORT;
 }
 
 function pruneStale(): void {

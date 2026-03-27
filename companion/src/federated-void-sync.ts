@@ -13,9 +13,9 @@
  * Protocol: Bule deficit exchange on void map record events.
  */
 
-import { voidMapStore } from "./void-map-store.ts";
-import type { VoidMapEntry } from "./void-map-store.ts";
-import { getZedgeConfig } from "./config.ts";
+import { voidMapStore } from './void-map-store.ts';
+import type { VoidMapEntry } from './void-map-store.ts';
+import { getZedgeConfig } from './config.ts';
 
 // UCAN-scoped deficit exchange: both parties must present valid capabilities
 // before void sync begins. Mutual handshake = bilateral trust.
@@ -96,7 +96,10 @@ export class FederatedVoidSync {
    * Initiate a UCAN handshake with a peer.
    * Both sides must complete the handshake before deficit exchange begins.
    */
-  initiateHandshake(targetDeviceId: string, ucanToken: string): VoidSyncHandshake {
+  initiateHandshake(
+    targetDeviceId: string,
+    ucanToken: string
+  ): VoidSyncHandshake {
     const handshake: VoidSyncHandshake = {
       fromDeviceId: this.deviceId,
       toDeviceId: targetDeviceId,
@@ -247,9 +250,13 @@ export class FederatedVoidSync {
     const localStatus = voidMapStore.getStatus();
     const localDeficit = Math.max(0, 5 - localStatus.topCategories.length);
 
-    const deficits = [localDeficit, ...[...this.peers.values()].map((p) => p.deficit)];
+    const deficits = [
+      localDeficit,
+      ...[...this.peers.values()].map((p) => p.deficit),
+    ];
     const mean = deficits.reduce((a, b) => a + b, 0) / deficits.length;
-    const variance = deficits.reduce((acc, d) => acc + (d - mean) ** 2, 0) / deficits.length;
+    const variance =
+      deficits.reduce((acc, d) => acc + (d - mean) ** 2, 0) / deficits.length;
 
     // Convergence = 1 / (1 + variance)
     return 1 / (1 + variance);
@@ -261,7 +268,8 @@ export class FederatedVoidSync {
   getStatus(): VoidSyncStatus {
     const localStatus = voidMapStore.getStatus();
     const localDeficit = Math.max(0, 5 - localStatus.topCategories.length);
-    const totalTeamRejections = localStatus.totalEntries +
+    const totalTeamRejections =
+      localStatus.totalEntries +
       [...this.peers.values()].reduce((sum, p) => sum + p.rounds, 0);
 
     return {

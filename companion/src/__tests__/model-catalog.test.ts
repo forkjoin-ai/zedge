@@ -1,7 +1,17 @@
-import { describe, expect, test } from 'bun:test';
-import { buildZedAvailableModels, getKnownZedgeModel } from '../model-catalog.ts';
+import { describe, expect, test } from '@a0n/gnosis/test';
+import {
+  buildZedAvailableModels,
+  getKnownZedgeModel,
+} from '../model-catalog.ts';
 
 describe('Zedge model catalog', () => {
+  test('wasm-local metadata reflects the verified TinyLlama fallback', () => {
+    const model = getKnownZedgeModel('wasm-local');
+    expect(model).toBeDefined();
+    expect(model?.displayName).toBe('Local WASM (TinyLlama 1.1B)');
+    expect(model?.maxTokens).toBe(2048);
+  });
+
   test('includes llama-70b metadata', () => {
     const model = getKnownZedgeModel('llama-70b');
     expect(model).toBeDefined();

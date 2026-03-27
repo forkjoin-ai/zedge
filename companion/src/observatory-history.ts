@@ -22,7 +22,7 @@ import {
 } from 'node:fs';
 import { join } from 'node:path';
 import { homedir } from 'node:os';
-import type { ObservatorySnapshot } from "./observatory.ts";
+import type { ObservatorySnapshot } from './observatory.ts';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -102,19 +102,25 @@ function loadHistory(): void {
     for (const line of lines) {
       try {
         history.push(JSON.parse(line));
-      } catch { /* skip malformed */ }
+      } catch {
+        /* skip malformed */
+      }
     }
     if (history.length > MAX_HISTORY_ENTRIES) {
       history = history.slice(-MAX_HISTORY_ENTRIES);
     }
-  } catch { /* file not ready */ }
+  } catch {
+    /* file not ready */
+  }
 }
 
 function persistEntry(entry: HistoryEntry): void {
   try {
     mkdirSync(EDGEWORK_DIR, { recursive: true });
     appendFileSync(HISTORY_FILE, JSON.stringify(entry) + '\n');
-  } catch { /* best effort */ }
+  } catch {
+    /* best effort */
+  }
 }
 
 /**
@@ -165,25 +171,37 @@ export function computeTrends(): ObservatoryTrend[] {
       (e) => e.timestamp >= prevWindowStart && e.timestamp < windowStart
     );
 
-    const rejections = inWindow.length > 0
-      ? inWindow[inWindow.length - 1].rejections - (inWindow[0].rejections ?? 0)
-      : 0;
-    const rejectionsPrev = inPrevWindow.length > 0
-      ? inPrevWindow[inPrevWindow.length - 1].rejections - (inPrevWindow[0].rejections ?? 0)
-      : 0;
+    const rejections =
+      inWindow.length > 0
+        ? inWindow[inWindow.length - 1].rejections -
+          (inWindow[0].rejections ?? 0)
+        : 0;
+    const rejectionsPrev =
+      inPrevWindow.length > 0
+        ? inPrevWindow[inPrevWindow.length - 1].rejections -
+          (inPrevWindow[0].rejections ?? 0)
+        : 0;
 
-    const engrams = inWindow.length > 0
-      ? inWindow[inWindow.length - 1].engrams - (inWindow[0].engrams ?? 0)
-      : 0;
+    const engrams =
+      inWindow.length > 0
+        ? inWindow[inWindow.length - 1].engrams - (inWindow[0].engrams ?? 0)
+        : 0;
 
-    const totalAgents = inWindow.reduce((sum, e) => sum + e.agentCompleted + e.agentFailed, 0);
-    const completedAgents = inWindow.reduce((sum, e) => sum + e.agentCompleted, 0);
+    const totalAgents = inWindow.reduce(
+      (sum, e) => sum + e.agentCompleted + e.agentFailed,
+      0
+    );
+    const completedAgents = inWindow.reduce(
+      (sum, e) => sum + e.agentCompleted,
+      0
+    );
 
     // Steering effectiveness: if steering is active and rejections decreased, it's working
     const steeringActive = inWindow.some((e) => e.steeringActive);
-    const steeringEffectiveness = steeringActive && rejectionsPrev > 0
-      ? Math.max(0, Math.min(1, 1 - rejections / rejectionsPrev))
-      : 0;
+    const steeringEffectiveness =
+      steeringActive && rejectionsPrev > 0
+        ? Math.max(0, Math.min(1, 1 - rejections / rejectionsPrev))
+        : 0;
 
     return {
       window: label,
@@ -213,7 +231,8 @@ export function computeSystemVoidBoundary(): SystemVoidBoundary {
     trend24h ? trend24h.steeringEffectiveness : 0,
     trend24h && trend24h.rejectionDelta < 0 ? 0.8 : 0.3, // Decreasing rejections = healthy
   ];
-  const healthScore = healthFactors.reduce((a, b) => a + b, 0) / healthFactors.length;
+  const healthScore =
+    healthFactors.reduce((a, b) => a + b, 0) / healthFactors.length;
 
   // Weak points for breeding to target
   const weakPoints: SystemVoidBoundary['weakPoints'] = [];
@@ -223,31 +242,36 @@ export function computeSystemVoidBoundary(): SystemVoidBoundary {
       weakPoints.push({
         area: 'agent-success',
         score: trend24h.agentSuccessRate,
-        suggestion: 'Agent topologies need restructuring for higher success rates',
+        suggestion:
+          'Agent topologies need restructuring for higher success rates',
       });
     }
     if (trend24h.steeringEffectiveness < 0.3 && trend24h.rejections > 5) {
       weakPoints.push({
         area: 'steering-effectiveness',
         score: trend24h.steeringEffectiveness,
-        suggestion: 'Steering vectors not reducing rejections -- refine category detection',
+        suggestion:
+          'Steering vectors not reducing rejections -- refine category detection',
       });
     }
     if (trend24h.rejectionDelta > 0) {
       weakPoints.push({
         area: 'rejection-growth',
         score: Math.max(0, 1 - trend24h.rejectionDelta / 10),
-        suggestion: 'Rejections increasing -- model suggestions misaligned with developer preferences',
+        suggestion:
+          'Rejections increasing -- model suggestions misaligned with developer preferences',
       });
     }
   }
 
   // Improvement rate: are things getting better over time?
   const trend1h = trends.find((t) => t.window === '1h');
-  const improvementRate = trend1h && trend24h
-    ? (trend1h.steeringEffectiveness - (trend24h.steeringEffectiveness ?? 0)) +
-      (trend1h.agentSuccessRate - (trend24h.agentSuccessRate ?? 0))
-    : 0;
+  const improvementRate =
+    trend1h && trend24h
+      ? trend1h.steeringEffectiveness -
+        (trend24h.steeringEffectiveness ?? 0) +
+        (trend1h.agentSuccessRate - (trend24h.agentSuccessRate ?? 0))
+      : 0;
 
   return {
     timestamp: new Date().toISOString(),

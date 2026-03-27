@@ -41,7 +41,10 @@ class SimpleUndoManager {
   private undoStack: { content: string }[] = [];
   private redoStack: { content: string }[] = [];
 
-  constructor(scope: Text, options?: { trackedOrigins?: Set<string | number> }) {
+  constructor(
+    scope: Text,
+    options?: { trackedOrigins?: Set<string | number> }
+  ) {
     this.scope = scope;
     this.trackedOrigins = options?.trackedOrigins ?? new Set();
     const doc = (scope as unknown as { _doc?: Doc })._doc;

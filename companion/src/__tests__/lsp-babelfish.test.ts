@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, test } from 'bun:test';
+import { beforeEach, describe, expect, test } from '@a0n/gnosis/test';
 import {
   buildBabelfishCodeActions,
   buildBabelfishHintDiagnostic,
@@ -53,19 +53,14 @@ describe('LSP Babelfish helpers', () => {
   });
 
   test('builds non-mutating ambient hint diagnostics for supported files', () => {
-    const diagnostic = buildBabelfishHintDiagnostic(
-      'file:///tmp/example.ts'
-    );
+    const diagnostic = buildBabelfishHintDiagnostic('file:///tmp/example.ts');
     expect(diagnostic?.severity).toBe(4);
     expect(diagnostic?.message).toContain('Babelfish available');
     expect(buildBabelfishHintDiagnostic('file:///tmp/example.txt')).toBeNull();
   });
 
   test('builds code actions for supported files', () => {
-    const actions = buildBabelfishCodeActions(
-      'file:///tmp/example.ts',
-      'en'
-    );
+    const actions = buildBabelfishCodeActions('file:///tmp/example.ts', 'en');
     expect(actions).toHaveLength(3);
     expect(actions.map((action) => action.title)).toEqual([
       'Babelfish: Explain File',
@@ -148,16 +143,19 @@ describe('LSP Babelfish helpers', () => {
         },
         context: { diagnostics: [] },
       },
-    })) as Array<{ title: string; command: { arguments: Array<{ audienceLanguage?: string }> } }>;
+    })) as Array<{
+      title: string;
+      command: { arguments: Array<{ audienceLanguage?: string }> };
+    }>;
 
     expect(supportedActions.map((action) => action.title)).toEqual([
       'Babelfish: Explain File',
       'Babelfish: Translate Code',
       'Babelfish: Generate Target Scaffold',
     ]);
-    expect(
-      supportedActions[0]?.command.arguments[0]?.audienceLanguage
-    ).toBe('fr');
+    expect(supportedActions[0]?.command.arguments[0]?.audienceLanguage).toBe(
+      'fr'
+    );
 
     const unsupportedActions = await dispatchRequest({
       jsonrpc: '2.0',

@@ -1,10 +1,4 @@
-import {
-  afterAll,
-  beforeAll,
-  describe,
-  expect,
-  test,
-} from 'bun:test';
+import { afterAll, beforeAll, describe, expect, test } from '@a0n/gnosis/test';
 import { mkdtempSync, mkdirSync, readFileSync } from 'fs';
 import { spawn, spawnSync, type ChildProcess } from 'child_process';
 import { get } from 'http';
@@ -50,7 +44,9 @@ interface CompanionHealthPayload {
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = resolve(__dirname, '../../../../../');
 const COMPANION_ENTRY = fileURLToPath(new URL('../index.ts', import.meta.url));
-const MCP_STDIO_ENTRY = fileURLToPath(new URL('../mcp-stdio.ts', import.meta.url));
+const MCP_STDIO_ENTRY = fileURLToPath(
+  new URL('../mcp-stdio.ts', import.meta.url)
+);
 
 let companionProcess: ChildProcess | null = null;
 let companionPort = 0;
@@ -77,7 +73,10 @@ async function getJson<T>(url: string, timeoutMs = 5_000): Promise<T> {
         timeout: timeoutMs,
       },
       (response) => {
-        if ((response.statusCode ?? 500) < 200 || (response.statusCode ?? 500) >= 300) {
+        if (
+          (response.statusCode ?? 500) < 200 ||
+          (response.statusCode ?? 500) >= 300
+        ) {
           response.resume();
           reject(new Error(`Unexpected status ${response.statusCode ?? 500}`));
           return;
@@ -136,9 +135,14 @@ async function waitForCompanionHealth(
   const deadline = Date.now() + timeoutMs;
 
   while (Date.now() < deadline) {
-    if (companionProcess?.exitCode !== null && companionProcess?.exitCode !== undefined) {
+    if (
+      companionProcess?.exitCode !== null &&
+      companionProcess?.exitCode !== undefined
+    ) {
       throw new Error(
-        `Companion exited early with code ${companionProcess.exitCode}\n${getLogTail()}`
+        `Companion exited early with code ${
+          companionProcess.exitCode
+        }\n${getLogTail()}`
       );
     }
 
@@ -169,7 +173,11 @@ async function fetchCompanionHealth(
     typeof payload.inference?.localRuntime?.pid !== 'number'
   ) {
     throw new Error(
-      `Companion health payload missing runtime data\n${JSON.stringify(payload, null, 2)}\n${getLogTail()}`
+      `Companion health payload missing runtime data\n${JSON.stringify(
+        payload,
+        null,
+        2
+      )}\n${getLogTail()}`
     );
   }
   return payload as CompanionHealthPayload;
@@ -243,7 +251,9 @@ async function runMcpToolInSubprocess(
   };
   const runtimeCommand = resolveTypeScriptEntrypointCommand(MCP_STDIO_ENTRY);
   const payload = JSON.stringify(request);
-  const framedPayload = `Content-Length: ${Buffer.byteLength(payload)}\r\n\r\n${payload}`;
+  const framedPayload = `Content-Length: ${Buffer.byteLength(
+    payload
+  )}\r\n\r\n${payload}`;
   const runnerOutputPath = join(
     testWorkspace || REPO_ROOT,
     `.zedge-mcp-${command}.runner.json`
@@ -266,24 +276,30 @@ async function runMcpToolInSubprocess(
     '  error: result.error ? { message: result.error.message } : null,',
     '}), "utf8");',
   ].join('\n');
-  const result = spawnSync('node', [
-    '-e',
-    nodeRunner,
-    runtimeCommand.command,
-    JSON.stringify(runtimeCommand.args),
-    testWorkspace || REPO_ROOT,
-    testHome,
-    REPO_ROOT,
-    String(companionPort),
-    framedPayload,
-    runnerOutputPath,
-  ], {
-    encoding: 'utf8',
-    timeout: 15_000,
-  });
+  const result = spawnSync(
+    'node',
+    [
+      '-e',
+      nodeRunner,
+      runtimeCommand.command,
+      JSON.stringify(runtimeCommand.args),
+      testWorkspace || REPO_ROOT,
+      testHome,
+      REPO_ROOT,
+      String(companionPort),
+      framedPayload,
+      runnerOutputPath,
+    ],
+    {
+      encoding: 'utf8',
+      timeout: 15_000,
+    }
+  );
   if (result.status !== 0) {
     throw new Error(
-      `Node runner failed for ${command} with code ${result.status}\nstdout=${result.stdout ?? ''}\nstderr=${result.stderr ?? ''}\n${getLogTail()}`
+      `Node runner failed for ${command} with code ${result.status}\nstdout=${
+        result.stdout ?? ''
+      }\nstderr=${result.stderr ?? ''}\n${getLogTail()}`
     );
   }
 
@@ -328,7 +344,9 @@ async function runMcpToolInSubprocess(
 
   if (response.error) {
     throw new Error(
-      `MCP tool call failed for ${command}: ${response.error.message ?? 'unknown error'}\n${getLogTail()}`
+      `MCP tool call failed for ${command}: ${
+        response.error.message ?? 'unknown error'
+      }\n${getLogTail()}`
     );
   }
 
@@ -343,7 +361,11 @@ async function callZedgeCommand(
   const text = result.content[0]?.text;
   if (result.isError || typeof text !== 'string') {
     throw new Error(
-      `Slash command ${command} returned an error result\n${JSON.stringify(result, null, 2)}\n${getLogTail()}`
+      `Slash command ${command} returned an error result\n${JSON.stringify(
+        result,
+        null,
+        2
+      )}\n${getLogTail()}`
     );
   }
 
@@ -388,7 +410,7 @@ describe('Zedge slash commands end to end', () => {
   test('companion launches through gnode', async () => {
     const health = await fetchCompanionHealth(companionPort);
     expect(health.runtime.hostRuntime).toBe('gnode');
-    expect(health.preferredModel).toBe('cog-360m');
+    expect(health.preferredModel).toBe('wasm-local');
     expect(health.inference.localRuntime.pid).toBeGreaterThan(0);
   }, 20_000);
 

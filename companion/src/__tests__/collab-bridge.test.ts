@@ -1,4 +1,4 @@
-import { describe, test, expect } from 'bun:test';
+import { describe, test, expect } from '@a0n/gnosis/test';
 import { CollabBridge } from '../collab-bridge';
 
 describe('CollabBridge', () => {

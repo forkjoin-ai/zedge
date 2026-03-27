@@ -30,6 +30,7 @@ export interface ZedgeConfig {
     useUring: boolean;
     internalPort?: number;
     flowPort?: number;
+    discoveryPort?: number;
   };
   computePool: {
     enabled: boolean;
@@ -60,6 +61,15 @@ export interface ZedgeConfig {
   reasoningContent?: boolean;
 }
 
+type PartialZedgeConfig = Omit<
+  Partial<ZedgeConfig>,
+  'listener' | 'computePool' | 'babelfish'
+> & {
+  listener?: Partial<ZedgeConfig['listener']>;
+  computePool?: Partial<ZedgeConfig['computePool']>;
+  babelfish?: Partial<ZedgeConfig['babelfish']>;
+};
+
 const DEFAULT_EDGEWORK_CONFIG: EdgeworkConfig = {
   environment: 'production',
   apiBaseUrl: 'https://api.edgework.ai',
@@ -79,8 +89,8 @@ const DEFAULT_ZEDGE_CONFIG: ZedgeConfig = {
     maxMemoryMb: 2048,
     allowedModels: ['tinyllama-1.1b', 'gemma3-1b-it'],
   },
-  preferredModel: 'qwen-2.5-coder-7b',
-  cloudRunDirect: true,
+  preferredModel: 'wasm-local',
+  cloudRunDirect: false,
   babelfish: {
     enabled: true,
     ambientSuggestions: true,
@@ -118,7 +128,11 @@ function deriveFlowPort(port: number): number {
   return port <= 64_535 ? port + 1_000 : Math.max(1_024, port - 100);
 }
 
-function mergeZedgeConfig(config: Partial<ZedgeConfig> | undefined): ZedgeConfig {
+function deriveDiscoveryPort(port: number): number {
+  return port <= 65_534 ? port + 1 : Math.max(1_024, port - 1);
+}
+
+function mergeZedgeConfig(config: PartialZedgeConfig | undefined): ZedgeConfig {
   const port = config?.port ?? DEFAULT_ZEDGE_CONFIG.port;
   return {
     ...DEFAULT_ZEDGE_CONFIG,
@@ -127,9 +141,10 @@ function mergeZedgeConfig(config: Partial<ZedgeConfig> | undefined): ZedgeConfig
     listener: {
       ...DEFAULT_ZEDGE_CONFIG.listener,
       ...(config?.listener ?? {}),
-      internalPort:
-        config?.listener?.internalPort ?? deriveInternalPort(port),
+      internalPort: config?.listener?.internalPort ?? deriveInternalPort(port),
       flowPort: config?.listener?.flowPort ?? deriveFlowPort(port),
+      discoveryPort:
+        config?.listener?.discoveryPort ?? deriveDiscoveryPort(port),
     },
     computePool: {
       ...DEFAULT_ZEDGE_CONFIG.computePool,
@@ -139,6 +154,31 @@ function mergeZedgeConfig(config: Partial<ZedgeConfig> | undefined): ZedgeConfig
       ...DEFAULT_ZEDGE_CONFIG.babelfish,
       ...(config?.babelfish ?? {}),
     },
+  };
+}
+
+function stripDerivedListenerPorts(
+  listener: Partial<ZedgeConfig['listener']> | undefined,
+  port: number
+): Partial<ZedgeConfig['listener']> | undefined {
+  if (!listener) {
+    return undefined;
+  }
+
+  return {
+    ...listener,
+    internalPort:
+      listener.internalPort === deriveInternalPort(port)
+        ? undefined
+        : listener.internalPort,
+    flowPort:
+      listener.flowPort === deriveFlowPort(port)
+        ? undefined
+        : listener.flowPort,
+    discoveryPort:
+      listener.discoveryPort === deriveDiscoveryPort(port)
+        ? undefined
+        : listener.discoveryPort,
   };
 }
 
@@ -167,25 +207,28 @@ export function getEdgeworkConfig(): EdgeworkConfig {
 }
 
 export function getZedgeConfig(): ZedgeConfig {
-  const fileConfig = mergeZedgeConfig(
-    readJsonFile<Partial<ZedgeConfig>>(ZEDGE_CONFIG_FILE, DEFAULT_ZEDGE_CONFIG)
-  );
+  const rawFileConfig = readJsonFile<PartialZedgeConfig>(ZEDGE_CONFIG_FILE, {});
   const portOverride = parsePortOverride(process.env.ZEDGE_COMPANION_PORT);
   const listenerModeOverride = parseListenerModeOverride(
     process.env.ZEDGE_LISTENER_MODE
   );
+  const filePort = rawFileConfig.port ?? DEFAULT_ZEDGE_CONFIG.port;
+  const listener = stripDerivedListenerPorts(rawFileConfig.listener, filePort);
 
   return mergeZedgeConfig({
-    ...fileConfig,
-    port: portOverride ?? fileConfig.port,
+    ...rawFileConfig,
+    port: portOverride ?? filePort,
     listener: {
-      ...fileConfig.listener,
-      mode: listenerModeOverride ?? fileConfig.listener.mode,
+      ...listener,
+      mode:
+        listenerModeOverride ??
+        listener?.mode ??
+        DEFAULT_ZEDGE_CONFIG.listener.mode,
     },
   });
 }
 
-export function saveZedgeConfig(config: Partial<ZedgeConfig>): ZedgeConfig {
+export function saveZedgeConfig(config: PartialZedgeConfig): ZedgeConfig {
   const current = getZedgeConfig();
   const updated = mergeZedgeConfig({
     ...current,

@@ -1,4 +1,4 @@
-import { describe, test, expect, beforeEach } from 'bun:test';
+import { describe, test, expect, beforeEach } from '@a0n/gnosis/test';
 import { ForgeBridge } from '../forge-bridge';
 import { join } from 'node:path';
 import { mkdirSync, writeFileSync, rmSync, existsSync } from 'node:fs';
@@ -69,7 +69,10 @@ describe('ForgeBridge', () => {
       new URL('../../../../aeon-forge/src/deploy/discovery.ts', import.meta.url)
     );
     const wranglerCompatSource = Bun.file(
-      new URL('../../../../aeon-forge/src/deploy/wrangler-compat.ts', import.meta.url)
+      new URL(
+        '../../../../aeon-forge/src/deploy/wrangler-compat.ts',
+        import.meta.url
+      )
     );
     const discoveryText = await discoverySource.text();
     const wranglerCompatText = await wranglerCompatSource.text();
@@ -182,28 +185,24 @@ describe('ForgeBridge', () => {
     expect(bridge.getStatus().summary.total).toBe(0);
   });
 
-  test(
-    'deploy with failing build command returns failed',
-    async () => {
-      setupWorkspace([
-        {
-          name: 'fail-build',
-          dir: 'apps/fail-build',
-          kind: 'site',
-          port: 4800,
-          buildCommand: 'exit 1',
-        },
-      ]);
+  test('deploy with failing build command returns failed', async () => {
+    setupWorkspace([
+      {
+        name: 'fail-build',
+        dir: 'apps/fail-build',
+        kind: 'site',
+        port: 4800,
+        buildCommand: 'exit 1',
+      },
+    ]);
 
-      const bridge = new ForgeBridge(TEST_DIR);
-      const result = await bridge.deploy('fail-build');
+    const bridge = new ForgeBridge(TEST_DIR);
+    const result = await bridge.deploy('fail-build');
 
-      expect(result.success).toBe(false);
-      expect(result.error).toContain('Build failed');
-      expect(result.process?.state).toBe('failed');
-    },
-    30_000
-  );
+    expect(result.success).toBe(false);
+    expect(result.error).toContain('Build failed');
+    expect(result.process?.state).toBe('failed');
+  }, 30_000);
 
   test('getEvents returns deploy events', async () => {
     setupWorkspace([

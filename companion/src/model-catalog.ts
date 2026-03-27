@@ -14,7 +14,7 @@ export interface ZedAvailableModel {
 const KNOWN_ZEDGE_MODELS: KnownZedgeModel[] = [
   {
     id: 'wasm-local',
-    displayName: 'SmolLM2 360M (Local WASM)',
+    displayName: 'Local WASM (TinyLlama 1.1B)',
     maxTokens: 2048,
     ownedBy: 'edgework-wasm',
   },

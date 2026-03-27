@@ -14,9 +14,9 @@
  * Reference: https://zed.dev/docs/extensions/agent-servers
  */
 
-import { infer } from "./inference-bridge.ts";
-import { getZedgeConfig } from "./config.ts";
-import type { ChatCompletionRequest, ChatMessage } from "./inference-bridge.ts";
+import { infer } from './inference-bridge.ts';
+import { getZedgeConfig } from './config.ts';
+import type { ChatCompletionRequest, ChatMessage } from './inference-bridge.ts';
 import {
   readFileSync,
   writeFileSync,
@@ -512,7 +512,8 @@ export function parseCodeBlocks(responseContent: string): ParsedCodeBlock[] {
   const blocks: ParsedCodeBlock[] = [];
   // Match fenced code blocks with optional language and file path annotation
   // Supports: ```lang // path, ```lang <!-- path -->, ```lang path=..., ```lang (path)
-  const codeBlockRegex = /```(\w+)?(?:\s+(?:\/\/|<!--)\s*([^\n]+?)(?:\s*-->)?|\s+path=([^\n]+)|\s+\(([^\n)]+)\))?\n([\s\S]*?)```/g;
+  const codeBlockRegex =
+    /```(\w+)?(?:\s+(?:\/\/|<!--)\s*([^\n]+?)(?:\s*-->)?|\s+path=([^\n]+)|\s+\(([^\n)]+)\))?\n([\s\S]*?)```/g;
   let match;
 
   while ((match = codeBlockRegex.exec(responseContent)) !== null) {

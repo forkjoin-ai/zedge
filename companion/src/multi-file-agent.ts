@@ -12,11 +12,11 @@
 
 import { readFileSync, existsSync } from 'node:fs';
 import { join, relative } from 'node:path';
-import { recursiveSuperinfer } from "./superinference.ts";
-import { infer } from "./inference-bridge.ts";
-import type { ChatCompletionRequest } from "./inference-bridge.ts";
-import { getZedgeConfig } from "./config.ts";
-import { parseCodeBlocks, type ParsedCodeBlock } from "./acp-agent.ts";
+import { recursiveSuperinfer } from './superinference.ts';
+import { infer } from './inference-bridge.ts';
+import type { ChatCompletionRequest } from './inference-bridge.ts';
+import { getZedgeConfig } from './config.ts';
+import { parseCodeBlocks, type ParsedCodeBlock } from './acp-agent.ts';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -149,7 +149,9 @@ Rules:
 
   for (const edit of edits) {
     if (!edit.search) {
-      errors.push(`${edit.filePath}: no search text -- skipped (manual resolution needed)`);
+      errors.push(
+        `${edit.filePath}: no search text -- skipped (manual resolution needed)`
+      );
       failedCount++;
       continue;
     }

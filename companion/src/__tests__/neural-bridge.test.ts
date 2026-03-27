@@ -1,4 +1,4 @@
-import { describe, test, expect } from 'bun:test';
+import { describe, test, expect } from '@a0n/gnosis/test';
 
 describe('Neural Bridge (Zedge ↔ @a0n/neural)', () => {
   test('feedRejection updates category counts', async () => {
@@ -95,7 +95,7 @@ describe('Neural Bridge (Zedge ↔ @a0n/neural)', () => {
     expect(frame.modality).toBe('emotion');
     expect(frame.embedding.length).toBe(4);
     expect(frame.embedding[0]).toBeCloseTo(-0.5, 1); // valence (Float32 precision)
-    expect(frame.embedding[1]).toBeCloseTo(0.8, 1);  // arousal
+    expect(frame.embedding[1]).toBeCloseTo(0.8, 1); // arousal
     expect(typeof frame.confidence).toBe('number');
   });
 

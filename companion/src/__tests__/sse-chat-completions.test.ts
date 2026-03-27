@@ -1,4 +1,4 @@
-import { describe, test, expect } from 'bun:test';
+import { describe, test, expect } from '@a0n/gnosis/test';
 import { createSSEProxyStream } from '../inference-bridge';
 import type { TierAttempt } from '../inference-bridge';
 

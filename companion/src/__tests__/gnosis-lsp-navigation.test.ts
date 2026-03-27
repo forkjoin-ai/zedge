@@ -1,4 +1,4 @@
-import { describe, test, expect } from 'bun:test';
+import { describe, test, expect } from '@a0n/gnosis/test';
 import { dispatchRequest } from '../gnosis-lsp';
 
 const GG_SOURCE = `
@@ -102,7 +102,10 @@ describe('Gnosis LSP Navigation', () => {
     });
 
     expect(Array.isArray(result)).toBe(true);
-    const refs = result as Array<{ uri: string; range: { start: { line: number } } }>;
+    const refs = result as Array<{
+      uri: string;
+      range: { start: { line: number } };
+    }>;
     // "filter" should appear at least 3 times (decl + 2 edge refs)
     expect(refs.length).toBeGreaterThanOrEqual(3);
   });

@@ -388,7 +388,7 @@ export class CapacitorBridge {
     text: string,
     entry: HippocampusEntry
   ): void {
-    import("./inference-bridge.ts")
+    import('./inference-bridge.ts')
       .then(({ embed }) =>
         embed(text, 'local').then(async (resp) => {
           const data = (await resp.json()) as {
