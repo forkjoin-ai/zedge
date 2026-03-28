@@ -66,6 +66,15 @@ function stripPromptEcho(text: string, prompt?: string): string {
     candidate = candidate.slice(endInstIdx + '[/INST]'.length).trim();
   }
 
+  candidate = candidate
+    .replace(/^\[\s*\/?\s*INST\s*\]\s*/i, '')
+    .replace(/^\[\s*\/\s*/i, '')
+    .trim();
+
+  if (/^\[?\/?\]?$/.test(candidate)) {
+    return '';
+  }
+
   if (!prompt) {
     return candidate;
   }

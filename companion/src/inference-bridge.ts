@@ -168,11 +168,6 @@ function compactWasmFallbackRequest(
 
   const compactMessages: ChatMessage[] = [
     {
-      role: 'system',
-      content:
-        'Respond directly in plain English. Never repeat prompt markers like [INST] or template placeholders.',
-    },
-    {
       role: 'user',
       content: lastUserContent,
     },
@@ -181,7 +176,7 @@ function compactWasmFallbackRequest(
   return {
     ...request,
     messages: compactMessages,
-    max_tokens: Math.min(request.max_tokens ?? 128, 24),
+    max_tokens: Math.min(request.max_tokens ?? 128, 64),
     temperature: Math.min(request.temperature ?? 0.7, 0.35),
   };
 }
@@ -219,14 +214,93 @@ export interface TierResult {
 const LOCAL_WASM_TOTAL_TIMEOUT_MS = 45_000;
 const LOCAL_WASM_BUSY_BUFFER_MS = 15_000;
 const LOCAL_WASM_PREWARM_BUSY_MS = 5 * 60_000;
-const EDGE_STREAMING_TOTAL_TIMEOUT_MS = 120_000;
+const EDGE_STREAMING_TOTAL_TIMEOUT_MS = 60_000;
 const EDGE_NON_STREAMING_TOTAL_TIMEOUT_MS = 45_000;
 const EDGE_NON_STREAMING_COMPLETION_TIMEOUT_MS = 90_000;
+const EDGE_STREAM_FIRST_TOKEN_TIMEOUT_MS = 20_000;
+const EDGE_STREAM_TOTAL_BUDGET_MS = 75_000;
+const EDGE_NON_STREAM_TOTAL_BUDGET_MS = 60_000;
+const EDGE_CIRCUIT_FAILURE_WINDOW_MS = 2 * 60_000;
+const EDGE_CIRCUIT_OPEN_MS = 5 * 60_000;
+const EDGE_CIRCUIT_FAILURE_THRESHOLD = 3;
 const REMOTE_MODEL_CACHE_TTL_MS = 60_000;
 
 let cachedRemoteModels: ModelInfo[] = [];
 let remoteModelCatalogFetchedAt = 0;
 let remoteModelCatalogRefreshPromise: Promise<void> | null = null;
+
+interface EdgeCircuitState {
+  failureTimestamps: number[];
+  openUntil: number;
+  lastFailureReason?: string;
+}
+
+const edgeCircuitByModel = new Map<string, EdgeCircuitState>();
+
+function getEdgeCircuitState(model: string): EdgeCircuitState {
+  const key = model.toLowerCase();
+  let state = edgeCircuitByModel.get(key);
+  if (!state) {
+    state = { failureTimestamps: [], openUntil: 0 };
+    edgeCircuitByModel.set(key, state);
+  }
+  return state;
+}
+
+function pruneEdgeCircuitFailures(state: EdgeCircuitState, now: number): void {
+  const cutoff = now - EDGE_CIRCUIT_FAILURE_WINDOW_MS;
+  state.failureTimestamps = state.failureTimestamps.filter((ts) => ts >= cutoff);
+}
+
+function getEdgeCircuitSnapshot(
+  model: string,
+  now = Date.now()
+): {
+  isOpen: boolean;
+  remainingMs: number;
+  failuresInWindow: number;
+  lastFailureReason?: string;
+} {
+  const state = getEdgeCircuitState(model);
+  pruneEdgeCircuitFailures(state, now);
+  const remainingMs = Math.max(0, state.openUntil - now);
+  return {
+    isOpen: remainingMs > 0,
+    remainingMs,
+    failuresInWindow: state.failureTimestamps.length,
+    lastFailureReason: state.lastFailureReason,
+  };
+}
+
+function recordEdgeCircuitFailure(model: string, reason: string): void {
+  const now = Date.now();
+  const state = getEdgeCircuitState(model);
+  pruneEdgeCircuitFailures(state, now);
+  state.failureTimestamps.push(now);
+  state.lastFailureReason = reason.slice(0, 240);
+
+  if (state.failureTimestamps.length >= EDGE_CIRCUIT_FAILURE_THRESHOLD) {
+    const nextOpenUntil = now + EDGE_CIRCUIT_OPEN_MS;
+    if (nextOpenUntil > state.openUntil) {
+      state.openUntil = nextOpenUntil;
+      logInference(
+        `[edge] circuit-open model=${model} windowFailures=${
+          state.failureTimestamps.length
+        } openForMs=${EDGE_CIRCUIT_OPEN_MS} reason=${state.lastFailureReason}`
+      );
+    }
+  }
+}
+
+function recordEdgeCircuitSuccess(model: string): void {
+  const state = getEdgeCircuitState(model);
+  if (state.failureTimestamps.length > 0 || state.openUntil > 0) {
+    logInference(`[edge] circuit-reset model=${model}`);
+  }
+  state.failureTimestamps = [];
+  state.openUntil = 0;
+  state.lastFailureReason = undefined;
+}
 
 function isOpenAiSsePayload(payload: string): boolean {
   if (payload === '[DONE]') {
@@ -239,6 +313,177 @@ function isOpenAiSsePayload(payload: string): boolean {
   } catch {
     return false;
   }
+}
+
+function hasUsableFallbackText(text: string): boolean {
+  const normalized = text.trim();
+  if (!normalized) {
+    return false;
+  }
+
+  const signal = normalized.replace(/[\[\]<>|/_-]/g, '').trim();
+  return signal.length >= 3;
+}
+
+function ssePayloadHasToken(payload: string): boolean {
+  if (payload === '[DONE]') {
+    return false;
+  }
+
+  try {
+    const parsed = JSON.parse(payload) as {
+      choices?: Array<{
+        delta?: { content?: string; reasoning_content?: string };
+        message?: { content?: string };
+      }>;
+      token?: unknown;
+      content?: unknown;
+      text?: unknown;
+    };
+
+    const choice = parsed.choices?.[0];
+    const openAiContent =
+      choice?.delta?.content ??
+      choice?.delta?.reasoning_content ??
+      choice?.message?.content;
+    if (typeof openAiContent === 'string' && openAiContent.length > 0) {
+      return true;
+    }
+
+    const legacyToken =
+      typeof parsed.token === 'string'
+        ? parsed.token
+        : typeof parsed.content === 'string'
+        ? parsed.content
+        : typeof parsed.text === 'string'
+        ? parsed.text
+        : null;
+    return legacyToken !== null && legacyToken.length > 0;
+  } catch {
+    return false;
+  }
+}
+
+async function settleWithTimeout(
+  promise: Promise<unknown>,
+  timeoutMs: number
+): Promise<void> {
+  await Promise.race([
+    promise.then(() => undefined).catch(() => undefined),
+    new Promise<void>((resolve) => setTimeout(resolve, timeoutMs)),
+  ]);
+}
+
+async function ensureEdgeStreamingHasToken(
+  response: Response,
+  model: string,
+  firstTokenTimeoutMs = EDGE_STREAM_FIRST_TOKEN_TIMEOUT_MS
+): Promise<Response> {
+  const contentType = response.headers.get('content-type') ?? '';
+  if (!contentType.includes('text/event-stream') || !response.body) {
+    return response;
+  }
+
+  const [probeBody, passthroughBody] = response.body.tee();
+  const reader = probeBody.getReader();
+  const decoder = new TextDecoder('utf-8', { fatal: true });
+
+  let buffer = '';
+  let pendingDataLines: string[] = [];
+  let sawToken = false;
+  let sawDone = false;
+  const deadline = Date.now() + Math.max(1_000, firstTokenTimeoutMs);
+
+  const processPendingEvent = () => {
+    if (pendingDataLines.length === 0) {
+      return;
+    }
+
+    const payload = pendingDataLines.join('\n').trim();
+    pendingDataLines = [];
+
+    if (!payload) {
+      return;
+    }
+
+    if (payload === '[DONE]') {
+      sawDone = true;
+      return;
+    }
+
+    if (ssePayloadHasToken(payload)) {
+      sawToken = true;
+    }
+  };
+
+  try {
+    while (!sawToken && !sawDone) {
+      const remainingMs = Math.max(1, deadline - Date.now());
+      const readResult = await Promise.race([
+        reader.read(),
+        new Promise<null>((resolve) => setTimeout(() => resolve(null), remainingMs)),
+      ]);
+
+      if (readResult === null) {
+        throw new Error(
+          `Edge stream produced no tokens within ${firstTokenTimeoutMs}ms`
+        );
+      }
+
+      const { done, value } = readResult;
+      if (done) {
+        buffer += decoder.decode();
+        break;
+      }
+
+      buffer += decoder.decode(value, { stream: true });
+      let newlineIndex = buffer.indexOf('\n');
+      while (newlineIndex !== -1) {
+        const rawLine = buffer.slice(0, newlineIndex).replace(/\r$/, '');
+        buffer = buffer.slice(newlineIndex + 1);
+
+        if (rawLine.length === 0) {
+          processPendingEvent();
+          if (sawToken || sawDone) {
+            break;
+          }
+        } else if (rawLine.startsWith('data: ')) {
+          pendingDataLines.push(rawLine.slice(6));
+        }
+
+        newlineIndex = buffer.indexOf('\n');
+      }
+    }
+
+    if (!sawToken && pendingDataLines.length > 0) {
+      processPendingEvent();
+    }
+  } finally {
+    try {
+      await settleWithTimeout(reader.cancel(), 1_000);
+    } catch {
+      // Best-effort cleanup only.
+    }
+    reader.releaseLock();
+  }
+
+  if (sawToken) {
+    return new Response(passthroughBody, {
+      status: response.status,
+      headers: new Headers(response.headers),
+    });
+  }
+
+  try {
+    await passthroughBody.cancel();
+  } catch {
+    // Best-effort cleanup only.
+  }
+
+  const reason = sawDone
+    ? 'Edge stream ended without tokens'
+    : 'Edge stream never produced tokens';
+  throw new Error(`${reason} for model ${model}`);
 }
 
 function withTimeout<T>(
@@ -544,6 +789,17 @@ async function tryEdgeCoordinator(
   request: ChatCompletionRequest,
   signal?: AbortSignal
 ): Promise<Response> {
+  const circuit = getEdgeCircuitSnapshot(request.model);
+  if (circuit.isOpen) {
+    const remainingSeconds = Math.max(1, Math.ceil(circuit.remainingMs / 1000));
+    const reasonSuffix = circuit.lastFailureReason
+      ? ` (${circuit.lastFailureReason})`
+      : '';
+    const message = `circuit-open: Edge temporarily disabled for model ${request.model}; retry in ${remainingSeconds}s${reasonSuffix}`;
+    logInference(`[edge] ${message}`);
+    throw new Error(message);
+  }
+
   const baseUrl = getApiBaseUrl();
   const authHeaders = getAuthHeaders();
   const headers = {
@@ -557,24 +813,45 @@ async function tryEdgeCoordinator(
   };
 
   // Try both edge domains: affectively.ai is primary, edgework.ai is fallback.
-  // Use the OpenAI-compatible endpoint so upstream model chat templates are
-  // applied consistently and model behavior matches direct edge usage.
+  // Use /ai/communicate because direct /v1 endpoints can be intermittently
+  // blocked by Cloudflare worker runtime errors in this environment.
   const EDGE_URLS = [
     'https://edge.affectively.ai',
     baseUrl, // api.edgework.ai
   ];
 
-  const MAX_RETRIES = 4;
+  const maxRetries = request.stream === true ? 1 : 2;
+  const edgeDeadline =
+    Date.now() +
+    (request.stream === true
+      ? EDGE_STREAM_TOTAL_BUDGET_MS
+      : EDGE_NON_STREAM_TOTAL_BUDGET_MS);
+
   for (const edgeBase of EDGE_URLS) {
-    for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
-      const url = `${edgeBase}/v1/chat/completions`;
+    for (let attempt = 0; attempt <= maxRetries; attempt++) {
+      const remainingEdgeBudgetMs = edgeDeadline - Date.now();
+      if (remainingEdgeBudgetMs <= 0) {
+        logInference(
+          `[edge] budget exhausted before ${edgeBase} attempt=${attempt}`
+        );
+        break;
+      }
+
+      const url = `${edgeBase}/ai/communicate`;
+      const lastUserMsg =
+        [...request.messages]
+          .reverse()
+          .find((message) => message.role === 'user')?.content ?? '';
+      const lastMsg =
+        request.messages[request.messages.length - 1]?.content ?? '';
       const edgeBody = {
+        prompt: lastUserMsg || lastMsg,
         messages: request.messages,
         model: request.model,
         max_tokens: request.max_tokens ?? 128,
         temperature: request.temperature ?? 0.7,
         top_p: request.top_p,
-        stream: request.stream === true,
+        stream: true,
       };
       logInference(
         `[edge] → ${url} model=${request.model} stream=${edgeBody.stream} attempt=${attempt}`
@@ -583,9 +860,12 @@ async function tryEdgeCoordinator(
       const edgeSignalController = new AbortController();
       const abortFromUpstream = () => edgeSignalController.abort();
       signal?.addEventListener('abort', abortFromUpstream, { once: true });
-      const edgeTimeoutMs = getEdgeRequestTimeoutMs(request);
+      const edgeTimeoutMs = Math.min(
+        getEdgeRequestTimeoutMs(request) ?? remainingEdgeBudgetMs,
+        remainingEdgeBudgetMs
+      );
       const requestTimeout =
-        edgeTimeoutMs === null
+        edgeTimeoutMs <= 0
           ? null
           : setTimeout(() => edgeSignalController.abort(), edgeTimeoutMs);
 
@@ -615,30 +895,61 @@ async function tryEdgeCoordinator(
         )}`
       );
 
-      // 503: engine cold start or bot challenge. Retry with backoff.
-      // GGUF engine takes ~14s to init on cold start, so retry 4 times
-      // with exponential backoff up to 15s between attempts.
-      if (resp.status === 503 && attempt < MAX_RETRIES) {
-        const baseDelay = Math.min(2000 * Math.pow(2, attempt), 15000);
-        logInference(
-          `[edge] 503 engine cold start, retrying in ${baseDelay}ms (attempt ${
-            attempt + 1
-          }/${MAX_RETRIES})...`
+      // 503: engine cold start or upstream challenge.
+      // Retry only within the current request budget so we fail over promptly.
+      if (resp.status === 503 && attempt < maxRetries) {
+        const baseDelay =
+          request.stream === true
+            ? Math.min(1000 * (attempt + 1), 3000)
+            : Math.min(2000 * Math.pow(2, attempt), 10000);
+        const remainingAfterResponseMs = edgeDeadline - Date.now();
+        if (remainingAfterResponseMs <= 750) {
+          logInference(
+            `[edge] 503 and budget nearly exhausted (${remainingAfterResponseMs}ms); skipping retries`
+          );
+          break;
+        }
+        const delayMs = Math.min(
+          baseDelay,
+          Math.max(250, remainingAfterResponseMs - 500)
         );
-        await new Promise((resolve) => setTimeout(resolve, baseDelay));
+        logInference(
+          `[edge] 503 engine cold start, retrying in ${delayMs}ms (attempt ${
+            attempt + 1
+          }/${maxRetries})...`
+        );
+        await new Promise((resolve) => setTimeout(resolve, delayMs));
         continue;
       }
 
       if (!resp.ok) break; // Try next EDGE_URL
 
       if (request.stream) {
-        return resp;
+        try {
+          const remainingBeforeProbeMs = edgeDeadline - Date.now();
+          if (remainingBeforeProbeMs <= 1_000) {
+            throw new Error(
+              `Edge stream budget exhausted before token probe (${remainingBeforeProbeMs}ms)`
+            );
+          }
+          return await ensureEdgeStreamingHasToken(
+            resp,
+            request.model,
+            Math.min(EDGE_STREAM_FIRST_TOKEN_TIMEOUT_MS, remainingBeforeProbeMs)
+          );
+        } catch (error) {
+          await cancelResponseBody(resp);
+          throw error;
+        }
       }
 
       // Batch mode: normalize either JSON or unexpected SSE to OpenAI JSON.
       try {
         return await collapseEdgeStreamingResponse(resp, request.model, {
-          timeoutMs: EDGE_NON_STREAMING_COMPLETION_TIMEOUT_MS,
+          timeoutMs: Math.min(
+            EDGE_NON_STREAMING_COMPLETION_TIMEOUT_MS,
+            Math.max(5_000, edgeDeadline - Date.now())
+          ),
           requireNonEmptyText: true,
         });
       } catch (error) {
@@ -768,7 +1079,7 @@ async function cancelResponseBody(response: Response): Promise<void> {
   if (!body) return;
 
   try {
-    await body.cancel();
+    await settleWithTimeout(body.cancel(), 1_000);
   } catch {
     // Best-effort cleanup only. The winner has already been returned.
   }
@@ -887,13 +1198,16 @@ async function tryWasmFallback(
         remainingGenerateMs,
         'Local model generation'
       );
+      const normalizedContent = hasUsableFallbackText(content)
+        ? content
+        : 'Local WASM fallback returned no usable tokens. Please retry the request.';
       const inferenceMs = Date.now() - t0;
 
       const promptTokens = request.messages.reduce(
         (acc, m) => acc + Math.ceil(m.content.length / 4),
         0
       );
-      const completionTokens = Math.ceil(content.length / 4);
+      const completionTokens = Math.ceil(normalizedContent.length / 4);
 
       logInference(
         `[wasm] generated ${completionTokens} tokens in ${inferenceMs}ms (${aetherLocalRuntime.modelId})`
@@ -907,7 +1221,7 @@ async function tryWasmFallback(
         choices: [
           {
             index: 0,
-            message: { role: 'assistant', content },
+            message: { role: 'assistant', content: normalizedContent },
             finish_reason: 'stop',
           },
         ],
@@ -1987,7 +2301,14 @@ export async function infer(
       edgePromise = tryEdgeCoordinator(request, edgeController.signal)
         .then(
           (response): { tier: InferenceTier; response: Response } | null => {
-            if (response.ok) return { tier: 'edge', response };
+            if (response.ok) {
+              recordEdgeCircuitSuccess(request.model);
+              return { tier: 'edge', response };
+            }
+            recordEdgeCircuitFailure(
+              request.model,
+              `http ${response.status} ${response.statusText}`
+            );
             attempt(
               'edge',
               t0,
@@ -1998,9 +2319,19 @@ export async function infer(
           }
         )
         .catch((err): null => {
+          const detail = String(err);
+          const isCircuitOpen = detail.includes('circuit-open:');
           const isTimeout =
             err instanceof DOMException && err.name === 'AbortError';
-          attempt('edge', t0, isTimeout ? 'timeout' : 'error', String(err));
+          if (!isCircuitOpen) {
+            recordEdgeCircuitFailure(request.model, detail);
+          }
+          attempt(
+            'edge',
+            t0,
+            isCircuitOpen ? 'skipped' : isTimeout ? 'timeout' : 'error',
+            detail
+          );
           return null;
         });
     }

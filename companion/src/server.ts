@@ -347,17 +347,62 @@ function isLocalOnlyModelId(model: string): boolean {
   );
 }
 
+function describeEdgeFailure(attempts: TierAttempt[]): string | null {
+  const edgeAttempt = [...attempts]
+    .reverse()
+    .find((attempt) => attempt.tier === 'edge');
+  if (!edgeAttempt) {
+    return null;
+  }
+
+  if (edgeAttempt.status === 'timeout') {
+    return 'timed out';
+  }
+
+  const detail = edgeAttempt.detail?.toLowerCase() ?? '';
+  if (edgeAttempt.status === 'skipped' && detail.includes('circuit-open')) {
+    return 'is temporarily disabled after repeated upstream failures (circuit open)';
+  }
+
+  if (
+    detail.includes('no tokens') ||
+    detail.includes('no data-events') ||
+    detail.includes('no response body')
+  ) {
+    return 'returned heartbeat-only/no-token stream';
+  }
+
+  if (edgeAttempt.status === 'http_error' && edgeAttempt.detail) {
+    return `returned HTTP error ${edgeAttempt.detail}`;
+  }
+
+  if (edgeAttempt.status === 'error' && edgeAttempt.detail) {
+    return edgeAttempt.detail;
+  }
+
+  if (edgeAttempt.status === 'ok') {
+    return 'was unavailable after stream validation';
+  }
+
+  return edgeAttempt.status;
+}
+
 function buildFallbackNotice(
   tier: string,
   requestedModel: string,
-  resolvedModel: string
+  resolvedModel: string,
+  attempts: TierAttempt[]
 ): string | null {
   if (isLocalOnlyModelId(requestedModel)) {
     return null;
   }
 
   if (tier === 'wasm') {
-    return `[zedge notice] Requested model "${requestedModel}" timed out on edge. Response is from local WASM "${resolvedModel}" and quality may be lower.`;
+    const edgeReason = describeEdgeFailure(attempts);
+    const edgePhrase = edgeReason
+      ? `Edge ${edgeReason}.`
+      : 'Edge did not return a usable completion.';
+    return `[zedge notice] Requested model "${requestedModel}" fell back to local WASM "${resolvedModel}". ${edgePhrase} Quality may be lower in this mode.`;
   }
 
   if (tier === 'echo') {
@@ -1326,7 +1371,8 @@ export async function handleWebRequest(req: Request): Promise<Response> {
       const fallbackNotice = buildFallbackNotice(
         result.tier,
         request.model,
-        String(model)
+        String(model),
+        result.attempts
       );
       const sseContent = fallbackNotice
         ? `${fallbackNotice}\n\n${content}`
@@ -1419,7 +1465,8 @@ export async function handleWebRequest(req: Request): Promise<Response> {
     const fallbackNotice = buildFallbackNotice(
       result.tier,
       request.model,
-      resolvedModel
+      resolvedModel,
+      result.attempts
     );
     const decoratedData = prependFallbackNoticeToContent(data, fallbackNotice);
 
