@@ -9,6 +9,13 @@
     "direct": "../scripts/run-ts-entry.sh src/index.ts",
     "dev": "node --watch ../../gnosis/bin/gnode.js run src/index.ts --export main",
     "mcp": "../scripts/run-ts-entry.sh src/mcp-stdio.ts",
+    "launch-agent:install": "../scripts/companion-launch-agent.sh install",
+    "launch-agent:uninstall": "../scripts/companion-launch-agent.sh uninstall",
+    "launch-agent:start": "../scripts/companion-launch-agent.sh start",
+    "launch-agent:stop": "../scripts/companion-launch-agent.sh stop",
+    "launch-agent:restart": "../scripts/companion-launch-agent.sh restart",
+    "launch-agent:status": "../scripts/companion-launch-agent.sh status",
+    "launch-agent:logs": "../scripts/companion-launch-agent.sh logs",
     "build": "pnpm exec esbuild src/index.ts --bundle --outdir=dist --platform=node --format=esm --minify --packages=external",
     "build:mcp": "pnpm exec esbuild src/mcp-stdio.ts --bundle --outdir=dist --platform=node --format=esm --minify --packages=external"
   },

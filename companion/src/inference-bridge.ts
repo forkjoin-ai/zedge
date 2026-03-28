@@ -137,10 +137,13 @@ const REMOTE_EMBEDDING_MODELS = new Set(['text-embedding-3-small']);
 export type InferenceTier = 'mesh' | 'edge' | 'cloudrun' | 'wasm' | 'echo';
 
 function isExplicitLocalOnlyModel(model: string): boolean {
+  const normalized = model.toLowerCase();
   return (
-    model.startsWith('wasm-local') ||
-    model.startsWith('echo-local') ||
-    model.startsWith('local-only')
+    normalized.startsWith('wasm-local') ||
+    normalized.startsWith('echo-local') ||
+    normalized.startsWith('local-only') ||
+    normalized === 'tinyllama-1.1b' ||
+    (normalized.includes('tinyllama') && normalized.includes('local'))
   );
 }
 
@@ -148,18 +151,53 @@ function shouldUseLocalEmbeddingFallback(model: string): boolean {
   return isExplicitLocalOnlyModel(model) || !REMOTE_EMBEDDING_MODELS.has(model);
 }
 
+function compactWasmFallbackRequest(
+  request: ChatCompletionRequest
+): ChatCompletionRequest {
+  if (isExplicitLocalOnlyModel(request.model)) {
+    return request;
+  }
+
+  const lastUserContent =
+    [...request.messages]
+      .reverse()
+      .find((message) => message.role === 'user')
+      ?.content?.slice(0, 1200) ??
+    request.messages[request.messages.length - 1]?.content?.slice(0, 1200) ??
+    '';
+
+  const compactMessages: ChatMessage[] = [
+    {
+      role: 'system',
+      content:
+        'Respond directly in plain English. Never repeat prompt markers like [INST] or template placeholders.',
+    },
+    {
+      role: 'user',
+      content: lastUserContent,
+    },
+  ];
+
+  return {
+    ...request,
+    messages: compactMessages,
+    max_tokens: Math.min(request.max_tokens ?? 128, 24),
+    temperature: Math.min(request.temperature ?? 0.7, 0.35),
+  };
+}
+
 function getEdgeRequestTimeoutMs(
   request: ChatCompletionRequest
 ): number | null {
-  if (request.stream !== true) {
-    return EDGE_NON_STREAMING_TOTAL_TIMEOUT_MS;
+  if (isExplicitLocalOnlyModel(request.model)) {
+    return 1_500;
   }
 
-  if (request.model === 'tinyllama-1.1b') {
-    return EDGE_NON_STREAMING_TOTAL_TIMEOUT_MS;
+  if (request.stream === true) {
+    return EDGE_STREAMING_TOTAL_TIMEOUT_MS;
   }
 
-  return null;
+  return EDGE_NON_STREAMING_TOTAL_TIMEOUT_MS;
 }
 
 export interface TierAttempt {
@@ -181,8 +219,9 @@ export interface TierResult {
 const LOCAL_WASM_TOTAL_TIMEOUT_MS = 45_000;
 const LOCAL_WASM_BUSY_BUFFER_MS = 15_000;
 const LOCAL_WASM_PREWARM_BUSY_MS = 5 * 60_000;
-const EDGE_NON_STREAMING_TOTAL_TIMEOUT_MS = 25_000;
-const EDGE_NON_STREAMING_COMPLETION_TIMEOUT_MS = 20_000;
+const EDGE_STREAMING_TOTAL_TIMEOUT_MS = 120_000;
+const EDGE_NON_STREAMING_TOTAL_TIMEOUT_MS = 45_000;
+const EDGE_NON_STREAMING_COMPLETION_TIMEOUT_MS = 90_000;
 const REMOTE_MODEL_CACHE_TTL_MS = 60_000;
 
 let cachedRemoteModels: ModelInfo[] = [];
@@ -518,8 +557,8 @@ async function tryEdgeCoordinator(
   };
 
   // Try both edge domains: affectively.ai is primary, edgework.ai is fallback.
-  // Use /ai/communicate (Glossolalia MOA with GGUF streaming transformer).
-  // Supports stream=true for real per-token SSE.
+  // Use the OpenAI-compatible endpoint so upstream model chat templates are
+  // applied consistently and model behavior matches direct edge usage.
   const EDGE_URLS = [
     'https://edge.affectively.ai',
     baseUrl, // api.edgework.ai
@@ -528,25 +567,17 @@ async function tryEdgeCoordinator(
   const MAX_RETRIES = 4;
   for (const edgeBase of EDGE_URLS) {
     for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
-      // Use /ai/communicate -- this is the Glossolalia MOA endpoint with full
-      // GGUF transformer inference. Supports stream=true for real per-token SSE.
-      const url = `${edgeBase}/ai/communicate`;
-      const lastUserMsg =
-        [...request.messages]
-          .reverse()
-          .find((message) => message.role === 'user')?.content ?? '';
-      const lastMsg =
-        request.messages[request.messages.length - 1]?.content ?? '';
-      const communicateBody = {
-        prompt: lastUserMsg || lastMsg,
+      const url = `${edgeBase}/v1/chat/completions`;
+      const edgeBody = {
         messages: request.messages,
         model: request.model,
         max_tokens: request.max_tokens ?? 128,
         temperature: request.temperature ?? 0.7,
-        stream: true,
+        top_p: request.top_p,
+        stream: request.stream === true,
       };
       logInference(
-        `[edge] → ${url} model=${request.model} stream=${communicateBody.stream} attempt=${attempt}`
+        `[edge] → ${url} model=${request.model} stream=${edgeBody.stream} attempt=${attempt}`
       );
 
       const edgeSignalController = new AbortController();
@@ -563,7 +594,7 @@ async function tryEdgeCoordinator(
         resp = await fetch(url, {
           method: 'POST',
           headers,
-          body: JSON.stringify(communicateBody),
+          body: JSON.stringify(edgeBody),
           signal: edgeSignalController.signal,
         });
       } finally {
@@ -1154,12 +1185,98 @@ export function createSSEProxyStream(
               )
             );
           } else {
-            logInference(
-              `[sse-proxy] tier=${tier} filtered non-OpenAI data: ${payload.slice(
-                0,
-                100
-              )}`
-            );
+            // Edge stream compatibility:
+            // Some upstream tiers emit token SSE payloads in a compact shape
+            // like {"token":"...","index":0} instead of OpenAI chunks.
+            // Convert those events into OpenAI-compatible delta chunks so Zed
+            // can render tokens without timing out waiting for valid data.
+            try {
+              const parsed = JSON.parse(payload) as Record<string, unknown>;
+              const legacyToken =
+                typeof parsed.token === 'string'
+                  ? parsed.token
+                  : typeof parsed.content === 'string'
+                  ? parsed.content
+                  : typeof parsed.text === 'string'
+                  ? parsed.text
+                  : null;
+              const legacyDone =
+                parsed.done === true ||
+                parsed.is_done === true ||
+                parsed.eos === true ||
+                parsed.event === 'done' ||
+                parsed.finish_reason === 'stop';
+
+              if (legacyToken !== null && legacyToken.length > 0) {
+                dataEventCount++;
+                if (!firstDataLogged) {
+                  firstDataLogged = true;
+                  logInference(
+                    `[sse-proxy] tier=${tier} first-legacy-token: ${legacyToken.slice(
+                      0,
+                      80
+                    )}`
+                  );
+                }
+
+                const legacyChunk = {
+                  id: progressId,
+                  object: 'chat.completion.chunk',
+                  created: progressCreated,
+                  model: modelName ?? tier,
+                  choices: [
+                    {
+                      index: 0,
+                      delta:
+                        dataEventCount === 1
+                          ? { role: 'assistant', content: legacyToken }
+                          : { content: legacyToken },
+                      finish_reason: null,
+                    },
+                  ],
+                };
+                enqueue(
+                  encoder.encode(`data: ${JSON.stringify(legacyChunk)}\n\n`)
+                );
+              }
+
+              if (legacyDone && !sawDone) {
+                sawDone = true;
+                const finishChunk = {
+                  id: progressId,
+                  object: 'chat.completion.chunk',
+                  created: progressCreated,
+                  model: modelName ?? tier,
+                  choices: [
+                    {
+                      index: 0,
+                      delta: {},
+                      finish_reason: 'stop',
+                    },
+                  ],
+                };
+                enqueue(
+                  encoder.encode(`data: ${JSON.stringify(finishChunk)}\n\n`)
+                );
+                enqueue(encoder.encode('data: [DONE]\n\n'));
+              }
+
+              if (legacyToken === null && !legacyDone) {
+                logInference(
+                  `[sse-proxy] tier=${tier} filtered non-OpenAI data: ${payload.slice(
+                    0,
+                    100
+                  )}`
+                );
+              }
+            } catch {
+              logInference(
+                `[sse-proxy] tier=${tier} filtered non-OpenAI data: ${payload.slice(
+                  0,
+                  100
+                )}`
+              );
+            }
           }
         } else if (line === '') {
           enqueue(encoder.encode('\n'));
@@ -1321,6 +1438,27 @@ export function createSSEProxyStream(
             },
           };
           enqueue(encoder.encode(`data: ${JSON.stringify(usageChunk)}\n\n`));
+        }
+        if (dataEventCount === 0) {
+          const emptyNotice = {
+            id: progressId,
+            object: 'chat.completion.chunk',
+            created: progressCreated,
+            model: modelName ?? tier,
+            choices: [
+              {
+                index: 0,
+                delta: {
+                  role: 'assistant',
+                  content: `[zedge notice] ${tier} produced no tokens for "${
+                    modelName ?? 'selected model'
+                  }". Retry or switch to wasm-local.`,
+                },
+                finish_reason: null,
+              },
+            ],
+          };
+          enqueue(encoder.encode(`data: ${JSON.stringify(emptyNotice)}\n\n`));
         }
         if (!sawDone) {
           enqueue(encoder.encode('data: [DONE]\n\n'));
@@ -1939,8 +2077,14 @@ export async function infer(
   {
     const t0 = Date.now();
     try {
-      const response = await tryWasmFallback(request);
-      attempt('wasm', t0, 'ok');
+      const wasmRequest = compactWasmFallbackRequest(request);
+      const response = await tryWasmFallback(wasmRequest);
+      attempt(
+        'wasm',
+        t0,
+        'ok',
+        wasmRequest === request ? undefined : 'compact-remote-fallback'
+      );
 
       // Log full chain when falling to WASM — this is always interesting
       const chainStr = attempts

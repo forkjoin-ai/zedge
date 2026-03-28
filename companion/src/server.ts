@@ -336,6 +336,84 @@ function buildAttemptHeaders(attempts: TierAttempt[]): Record<string, string> {
   };
 }
 
+function isLocalOnlyModelId(model: string): boolean {
+  const normalized = model.toLowerCase();
+  return (
+    normalized.startsWith('wasm-local') ||
+    normalized.startsWith('echo-local') ||
+    normalized.startsWith('local-only') ||
+    normalized === 'tinyllama-1.1b' ||
+    (normalized.includes('tinyllama') && normalized.includes('local'))
+  );
+}
+
+function buildFallbackNotice(
+  tier: string,
+  requestedModel: string,
+  resolvedModel: string
+): string | null {
+  if (isLocalOnlyModelId(requestedModel)) {
+    return null;
+  }
+
+  if (tier === 'wasm') {
+    return `[zedge notice] Requested model "${requestedModel}" timed out on edge. Response is from local WASM "${resolvedModel}" and quality may be lower.`;
+  }
+
+  if (tier === 'echo') {
+    return `[zedge notice] Requested model "${requestedModel}" failed across all tiers. Response is the local echo fallback.`;
+  }
+
+  return null;
+}
+
+function prependFallbackNoticeToContent(
+  data: Record<string, unknown>,
+  notice: string | null
+): Record<string, unknown> {
+  if (!notice) {
+    return data;
+  }
+
+  const choices = (
+    data as Record<string, unknown> & {
+      choices?: Array<{
+        index?: number;
+        message?: { role?: string; content?: string };
+        finish_reason?: string | null;
+      }>;
+    }
+  ).choices;
+
+  if (!Array.isArray(choices) || choices.length === 0) {
+    return data;
+  }
+
+  const firstChoice = choices[0];
+  const firstMessage = firstChoice?.message;
+  if (!firstMessage || typeof firstMessage.content !== 'string') {
+    return data;
+  }
+
+  if (firstMessage.content.startsWith('[zedge notice]')) {
+    return data;
+  }
+
+  const nextChoices = choices.slice();
+  nextChoices[0] = {
+    ...firstChoice,
+    message: {
+      role: firstMessage.role ?? 'assistant',
+      content: `${notice}\n\n${firstMessage.content}`,
+    },
+  };
+
+  return {
+    ...data,
+    choices: nextChoices,
+  };
+}
+
 function corsHeaders(): Response {
   return new Response(null, {
     status: 204,
@@ -1245,10 +1323,18 @@ export async function handleWebRequest(req: Request): Promise<Response> {
       const id = data.id ?? `chatcmpl-${Date.now()}`;
       const created = data.created ?? Math.floor(Date.now() / 1000);
       const model = data.model ?? request.model;
+      const fallbackNotice = buildFallbackNotice(
+        result.tier,
+        request.model,
+        String(model)
+      );
+      const sseContent = fallbackNotice
+        ? `${fallbackNotice}\n\n${content}`
+        : content;
 
       const encoder = new TextEncoder();
       // Split on word boundaries, preserving whitespace
-      const tokens = content.match(/\S+\s*/g) ?? [content];
+      const tokens = sseContent.match(/\S+\s*/g) ?? [sseContent];
 
       const sseStream = new ReadableStream<Uint8Array>({
         async start(controller) {
@@ -1315,6 +1401,9 @@ export async function handleWebRequest(req: Request): Promise<Response> {
           Connection: 'keep-alive',
           'Access-Control-Allow-Origin': '*',
           'X-Zedge-Tier': result.tier,
+          ...(fallbackNotice
+            ? { 'X-Zedge-Fallback-Notice': fallbackNotice }
+            : {}),
           ...result.upstreamHeaders,
           ...attemptHeaders,
         },
@@ -1325,6 +1414,14 @@ export async function handleWebRequest(req: Request): Promise<Response> {
     const result = await infer(inferRequest);
     const attemptHeaders = buildAttemptHeaders(result.attempts);
     const data = await extractResponseData(result.response);
+    const resolvedModel =
+      typeof data.model === 'string' ? data.model : request.model;
+    const fallbackNotice = buildFallbackNotice(
+      result.tier,
+      request.model,
+      resolvedModel
+    );
+    const decoratedData = prependFallbackNoticeToContent(data, fallbackNotice);
 
     // Auto-learn from this conversation (non-blocking)
     const responseContent =
@@ -1341,12 +1438,15 @@ export async function handleWebRequest(req: Request): Promise<Response> {
         .catch(() => {});
     }
 
-    return new Response(JSON.stringify(data), {
+    return new Response(JSON.stringify(decoratedData), {
       status: 200,
       headers: {
         'Content-Type': 'application/json',
         'Access-Control-Allow-Origin': '*',
         'X-Zedge-Tier': result.tier,
+        ...(fallbackNotice
+          ? { 'X-Zedge-Fallback-Notice': fallbackNotice }
+          : {}),
         ...result.upstreamHeaders,
         ...attemptHeaders,
       },

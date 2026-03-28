@@ -46,11 +46,40 @@ function scrubGeneratedText(text: string): string {
   return text
     .replace(/^<s>\s*/, '')
     .replace(/^<\|assistant\|>\s*/, '')
+    .replace(/^\[INST\][\s\S]*?\[\/INST\]\s*/g, '')
+    .replace(/\[INST\][\s\S]*?\[\/INST\]/g, '')
     .replace(/<\/s>.*/s, '')
     .replace(/<\|(user|system|assistant)\|>.*/s, '')
     .replace(/<\|im_end\|>.*/s, '')
     .replace(/<\|im_start\|>.*/s, '')
     .trim();
+}
+
+function stripPromptEcho(text: string, prompt?: string): string {
+  let candidate = text.trim();
+  if (!candidate) {
+    return candidate;
+  }
+
+  const endInstIdx = candidate.lastIndexOf('[/INST]');
+  if (endInstIdx !== -1) {
+    candidate = candidate.slice(endInstIdx + '[/INST]'.length).trim();
+  }
+
+  if (!prompt) {
+    return candidate;
+  }
+
+  const normalizedPrompt = prompt.trim();
+  if (!normalizedPrompt) {
+    return candidate;
+  }
+
+  if (candidate.startsWith(normalizedPrompt)) {
+    return candidate.slice(normalizedPrompt.length).trim();
+  }
+
+  return candidate;
 }
 
 function formatTinyLlamaInstPrompt(messages: LocalChatMessage[]): string {
@@ -97,9 +126,9 @@ export function formatLocalChatPrompt(
   return formatChatPrompt(messages, modelName);
 }
 
-function extractGeneratedText(result: unknown): string {
+function extractGeneratedText(result: unknown, prompt?: string): string {
   if (typeof result === 'string') {
-    return scrubGeneratedText(result);
+    return stripPromptEcho(scrubGeneratedText(result), prompt);
   }
 
   if (!result || typeof result !== 'object') {
@@ -107,7 +136,7 @@ function extractGeneratedText(result: unknown): string {
   }
 
   if ('generated_text' in result && typeof result.generated_text === 'string') {
-    return scrubGeneratedText(result.generated_text);
+    return stripPromptEcho(scrubGeneratedText(result.generated_text), prompt);
   }
 
   if (!Array.isArray(result) || result.length === 0) {
@@ -121,7 +150,7 @@ function extractGeneratedText(result: unknown): string {
     'generated_text' in first &&
     typeof first.generated_text === 'string'
   ) {
-    return scrubGeneratedText(first.generated_text);
+    return stripPromptEcho(scrubGeneratedText(first.generated_text), prompt);
   }
 
   return '';
@@ -279,7 +308,7 @@ class AetherLocalRuntime {
       return_full_text: false,
     });
 
-    return extractGeneratedText(result);
+    return extractGeneratedText(result, prompt);
   }
 
   async ensureEmbeddingReady(): Promise<boolean> {

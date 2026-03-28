@@ -64,16 +64,31 @@ Babelfish in Zedge is intentionally local/self-hosted. The companion uses the ex
 
 The quickest way to try Zedge is to run only the companion and point Zed's OpenAI-compatible provider settings at it.
 
-### Start the companion
+### Install + start companion launch agent (macOS)
 
 ```bash
 pnpm install
-pnpm run gnode -- run open-source/zedge/companion/src/companion-supervisor.ts --export main
+pnpm run zedge:launch-agent:install
 ```
 
 ### Then point Zed at:
 
 - `http://localhost:7331/v1`
+
+Useful companion service commands:
+
+```bash
+pnpm run zedge:launch-agent:status
+pnpm run zedge:launch-agent:logs
+pnpm run zedge:launch-agent:restart
+pnpm run zedge:launch-agent:uninstall
+```
+
+Manual launcher (no launchd):
+
+```bash
+pnpm run gnode -- run open-source/zedge/companion/src/companion-supervisor.ts --export main
+```
 
 That gives you a working local provider path without compiling the extension first. In companion mode the generated Zed settings are built from the live model catalog and include a selectable `wasm-local` model so you can force the Aether-backed on-device path from the model picker.
 

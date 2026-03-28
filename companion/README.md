@@ -87,6 +87,28 @@ Babelfish is intentionally local/self-hosted at the companion layer. The sidecar
 
 ## Commands
 
+From repo root (macOS launch agent):
+
+```bash
+pnpm run zedge:launch-agent:install
+pnpm run zedge:launch-agent:status
+pnpm run zedge:launch-agent:logs
+pnpm run zedge:launch-agent:restart
+pnpm run zedge:launch-agent:uninstall
+```
+
+From `open-source/zedge/companion`:
+
+```bash
+pnpm run launch-agent:install
+pnpm run launch-agent:status
+pnpm run launch-agent:logs
+pnpm run launch-agent:restart
+pnpm run launch-agent:uninstall
+```
+
+Manual entrypoint launchers:
+
 ```bash
 open-source/zedge/scripts/run-ts-entry.sh open-source/zedge/companion/src/index.ts
 open-source/zedge/scripts/run-ts-entry.sh open-source/zedge/companion/src/companion-supervisor.ts
