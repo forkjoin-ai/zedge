@@ -64,6 +64,20 @@
         "command": "node scripts/open-source-repo-target.mjs submodule-update-reference open-source/zedge",
         "cwd": "."
       }
+    },
+    "pr:list": {
+      "executor": "a0:run-commands",
+      "options": {
+        "command": "node scripts/open-source-repo-target.mjs pr-list open-source/zedge",
+        "cwd": "."
+      }
+    },
+    "pr:merge-all": {
+      "executor": "a0:run-commands",
+      "options": {
+        "command": "node scripts/open-source-repo-target.mjs pr-merge-all open-source/zedge",
+        "cwd": "."
+      }
     }
   }
 }
