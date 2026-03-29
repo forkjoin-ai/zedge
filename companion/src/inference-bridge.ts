@@ -321,7 +321,7 @@ function hasUsableFallbackText(text: string): boolean {
     return false;
   }
 
-  const signal = normalized.replace(/[\[\]<>|/_-]/g, '').trim();
+  const signal = normalized.replace(/[[\]<>|/_-]/g, '').trim();
   return signal.length >= 3;
 }
 
