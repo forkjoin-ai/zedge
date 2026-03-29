@@ -2,7 +2,10 @@
   "name": "zedge",
   "projectType": "library",
   "sourceRoot": "open-source/zedge/src",
-  "tags": ["scope:open-source", "type:lib"],
+  "tags": [
+    "scope:open-source",
+    "type:lib"
+  ],
   "targets": {
     "build": {
       "executor": "a0:run-commands",
@@ -32,6 +35,34 @@
       "executor": "a0:run-commands",
       "options": {
         "command": "pnpm exec eslint open-source/zedge/companion/src open-source/zedge/scripts --ext .ts"
+      }
+    },
+    "github:push": {
+      "executor": "a0:run-commands",
+      "options": {
+        "command": "node scripts/open-source-repo-target.mjs github-push open-source/zedge",
+        "cwd": "."
+      }
+    },
+    "forge:push": {
+      "executor": "a0:run-commands",
+      "options": {
+        "command": "node scripts/open-source-repo-target.mjs forge-push open-source/zedge",
+        "cwd": "."
+      }
+    },
+    "push": {
+      "executor": "a0:run-commands",
+      "options": {
+        "command": "node scripts/open-source-repo-target.mjs push open-source/zedge",
+        "cwd": "."
+      }
+    },
+    "submodule:update-reference": {
+      "executor": "a0:run-commands",
+      "options": {
+        "command": "node scripts/open-source-repo-target.mjs submodule-update-reference open-source/zedge",
+        "cwd": "."
       }
     }
   }
