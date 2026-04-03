@@ -183,14 +183,14 @@ export async function main(): Promise<void> {
     language_models: {
       openai_compatible: {
         Zedge: {
-          api_url: 'http://localhost:7331/v1',
+          api_url: 'http://127.0.0.1:7331/v1',
           available_models: companionAvailableModels,
         },
       },
     },
     edit_predictions: {
       copilot: {
-        api_url: 'http://localhost:7331/v1/completions',
+        api_url: 'http://127.0.0.1:7331/v1/completions',
       },
     },
   };

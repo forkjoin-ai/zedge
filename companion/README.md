@@ -8,6 +8,8 @@ Child: [Source](./src/README.md)
 
 The fair brag is that it is more than a thin proxy. It handles inference routing, local coordination, and the service layer that the Zed extension talks to on `localhost:7331`.
 
+**First-time setup:** use the parent [Zedge README](../README.md#if-you-only-read-one-thing) (`pnpm run zedge:launch-agent:install` once on macOS), or in Zed run **`/zedge-setup`** — do not rely on starting the supervisor by hand every session.
+
 The HTTP shell now rides on `x-gnosis`, and the default public listener path is a native `gnosis-uring` proxy in front of a loopback-only x-gnosis app shell. The companion API no longer carries its own standalone Node server loop or the old localhost OAuth callback server, and the checked-in launcher now runs the companion through `gnode` instead of a Bun-only shell.
 
 For local inference, the companion now routes its on-device fallback through Aether prompt/runtime helpers: the verified TinyLlama chat path stays local-first for `wasm-local`, that selectable model now ships as the default `preferredModel`, and local embedding fallback upgrades from pure hash vectors to a MiniLM model path when the cache is available.

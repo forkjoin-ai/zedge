@@ -84,6 +84,61 @@ fn output_with_section(text: String, label: &str) -> SlashCommandOutput {
     }
 }
 
+/// /zedge-setup — works offline; copy-paste path for first-time users
+pub fn run_setup() -> Result<SlashCommandOutput, String> {
+    let text = "\
+## Zedge — set this up once
+
+Zedge talks to a **local server** on port **7331**. You should not start it by hand every session.
+
+### macOS (recommended)
+
+From the **monorepo root** (the directory that contains the root `package.json`):
+
+```bash
+pnpm install
+pnpm run zedge:launch-agent:install
+```
+
+That installs a **launch agent** so the sidecar starts at login and stays running. You only run those two lines **once** per machine (until you uninstall).
+
+### Then in Zed
+
+Set the OpenAI-compatible API base URL to:
+
+`http://127.0.0.1:7331/v1`
+
+### Verify
+
+```bash
+pnpm run zedge:launch-agent:status
+```
+
+### Kill / restart / logs / remove
+
+```bash
+pnpm run zedge:kill              # stop launch agent + free :7331 (even manual supervisor)
+pnpm run zedge:restart           # kill then relaunch (after launch-agent:install)
+pnpm run zedge:launch-agent:logs
+pnpm run zedge:launch-agent:uninstall
+```
+
+### Not on macOS
+
+Keep a terminal open:
+
+```bash
+pnpm run gnode -- run open-source/zedge/companion/src/companion-supervisor.ts --export main
+```
+
+### Why you might see \"error sending request\"
+
+Zed's Agent panel calls that URL directly. If nothing is listening on 7331, run the macOS install above or the manual supervisor line — then try again.
+"
+    .to_string();
+    Ok(output_with_section(text, "Zedge Setup"))
+}
+
 /// /zedge-status — inference chain health, compute pool, CRDT, workspace info
 pub fn run_status(worktree: Option<&Worktree>) -> Result<SlashCommandOutput, String> {
     let mut parts: Vec<String> = Vec::new();
@@ -138,8 +193,7 @@ pub fn run_status(worktree: Option<&Worktree>) -> Result<SlashCommandOutput, Str
         Err(e) => {
             parts.push(format!("**Companion offline**: {e}"));
             parts.push(
-                "Start with: `pnpm run gnode -- run open-source/zedge/companion/src/companion-supervisor.ts --export main`"
-                    .to_string(),
+                "**One-time fix (macOS, from repo root):** `pnpm run zedge:launch-agent:install` — then restart Zed. Type **`/zedge-setup`** for the full copy-paste block. Manual fallback: `pnpm run gnode -- run open-source/zedge/companion/src/companion-supervisor.ts --export main`".to_string(),
             );
         }
     }
@@ -191,7 +245,7 @@ pub fn run_models() -> Result<SlashCommandOutput, String> {
         }
         Err(e) => {
             parts.push(format!("**Companion offline**: {e}\n"));
-            parts.push("Built-in model list:\n".to_string());
+            parts.push("**Tip:** macOS one-time install: `pnpm run zedge:launch-agent:install` from repo root, or **`/zedge-setup`**.\n\nBuilt-in model list:\n".to_string());
             for m in provider::MODELS {
                 parts.push(format!("- **{}** (`{}`)", m.display_name, m.id));
             }

@@ -1,14 +1,14 @@
 /// Zedge Language Model Provider
 ///
 /// Registers "Zedge" as a language model provider in Zed's AI assistant panel.
-/// Proxies inference requests to the companion sidecar at localhost:7331.
+/// Proxies inference requests to the companion sidecar at 127.0.0.1:7331.
 ///
 /// Note: Zed's OpenAI-compatible provider in settings.json is the primary
 /// integration path. This provider module enables deeper integration when
 /// the extension is installed, such as custom model metadata and tier info.
 
-/// Default companion sidecar URL
-pub const COMPANION_URL: &str = "http://localhost:7331";
+/// Default companion sidecar URL (IPv4 — `localhost` can resolve to ::1 while the listener is IPv4-only)
+pub const COMPANION_URL: &str = "http://127.0.0.1:7331";
 
 /// Models exposed by the Zedge provider
 pub struct ZedgeModel {

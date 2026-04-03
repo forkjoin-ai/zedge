@@ -1,9 +1,9 @@
 export const HEALTH_CHECK_INTERVAL_MS = 5_000;
 export const HEALTH_CHECK_TIMEOUT_MS = 3_000;
-export const STARTUP_GRACE_MS = 60_000;
-export const CONSECUTIVE_FAILURES_BEFORE_RESTART = 8;
+export const STARTUP_GRACE_MS = 15_000;
+export const CONSECUTIVE_FAILURES_BEFORE_RESTART = 3;
 export const RESTART_WINDOW_MS = 60_000;
-export const MAX_RESTARTS_PER_WINDOW = 4;
+export const MAX_RESTARTS_PER_WINDOW = 5;
 export const COMPANION_STOP_TIMEOUT_MS = 5_000;
 
 export type CompanionRestartSkipReason =

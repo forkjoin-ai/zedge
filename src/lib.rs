@@ -10,6 +10,8 @@ use zed_extension_api::{
 
 struct ZedgeExtension;
 const TS_ENTRY_LAUNCHER: &str = "open-source/zedge/scripts/run-ts-entry.sh";
+/// Ensures companion /health before MCP stdio (starts supervisor if needed).
+const RUN_MCP_WITH_SUPERVISOR: &str = "open-source/zedge/scripts/run-mcp-with-supervisor.sh";
 
 fn ts_entry_command(entry: &str) -> Command {
     Command {
@@ -81,6 +83,7 @@ impl zed::Extension for ZedgeExtension {
         worktree: Option<&Worktree>,
     ) -> Result<SlashCommandOutput, String> {
         match command.name.as_str() {
+            "zedge-setup" => slash_commands::run_setup(),
             "zedge-status" => slash_commands::run_status(worktree),
             "zedge-models" => slash_commands::run_models(),
             "zedge-pool" => slash_commands::run_pool(&_args),
@@ -117,6 +120,7 @@ impl zed::Extension for ZedgeExtension {
         args: Vec<String>,
     ) -> Result<Vec<SlashCommandArgumentCompletion>, String> {
         match command.name.as_str() {
+            "zedge-setup" => Ok(Vec::new()),
             "zedge-models" => Ok(provider::MODELS
                 .iter()
                 .map(|m| SlashCommandArgumentCompletion {
@@ -304,7 +308,11 @@ impl zed::Extension for ZedgeExtension {
         _project: &Project,
     ) -> Result<Command> {
         if context_server_id.as_ref() == "zedge-companion" {
-            Ok(ts_entry_command("open-source/zedge/companion/src/mcp-stdio.ts"))
+            Ok(Command {
+                command: "/bin/sh".to_string(),
+                args: vec![RUN_MCP_WITH_SUPERVISOR.to_string()],
+                env: Vec::new(),
+            })
         } else {
             Err(format!("Unknown context server: {context_server_id}"))
         }
@@ -317,7 +325,7 @@ impl zed::Extension for ZedgeExtension {
     ) -> Result<Option<ContextServerConfiguration>> {
         if context_server_id.as_ref() == "zedge-companion" {
             Ok(Some(ContextServerConfiguration {
-                installation_instructions: "The companion sidecar starts automatically through the checked-in gnode launcher when the context server launches.\n\nTo start manually with the same guarded restart policy:\n\n```\npnpm run gnode -- run open-source/zedge/companion/src/companion-supervisor.ts --export main\n```\n\nThe sidecar runs on localhost:7331. The MCP context server bridge and the manual supervisor both poll health and restart their owned child when needed.".to_string(),
+                installation_instructions: "First-time users: type **/zedge-setup** in Zed for the one-command install (macOS). Or from the repo root: `pnpm run zedge:launch-agent:install` so port 7331 stays up after reboot.\n\nThis context server runs `run-mcp-with-supervisor.sh` (starts the sidecar if health fails, then MCP). Zed Agent still uses OpenAI-compatible HTTP to 7331 directly — the launch agent covers both.\n".to_string(),
                 settings_schema: serde_json::json!({
                     "type": "object",
                     "properties": {

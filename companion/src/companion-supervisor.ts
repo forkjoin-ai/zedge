@@ -242,16 +242,14 @@ function startSupervisor(): void {
         return;
       }
 
+      consecutiveHealthFailures += 1;
+
       const busyActivity = getOwnedCompanionActivity(childProc?.pid);
       if (busyActivity) {
-        consecutiveHealthFailures = 0;
-        await restartCompanion(
-          `health check timed out while companion was busy with ${busyActivity.kind}`
+        console.debug(
+          `[zedge:supervisor] Health check failed during ${busyActivity.kind} (${consecutiveHealthFailures}/${CONSECUTIVE_FAILURES_BEFORE_RESTART})`
         );
-        return;
       }
-
-      consecutiveHealthFailures += 1;
       console.warn(
         `[zedge:supervisor] Companion health check failed (${consecutiveHealthFailures}/${CONSECUTIVE_FAILURES_BEFORE_RESTART})`
       );
@@ -267,27 +265,30 @@ function startSupervisor(): void {
 async function runSupervisor(): Promise<void> {
   if (await isCompanionAlive()) {
     console.log(
-      `[zedge:supervisor] Companion already healthy at ${getCompanionBase()}; refusing to take over an existing listener`
+      `[zedge:supervisor] Companion already healthy at ${getCompanionBase()}; adopting as unowned (will restart on failure)`
     );
-    return;
+  } else {
+    spawnCompanion();
+    const alive = await waitForCompanion();
+    if (!alive) {
+      throw new Error(
+        `Companion sidecar did not become healthy at ${getCompanionBase()}`
+      );
+    }
+    console.log('[zedge:supervisor] Companion sidecar is ready');
   }
 
-  spawnCompanion();
-  const alive = await waitForCompanion();
-  if (!alive) {
-    throw new Error(
-      `Companion sidecar did not become healthy at ${getCompanionBase()}`
-    );
-  }
-
-  console.log('[zedge:supervisor] Companion sidecar is ready');
   startSupervisor();
 }
+
+let shutdownResolve: (() => void) | null = null;
 
 export async function main(): Promise<void> {
   registerShutdownHandlers();
   await runSupervisor();
-  return;
+  await new Promise<void>((resolve) => {
+    shutdownResolve = resolve;
+  });
 }
 
 function registerShutdownHandlers(): void {
@@ -302,7 +303,7 @@ function registerShutdownHandlers(): void {
       supervisorTimer = null;
     }
     await stopCompanion();
-    process.exit(0);
+    shutdownResolve?.();
   };
 
   process.on('SIGINT', () => {

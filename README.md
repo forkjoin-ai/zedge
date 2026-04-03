@@ -10,6 +10,41 @@ Zedge brings AI-assisted coding to [Zed](https://zed.dev) through a local extens
 
 The fair brag is architectural honesty: the extension is real, the sidecar is real, and the inference path is designed to stay close to the machine or network you control rather than disappearing into a generic hosted gateway.
 
+## If you only read one thing
+
+Zedge needs a **local server** on port **7331**. You should not start it by hand every day.
+
+**macOS — one-time install** (from the monorepo root, next to the root `package.json`):
+
+```bash
+pnpm install
+pnpm run zedge:launch-agent:install
+```
+
+That registers a launch agent with **KeepAlive**, so the sidecar comes back after reboots and you do not need to remember commands.
+
+**Then in Zed:** set the OpenAI-compatible base URL to `http://127.0.0.1:7331/v1` (**not** `http://localhost:7331/...` — on many Macs `localhost` resolves to IPv6 `::1` while the sidecar listens on IPv4, so Zed shows “error sending request”).
+
+**Lost?** In Zed, run slash command **`/zedge-setup`** — same steps, copy-paste friendly.
+
+After the companion starts, it rewrites `localhost:7331` to `127.0.0.1` in your Zed settings when it syncs the model list — or change it once in **Zed → Settings → JSON** yourself.
+
+**Check / kill / restart / logs / uninstall:**
+
+```bash
+pnpm run zedge:launch-agent:status
+pnpm run zedge:kill              # stop launch agent + kill :7331 (stuck/manual too)
+pnpm run zedge:restart           # kill then relaunch via launch agent (needs prior install)
+pnpm run zedge:launch-agent:logs
+pnpm run zedge:launch-agent:uninstall
+```
+
+**Not on macOS:** keep one terminal open with:
+
+```bash
+pnpm run gnode -- run open-source/zedge/companion/src/companion-supervisor.ts --export main
+```
+
 ## The Two Parts
 
 1. **Zed extension** in `src/`
@@ -59,38 +94,6 @@ Use the umbrella slash command:
 ### Local-Only Constraint
 
 Babelfish in Zedge is intentionally local/self-hosted. The companion uses the existing local Gnosis, local WASM, and local sidecar surfaces. It does not add Workers AI, paid external APIs, or permanent Cloud Run dependencies to make the feature work.
-
-## Fast Path
-
-The quickest way to try Zedge is to run only the companion and point Zed's OpenAI-compatible provider settings at it.
-
-### Install + start companion launch agent (macOS)
-
-```bash
-pnpm install
-pnpm run zedge:launch-agent:install
-```
-
-### Then point Zed at:
-
-- `http://localhost:7331/v1`
-
-Useful companion service commands:
-
-```bash
-pnpm run zedge:launch-agent:status
-pnpm run zedge:launch-agent:logs
-pnpm run zedge:launch-agent:restart
-pnpm run zedge:launch-agent:uninstall
-```
-
-Manual launcher (no launchd):
-
-```bash
-pnpm run gnode -- run open-source/zedge/companion/src/companion-supervisor.ts --export main
-```
-
-That gives you a working local provider path without compiling the extension first. In companion mode the generated Zed settings are built from the live model catalog and include a selectable `wasm-local` model so you can force the Aether-backed on-device path from the model picker.
 
 ## What People May Like
 

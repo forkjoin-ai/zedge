@@ -6,6 +6,10 @@ schema_version = 1
 authors = ["Taylor William Buley"]
 repository = "https://github.com/forkjoin-ai/zedge"
 
+[slash_commands.zedge-setup]
+description = "One-time setup: install the local sidecar (macOS) — copy-paste from here"
+requires_argument = false
+
 [slash_commands.zedge-status]
 description = "Show inference chain health, compute pool stats, and token balance"
 requires_argument = false

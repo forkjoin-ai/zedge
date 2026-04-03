@@ -32,6 +32,46 @@ export function parseZedSettings(text: string): Record<string, unknown> {
   >;
 }
 
+/** Prefer IPv4 loopback — `localhost` often resolves to ::1 while the sidecar binds 127.0.0.1. */
+function rewriteLocalhost7331(url: string): string {
+  if (url.startsWith('http://localhost:7331')) {
+    return `http://127.0.0.1:7331${url.slice('http://localhost:7331'.length)}`;
+  }
+  return url;
+}
+
+function normalizeLocalLoopbackUrls(settings: Record<string, unknown>): void {
+  const languageModels = settings.language_models;
+  if (!isRecord(languageModels)) {
+    return;
+  }
+  const openAiCompatible = languageModels.openai_compatible;
+  if (!isRecord(openAiCompatible)) {
+    return;
+  }
+  const zedge = openAiCompatible.Zedge;
+  if (!isRecord(zedge)) {
+    return;
+  }
+  const apiUrl = zedge.api_url;
+  if (typeof apiUrl === 'string') {
+    zedge.api_url = rewriteLocalhost7331(apiUrl);
+  }
+
+  const editPredictions = settings.edit_predictions;
+  if (!isRecord(editPredictions)) {
+    return;
+  }
+  const copilot = editPredictions.copilot;
+  if (!isRecord(copilot)) {
+    return;
+  }
+  const copilotUrl = copilot.api_url;
+  if (typeof copilotUrl === 'string') {
+    copilot.api_url = rewriteLocalhost7331(copilotUrl);
+  }
+}
+
 function getZedgeProviderConfig(
   settings: Record<string, unknown>
 ): ZedModelProviderConfig | null {
@@ -69,6 +109,7 @@ export function updateZedSettingsModelCatalog(
   modelIds: Iterable<string>
 ): string | null {
   const settings = parseZedSettings(settingsText);
+  normalizeLocalLoopbackUrls(settings);
   const zedge = getZedgeProviderConfig(settings);
   if (!zedge) {
     return null;

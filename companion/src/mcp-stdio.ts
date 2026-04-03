@@ -29,7 +29,9 @@ import { getOwnedCompanionActivity } from './companion-activity.ts';
 import { resolveTypeScriptEntrypointCommand } from './runtime-command.ts';
 
 function getCompanionBase(): string {
-  return `http://localhost:${getCompanionPort()}`;
+  // Use IPv4 loopback explicitly — `localhost` can resolve to ::1 while the
+  // listener may be IPv4-only, causing flaky "connection refused" for Zed Agent.
+  return `http://127.0.0.1:${getCompanionPort()}`;
 }
 
 // ---------- Companion babysitter ----------
@@ -273,16 +275,15 @@ function startBabysitter(): void {
         return;
       }
 
+      consecutiveHealthFailures += 1;
+
       const busyActivity = getOwnedCompanionActivity(companionProc?.pid);
       if (busyActivity) {
-        consecutiveHealthFailures = 0;
-        await restartCompanion(
-          `health check timed out while companion was busy with ${busyActivity.kind}`
+        console.debug(
+          `[zedge:babysitter] Health check failed during ${busyActivity.kind} (${consecutiveHealthFailures}/${CONSECUTIVE_FAILURES_BEFORE_RESTART})`
         );
-        return;
       }
 
-      consecutiveHealthFailures += 1;
       console.warn(
         `[zedge:babysitter] Companion health check failed (${consecutiveHealthFailures}/${CONSECUTIVE_FAILURES_BEFORE_RESTART})`
       );
@@ -354,6 +355,48 @@ async function waitForCompanion(maxAttempts = 20): Promise<boolean> {
     await new Promise((r) => setTimeout(r, 500));
   }
   return false;
+}
+
+async function recoverCompanionAfterFetchFailure(reason: string): Promise<void> {
+  await restartCompanion(reason, { force: true });
+  const ok = await waitForCompanion();
+  if (!ok) {
+    throw new Error(
+      `Companion still unreachable at ${getCompanionBase()} after recovery attempt`
+    );
+  }
+}
+
+/**
+ * Fetch the companion HTTP API; on connection failure, force-restart the owned
+ * sidecar (or spawn it) and retry once. Does not retry on HTTP 4xx/5xx.
+ */
+async function fetchCompanion(
+  path: string,
+  init: RequestInit = {},
+  timeoutMs = 10_000
+): Promise<Response> {
+  const url = `${getCompanionBase()}${path}`;
+  const doFetch = (): Promise<Response> =>
+    fetch(url, {
+      ...init,
+      signal: init.signal ?? AbortSignal.timeout(timeoutMs),
+    });
+
+  try {
+    return await doFetch();
+  } catch (err) {
+    if (err instanceof Error && err.name === 'AbortError') {
+      throw err;
+    }
+    console.warn(
+      `[zedge:mcp] Companion fetch failed, attempting recovery: ${
+        err instanceof Error ? err.message : String(err)
+      }`
+    );
+    await recoverCompanionAfterFetchFailure('companion unreachable');
+    return await doFetch();
+  }
 }
 
 // ---------- MCP message handlers ----------
@@ -782,10 +825,7 @@ async function fetchCompanionText(
   init: RequestInit = {},
   timeoutMs = 10_000
 ): Promise<string> {
-  const response = await fetch(`${getCompanionBase()}${path}`, {
-    ...init,
-    signal: AbortSignal.timeout(timeoutMs),
-  });
+  const response = await fetchCompanion(path, init, timeoutMs);
   const body = await responseToText(response);
   if (!response.ok) {
     throw new Error(`HTTP ${response.status}: ${body}`);
@@ -1792,16 +1832,19 @@ export async function handleToolCall(
         }
         messages.push({ role: 'user', content: String(args.prompt ?? '') });
 
-        const resp = await fetch(`${getCompanionBase()}/v1/chat/completions`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            model: args.model ?? 'tinyllama-1.1b',
-            messages,
-            stream: false,
-          }),
-          signal: AbortSignal.timeout(120_000),
-        });
+        const resp = await fetchCompanion(
+          '/v1/chat/completions',
+          {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              model: args.model ?? 'tinyllama-1.1b',
+              messages,
+              stream: false,
+            }),
+          },
+          120_000
+        );
         const data = (await resp.json()) as {
           choices?: Array<{ message?: { content?: string } }>;
         };
@@ -1813,9 +1856,7 @@ export async function handleToolCall(
       }
 
       case 'zedge_models': {
-        const resp = await fetch(`${getCompanionBase()}/v1/models`, {
-          signal: AbortSignal.timeout(10_000),
-        });
+        const resp = await fetchCompanion('/v1/models', {}, 10_000);
         const data = await resp.json();
         return {
           content: [{ type: 'text', text: JSON.stringify(data, null, 2) }],
@@ -1823,9 +1864,7 @@ export async function handleToolCall(
       }
 
       case 'zedge_status': {
-        const resp = await fetch(`${getCompanionBase()}/health`, {
-          signal: AbortSignal.timeout(10_000),
-        });
+        const resp = await fetchCompanion('/health', {}, 10_000);
         const data = await resp.json();
         return {
           content: [{ type: 'text', text: JSON.stringify(data, null, 2) }],
