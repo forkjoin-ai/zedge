@@ -465,6 +465,28 @@ mock.module('../code-index.ts', () => ({
   },
 }));
 
+mock.module('../gnot-bridge.ts', () => ({
+  listWorkspaceGnotFiles: () => [
+    {
+      filePath: 'open-source/gnot/examples/apps-hello-world.gnot',
+      appId: 'apps-hello-world',
+      version: '0.9',
+    },
+  ],
+  handleGnotCommand: async (input: {
+    action: string;
+    filePath?: string;
+    app?: string;
+    environment?: string;
+  }) => ({
+    action: input.action,
+    filePath: input.filePath ?? null,
+    app: input.app ?? null,
+    environment: input.environment ?? null,
+    ok: true,
+  }),
+}));
+
 mock.module('../gnosis-viz.ts', () => ({
   default: () =>
     new Response('<html><body>mock gnosis viz</body></html>', {
@@ -919,6 +941,7 @@ const routeCases: RouteCase[] = [
     '/feedback',
     '/edgework/commands',
     '/scaffold/templates',
+    '/gnot/files',
     '/code-index/stats',
     '/gnosis/viz',
     '/gnosis/watcher/stats',
@@ -1004,6 +1027,7 @@ const routeCases: RouteCase[] = [
   ...[
     '/feedback',
     '/scaffold/create',
+    '/gnot/command',
     '/code-index/search',
     '/gnosis/eval',
     '/gnosis/ts-check',
@@ -1055,6 +1079,7 @@ const routeCases: RouteCase[] = [
   ),
   postCase('/v1/completions', 200, { prompt: 'hello' }),
   postCase('/v1/embeddings', 200, { input: 'hello' }),
+  postCase('/gnot/command', 200, { action: 'files' }),
   ...[
     '/compute-pool/join',
     '/compute-pool/leave',

@@ -424,6 +424,71 @@ function buildSwarmPromptPayload(args: string | null): Record<string, unknown> {
   };
 }
 
+function normalizeGnotAction(
+  value: string | null
+): 'files' | 'lint' | 'format' | 'doctor' | 'next' | 'status' {
+  switch (value) {
+    case 'lint':
+    case 'format':
+    case 'doctor':
+    case 'next':
+    case 'status':
+      return value;
+    case 'next-action':
+    case 'next_action':
+      return 'next';
+    case 'release-status':
+    case 'release_status':
+      return 'status';
+    default:
+      return 'files';
+  }
+}
+
+function buildGnotCommandPayload(
+  argsText: string | null,
+  overrides: Record<string, unknown> = {}
+): Record<string, unknown> {
+  const parts = tokenizeArgs(argsText);
+  const action = normalizeGnotAction(
+    optionalString(overrides.action) ?? optionalString(parts[0])
+  );
+  const payload: Record<string, unknown> = { action };
+
+  if (action === 'lint' || action === 'format') {
+    const filePath =
+      optionalString(overrides.filePath) ?? optionalString(parts[1]);
+    const sourceText = optionalString(overrides.sourceText);
+    const write = overrides.write === true;
+
+    if (filePath) {
+      payload.filePath = filePath;
+    }
+    if (sourceText) {
+      payload.sourceText = sourceText;
+    }
+    if (write) {
+      payload.write = true;
+    }
+    return payload;
+  }
+
+  if (action === 'doctor' || action === 'next' || action === 'status') {
+    const app = optionalString(overrides.app) ?? optionalString(parts[1]);
+    const environment =
+      optionalString(overrides.environment) ?? optionalString(parts[2]);
+    if (app) {
+      payload.app = app;
+    }
+    if (environment) {
+      payload.environment = environment;
+    }
+    return payload;
+  }
+
+  return payload;
+}
+
 const ZEDGE_PROMPTS: McpPromptDefinition[] = [
   {
     name: 'zedge-status',
@@ -519,6 +584,16 @@ const ZEDGE_PROMPTS: McpPromptDefinition[] = [
     arguments: slashArgsPrompt,
     instructions:
       'Create or inspect scaffolds through the companion. Use the `zedge_command` tool with `command: "zedge-scaffold"`. With no argument, list templates. To create a project, pass `<template> <project-name>`.',
+  },
+  {
+    name: 'zedge-gnot',
+    description:
+      'Inspect workspace gnot apps and run gnot authoring or deploy-shell diagnostics',
+    arguments: slashArgsPrompt,
+    instructions:
+      'Inspect or operate on gnot surfaces through the companion. Use the `zedge_gnot` tool. With no argument or `files`, list workspace `.gnot` files. Supported argument forms mirror the extension slash command: `files`, `lint <file-path>`, `format <file-path>`, `doctor <app> [environment]`, `next <app> [environment]`, and `status <app> [environment]`.',
+    toolName: 'zedge_gnot',
+    payload: (args) => buildGnotCommandPayload(args),
   },
   {
     name: 'zedge-gnosis',
@@ -964,6 +1039,17 @@ async function handleBabelfishSlashCommand(
   }
 }
 
+async function callGnotCommand(payload: Record<string, unknown>): Promise<string> {
+  if (
+    payload.action === 'files' &&
+    Object.keys(payload).length === 1
+  ) {
+    return fetchCompanionText('/gnot/files');
+  }
+
+  return postCompanionJson('/gnot/command', payload, 120_000);
+}
+
 async function executeZedgeCommandTool(
   args: Record<string, unknown>
 ): Promise<Record<string, unknown>> {
@@ -1152,6 +1238,26 @@ async function executeZedgeCommandTool(
         return createToolResult(
           await postCompanionJson('/scaffold/create', body, 60_000)
         );
+      }
+      case 'zedge-gnot': {
+        const payload = buildGnotCommandPayload(argsText, args);
+        const action = String(payload.action ?? 'files');
+        if ((action === 'lint' || action === 'format') && !payload.filePath) {
+          return createToolResult(
+            `Usage: /zedge-gnot ${action} <file-path>`,
+            true
+          );
+        }
+        if (
+          (action === 'doctor' || action === 'next' || action === 'status') &&
+          !payload.app
+        ) {
+          return createToolResult(
+            `Usage: /zedge-gnot ${action} <app> [environment]`,
+            true
+          );
+        }
+        return createToolResult(await callGnotCommand(payload));
       }
       case 'zedge-gnosis': {
         const code = optionalString(args.code) ?? argsText;
@@ -1473,6 +1579,46 @@ export async function handleToolsList(): Promise<Record<string, unknown>> {
             },
           },
           required: ['command'],
+        },
+      },
+      {
+        name: 'zedge_gnot',
+        description:
+          'Inspect workspace gnot apps and run gnot authoring or deploy-shell diagnostics',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            action: {
+              type: 'string',
+              enum: ['files', 'lint', 'format', 'doctor', 'next', 'status'],
+              description: 'The gnot action to run',
+            },
+            filePath: {
+              type: 'string',
+              description:
+                'Workspace-relative `.gnot` file path for lint or format actions',
+            },
+            sourceText: {
+              type: 'string',
+              description:
+                'Optional inline gnot source text for format or lint actions',
+            },
+            write: {
+              type: 'boolean',
+              description:
+                'When true, write the formatted result back to filePath',
+            },
+            app: {
+              type: 'string',
+              description:
+                'Gnot app selector for doctor, next, or status actions',
+            },
+            environment: {
+              type: 'string',
+              enum: ['development', 'staging', 'production'],
+              description: 'Optional deploy environment for gnot shell actions',
+            },
+          },
         },
       },
       {
@@ -1869,6 +2015,37 @@ export async function handleToolCall(
         return {
           content: [{ type: 'text', text: JSON.stringify(data, null, 2) }],
         };
+      }
+
+      case 'zedge_gnot': {
+        const payload = buildGnotCommandPayload(null, args);
+        const action = String(payload.action ?? 'files');
+        if ((action === 'lint' || action === 'format') && !payload.filePath) {
+          return {
+            content: [
+              {
+                type: 'text',
+                text: `filePath is required for ${action}`,
+              },
+            ],
+            isError: true,
+          };
+        }
+        if (
+          (action === 'doctor' || action === 'next' || action === 'status') &&
+          !payload.app
+        ) {
+          return {
+            content: [
+              {
+                type: 'text',
+                text: `app is required for ${action}`,
+              },
+            ],
+            isError: true,
+          };
+        }
+        return createToolResult(await callGnotCommand(payload));
       }
 
       case 'zedge_apply_code': {

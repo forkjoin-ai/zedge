@@ -22,6 +22,7 @@ The companion also now syncs the `language_models.openai_compatible.Zedge.availa
 - expose an OpenAI-compatible inference endpoint to Zed
 - provide the MCP entry point and other sidecar behaviors
 - mirror the extension slash-command catalog into Zed Agent via MCP prompts and the generic `zedge_command` tool
+- expose a dedicated `zedge_gnot` MCP tool plus `zedge-gnot` slash-command backing for `open-source/gnot` file discovery, authoring checks, and deploy-shell diagnostics
 - store local response-quality feedback through the companion so extension and Agent surfaces can submit to the same log
 - serve the Babelfish capability matrix and preview/apply translation endpoints
 - surface Babelfish MCP tools and non-mutating LSP affordances
@@ -86,6 +87,17 @@ Entries are stored locally in `.edgework/feedback.jsonl`, so the Zed extension a
 ## Local-First Constraint
 
 Babelfish is intentionally local/self-hosted at the companion layer. The sidecar uses the local Gnosis polyglot pipeline, local state, and local preview/apply logic. It does not introduce Workers AI or new paid remote dependencies as a fallback.
+
+## Gnot Surface
+
+The companion now carries a first-class `gnot` bridge for the local monorepo:
+
+- `GET /gnot/files`
+- `POST /gnot/command`
+
+Supported `action` values are `files`, `lint`, `format`, `doctor`, `next`, and
+`status`. The same operations are available to Agent through the dedicated
+`zedge_gnot` MCP tool and the mirrored `/zedge-gnot` slash command.
 
 ## Commands
 

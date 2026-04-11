@@ -66,6 +66,10 @@ requires_argument = true
 description = "Create a new project from template (site, app, worker, mcp, agent, extension, gnosis)"
 requires_argument = true
 
+[slash_commands.zedge-gnot]
+description = "Inspect workspace gnot apps and run gnot authoring or deploy-shell diagnostics"
+requires_argument = false
+
 [slash_commands.zedge-gnosis]
 description = "Analyze Gnosis topological graph and calculate Betti numbers"
 requires_argument = true

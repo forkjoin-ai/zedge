@@ -211,4 +211,52 @@ describe('Zedge MCP prompt surface', () => {
       globalThis.fetch = originalFetch;
     }
   });
+
+  test('routes structured gnot actions through the dedicated gnot tool', async () => {
+    const fetchMock = mock(async (url: string | URL, init?: RequestInit) => {
+      expect(String(url)).toBe('http://localhost:7331/gnot/command');
+      expect(init?.method).toBe('POST');
+
+      const body = JSON.parse(String(init?.body)) as {
+        action?: string;
+        app?: string;
+        environment?: string;
+      };
+      expect(body.action).toBe('doctor');
+      expect(body.app).toBe('apps-hello-world');
+      expect(body.environment).toBe('staging');
+
+      return new Response(
+        JSON.stringify({ action: 'doctor', ready: true, checks: [] }),
+        {
+          headers: { 'Content-Type': 'application/json' },
+        }
+      );
+    });
+
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = fetchMock as typeof fetch;
+    try {
+      const response = await dispatch({
+        jsonrpc: '2.0',
+        id: 7,
+        method: 'tools/call',
+        params: {
+          name: 'zedge_gnot',
+          arguments: {
+            action: 'doctor',
+            app: 'apps-hello-world',
+            environment: 'staging',
+          },
+        },
+      });
+
+      const content = (response?.result as { content: Array<{ text: string }> })
+        .content[0]?.text;
+      expect(content).toContain('"action": "doctor"');
+      expect(content).toContain('"ready": true');
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
 });

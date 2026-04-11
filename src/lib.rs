@@ -98,6 +98,7 @@ impl zed::Extension for ZedgeExtension {
             "zedge-forge" => slash_commands::run_forge(&_args),
             "zedge-kernel" => slash_commands::run_kernel(&_args),
             "zedge-scaffold" => slash_commands::run_scaffold(&_args),
+            "zedge-gnot" => slash_commands::run_gnot(&_args),
             "zedge-gnosis" => slash_commands::run_gnosis(&_args),
             "zedge-gnosis-run" => slash_commands::run_gnosis_run(worktree),
             "zedge-gnosis-viz" => slash_commands::run_gnosis_viz(worktree),
@@ -220,6 +221,16 @@ impl zed::Extension for ZedgeExtension {
                     SlashCommandArgumentCompletion { label: "agent — AI agent template (tool use + memory)".into(), new_text: "agent ".into(), run_command: false },
                     SlashCommandArgumentCompletion { label: "extension — Zed editor extension".into(), new_text: "extension ".into(), run_command: false },
                     SlashCommandArgumentCompletion { label: "gnosis — Gnosis topological graph project".into(), new_text: "gnosis ".into(), run_command: false },
+                ])
+            }
+            "zedge-gnot" => {
+                Ok(vec![
+                    SlashCommandArgumentCompletion { label: "files — List workspace .gnot files".into(), new_text: "files".into(), run_command: true },
+                    SlashCommandArgumentCompletion { label: "lint — Lint a .gnot file".into(), new_text: "lint ".into(), run_command: false },
+                    SlashCommandArgumentCompletion { label: "format — Format a .gnot file".into(), new_text: "format ".into(), run_command: false },
+                    SlashCommandArgumentCompletion { label: "doctor — Inspect deploy readiness for a gnot app".into(), new_text: "doctor ".into(), run_command: false },
+                    SlashCommandArgumentCompletion { label: "next — Suggest the next gnot deploy-shell action".into(), new_text: "next ".into(), run_command: false },
+                    SlashCommandArgumentCompletion { label: "status — Show release status for a gnot app".into(), new_text: "status ".into(), run_command: false },
                 ])
             }
             "zedge-kernel" => {

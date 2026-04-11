@@ -992,6 +992,87 @@ pub fn run_scaffold(args: &[String]) -> Result<SlashCommandOutput, String> {
     }
 }
 
+/// /zedge-gnot — workspace gnot discovery + deploy-shell diagnostics
+pub fn run_gnot(args: &[String]) -> Result<SlashCommandOutput, String> {
+    let sub = args.first().map(|s| s.as_str()).unwrap_or("files");
+
+    match sub {
+        "files" => match companion_get("/gnot/files") {
+            Ok(body) => {
+                if let Ok(v) = serde_json::from_str::<serde_json::Value>(&body) {
+                    let mut parts = vec![
+                        "## Workspace Gnot Files\n".to_string(),
+                        "Use `/zedge-gnot lint <file-path>` or `/zedge-gnot format <file-path>` for authoring checks, and `/zedge-gnot doctor <app> [environment]` for deploy-shell readiness.\n".to_string(),
+                        "| File | App | Version |".to_string(),
+                        "|:---|:---|:---|".to_string(),
+                    ];
+                    if let Some(files) = v["files"].as_array() {
+                        for file in files {
+                            let file_path = file["filePath"].as_str().unwrap_or("?");
+                            let app_id = file["appId"].as_str().unwrap_or("—");
+                            let version = file["version"].as_str().unwrap_or("—");
+                            parts.push(format!("| `{file_path}` | `{app_id}` | `{version}` |"));
+                        }
+                    }
+                    return Ok(output_with_section(parts.join("\n"), "Gnot"));
+                }
+                Ok(output_with_section(format!("```json\n{body}\n```"), "Gnot"))
+            }
+            Err(e) => Ok(output_with_section(
+                format!("**Companion offline**: {e}"),
+                "Gnot",
+            )),
+        },
+        "lint" | "format" => {
+            let file_path = args.get(1).map(|s| s.as_str()).unwrap_or("");
+            if file_path.is_empty() {
+                return Ok(output_with_section(
+                    format!("Usage: `/zedge-gnot {sub} <file-path>`"),
+                    "Gnot",
+                ));
+            }
+            let response = companion_post_json(
+                "/gnot/command",
+                serde_json::json!({
+                    "action": sub,
+                    "filePath": file_path,
+                }),
+            )?;
+            Ok(output_with_section(
+                format!("## Gnot {sub}\n\n```json\n{response}\n```"),
+                "Gnot",
+            ))
+        }
+        "doctor" | "next" | "status" => {
+            let app = args.get(1).map(|s| s.as_str()).unwrap_or("");
+            if app.is_empty() {
+                return Ok(output_with_section(
+                    format!("Usage: `/zedge-gnot {sub} <app> [environment]`"),
+                    "Gnot",
+                ));
+            }
+            let environment = args.get(2).map(|s| s.as_str());
+            let response = companion_post_json(
+                "/gnot/command",
+                serde_json::json!({
+                    "action": sub,
+                    "app": app,
+                    "environment": environment,
+                }),
+            )?;
+            Ok(output_with_section(
+                format!("## Gnot {sub}\n\n```json\n{response}\n```"),
+                "Gnot",
+            ))
+        }
+        _ => Ok(output_with_section(
+            "Usage:\n- `/zedge-gnot files`\n- `/zedge-gnot lint <file-path>`\n- `/zedge-gnot format <file-path>`\n- `/zedge-gnot doctor <app> [environment]`\n- `/zedge-gnot next <app> [environment]`\n- `/zedge-gnot status <app> [environment]`"
+                .to_string(),
+            "Gnot",
+        )),
+    }
+}
+
 /// /zedge-gnosis — evaluate Gnosis topological graph
 pub fn run_gnosis(args: &[String]) -> Result<SlashCommandOutput, String> {
     if args.is_empty() {

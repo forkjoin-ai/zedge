@@ -854,6 +854,71 @@ export async function handleWebRequest(req: Request): Promise<Response> {
     }
   }
 
+  // ==================== Gnot ====================
+
+  if (path === '/gnot/files' && req.method === 'GET') {
+    try {
+      const { listWorkspaceGnotFiles } = await import('./gnot-bridge.ts');
+      return jsonResponse({
+        workspaceRoot: process.env.AEON_ROOT || process.cwd(),
+        files: listWorkspaceGnotFiles(),
+      });
+    } catch (err) {
+      return jsonResponse(
+        {
+          error:
+            err instanceof Error ? err.message : 'Could not inspect gnot files',
+        },
+        500
+      );
+    }
+  }
+
+  if (path === '/gnot/command' && req.method === 'POST') {
+    try {
+      const body = (await req.json()) as {
+        action?: string;
+        filePath?: string;
+        sourceText?: string;
+        app?: string;
+        environment?: string;
+        env?: Record<string, string>;
+        timeoutMs?: number;
+        write?: boolean;
+      };
+      if (!body.action) {
+        return jsonResponse({ error: 'action is required' }, 400);
+      }
+
+      const { handleGnotCommand } = await import('./gnot-bridge.ts');
+      return jsonResponse(
+        await handleGnotCommand({
+          action: body.action as
+            | 'files'
+            | 'format'
+            | 'lint'
+            | 'doctor'
+            | 'next'
+            | 'status',
+          filePath: body.filePath,
+          sourceText: body.sourceText,
+          app: body.app,
+          environment: body.environment,
+          env: body.env,
+          timeoutMs: body.timeoutMs,
+          write: body.write,
+        })
+      );
+    } catch (err) {
+      return jsonResponse(
+        {
+          error: err instanceof Error ? err.message : 'Gnot command failed',
+        },
+        400
+      );
+    }
+  }
+
   // ==================== Code Index ====================
 
   if (path === '/code-index/search' && req.method === 'POST') {

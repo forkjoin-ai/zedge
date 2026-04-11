@@ -25,6 +25,7 @@ Runtime entrypoints, HTTP server surfaces, Babelfish routes, and the sidecar-onl
 - `feedback-log.ts` owns the append-only local feedback log that backs `GET/POST /feedback`.
 - `runtime-command.ts` centralizes how the companion turns a TypeScript entrypoint into an actual process command, routing the companion, MCP bridge, supervisor, and LSP entrypoints through the checked-in `run-ts-entry.sh` wrapper so they all launch through `gnode`.
 - `forge-bridge.ts` owns local project discovery and deploy/process control for the companion HTTP surface.
+- `gnot-bridge.ts` gives the companion a first-class `open-source/gnot` surface for workspace file discovery, `.gnot` lint/format authoring checks, and deploy-shell `doctor` / `next` / `status` diagnostics through both HTTP and MCP.
 - `aether-local-runtime.ts` centralizes the verified local TinyLlama chat and MiniLM embedding fallback that `inference-bridge.ts` uses when mesh, edge, and Cloud Run paths miss, and exposes the local chat load state for health reporting.
 - `inference-bridge.ts` owns the tier race, exposes the `wasm-local` model in the companion catalog, gives the local Aether runtime a real final fallback window before the echo belt-and-suspenders path, and now pre-warms the chat model while marking long local work so supervisors do not kill a healthy-but-busy child during first-load warmup.
 - `server.ts` mounts the OpenAI-compatible, Babelfish, workspace, mesh, and admin routes onto an `x-gnosis` host and can expose that host either directly or behind a native `gnosis-uring` public listener.

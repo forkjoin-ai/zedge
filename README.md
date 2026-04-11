@@ -58,6 +58,7 @@ pnpm run gnode -- run open-source/zedge/companion/src/companion-supervisor.ts --
    - syncs Zed's `openai_compatible.Zedge.available_models` list from the live companion catalog at startup so the picker tracks current edge and local models
    - defaults `preferredModel` to the selectable `wasm-local` path and runs an Aether-backed local fallback path for TinyLlama chat generation and MiniLM embeddings before dropping to echo
    - now exposes Babelfish polyglot translation/explanation over the Gnosis language registry
+   - now exposes first-class `gnot` workspace discovery plus `doctor` / `next` / `status` deploy-shell diagnostics for local `open-source/gnot` apps
 
 ## Babelfish
 
@@ -81,6 +82,23 @@ Use the umbrella slash command:
 /zedge-babelfish rewrite-preview <target-language> <file-path>
 /zedge-babelfish apply <preview-id> [rewrite_in_place|generate_files]
 ```
+
+## Gnot
+
+`open-source/gnot` now has a first-class companion surface in Zedge:
+
+```text
+/zedge-gnot files
+/zedge-gnot lint <file-path>
+/zedge-gnot format <file-path>
+/zedge-gnot doctor <app> [environment]
+/zedge-gnot next <app> [environment]
+/zedge-gnot status <app> [environment]
+```
+
+The companion also exposes the same surface to Zed Agent through the dedicated
+`zedge_gnot` MCP tool, so `.gnot` work can stay inside the same local sidecar
+instead of bouncing to a separate adapter.
 
 ### Safety Model
 
