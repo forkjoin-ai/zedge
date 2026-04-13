@@ -2,7 +2,7 @@
  * Observatory History -- Time-Series Persistence
  *
  * The observatory doesn't just snapshot -- it tracks trends over time.
- * Every snapshot is persisted as a JSONL entry. The history IS the void
+ * Every snapshot is persisted as a JSONL entry. The history maps to the void
  * boundary at the system level: the rate of change of steering effectiveness,
  * the derivative of engram accumulation, the convergence velocity.
  *
