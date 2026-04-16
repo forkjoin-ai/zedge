@@ -22,7 +22,7 @@
     "test": {
       "executor": "a0:run-commands",
       "options": {
-        "command": "cd open-source/zedge/companion && gnode run test src/__tests__"
+        "command": "pnpm run gnode -- test open-source/zedge/companion/src/__tests__"
       }
     },
     "typecheck": {
