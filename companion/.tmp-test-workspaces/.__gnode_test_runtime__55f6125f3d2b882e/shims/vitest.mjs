@@ -1,0 +1,24 @@
+const runtime = globalThis[Symbol.for('gnosis.testing.runtimeExports')];
+if (!runtime) { throw new Error('No active Gnosis test runtime exports.'); }
+export const afterAll = runtime.afterAll;
+export const afterEach = runtime.afterEach;
+export const buildPactSarif = runtime.buildPactSarif;
+export const beforeAll = runtime.beforeAll;
+export const beforeEach = runtime.beforeEach;
+export const describe = runtime.describe;
+export const discoverGnosisTestFiles = runtime.discoverGnosisTestFiles;
+export const formatGnosisTestRun = runtime.formatGnosisTestRun;
+export const expect = runtime.expect;
+export const it = runtime.it;
+export const mock = runtime.mock;
+export const readGnosisFixture = runtime.readGnosisFixture;
+export const runGnosisTests = runtime.runGnosisTests;
+export const runPactVerification = runtime.runPactVerification;
+export const runTypeScriptTestFile = runtime.runTypeScriptTestFile;
+export const runWrappedGgTestFile = runtime.runWrappedGgTestFile;
+export const resolveGnosisFixturePath = runtime.resolveGnosisFixturePath;
+export const resolveGnosisFixtureUrl = runtime.resolveGnosisFixtureUrl;
+export const restoreAllMocks = runtime.restoreAllMocks;
+export const spyOn = runtime.spyOn;
+export const test = runtime.test;
+export const vi = runtime.vi;
