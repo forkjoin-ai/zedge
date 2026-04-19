@@ -15,6 +15,7 @@
 
 import type { CollapseStrategy } from './superinference.ts';
 import type { AmygdalaTag } from './capacitor-bridge.ts';
+import { buleyeanWeight } from '@a0n/buleyean-kernel';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -299,15 +300,6 @@ export function analyzeCodeEmotionWithFallback(
 // ---------------------------------------------------------------------------
 // Void Boundary Model -- Buleyean complement routing
 // ---------------------------------------------------------------------------
-
-/**
- * Buleyean weight: w = R - min(v, R) + 1
- * Emotions rejected fewer times get higher weight (the sliver guarantees
- * every emotion keeps w >= 1, so nothing is ever fully suppressed).
- */
-function buleyeanWeight(rounds: number, rejections: number): number {
-  return rounds - Math.min(rejections, rounds) + 1;
-}
 
 /**
  * Void boundary over code-emotion analyses.
