@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import {
   getCloudRunHeaders,
   resolveCloudRunServiceAccountKey,
-} from '@affectively/shared-utils/edge/cloudrun-auth';
+} from '@a0n/shared-utils/edge/cloudrun-auth';
 
 export const CLOUD_RUN_HEALTH_PATHS = ['/api/v1/health', '/health'] as const;
 

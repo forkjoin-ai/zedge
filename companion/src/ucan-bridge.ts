@@ -2,7 +2,7 @@
  * Ghostwriter UcanBridge (Zedge 3.0 — Phase 2)
  *
  * UCAN token generation and verification for every DashRelay connection.
- * Uses @affectively/auth for ES256 signing, capability matching, and revocation.
+ * Uses @a0n/auth for ES256 signing, capability matching, and revocation.
  *
  * Capability namespace: zedge/file/read, zedge/file/write, zedge/process/exec
  * Resource format: zedge:{workspaceId}:{path} (matches room naming convention)
@@ -21,7 +21,7 @@ import {
   type IssuedUcanToken,
   type VerifyUcanResult,
   type DeterministicIssuer,
-} from '@affectively/auth';
+} from '@a0n/auth';
 
 // ---------------------------------------------------------------------------
 // Types

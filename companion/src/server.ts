@@ -171,7 +171,7 @@ import {
 } from './ucan-scope.ts';
 import type { ZedgeAccessMode } from './ucan-scope.ts';
 import type { UcanBridge, AgentMode } from './ucan-bridge.ts';
-import type { UcanCapability } from '@affectively/auth';
+import type { UcanCapability } from '@a0n/auth';
 import { AgentParticipant } from './agent-participant.ts';
 import type { AgentEdit, AgentReplacement } from './agent-participant.ts';
 import { getMarketStatus } from './compute-node.ts';
