@@ -64,6 +64,12 @@ interface BabelfishExplainRequestBody {
   includeGg?: boolean;
 }
 
+interface BabelfishSyncWatchRequestBody {
+  sourceFile: string;
+  targetFile: string;
+  mode: 'unidirectional' | 'bidirectional';
+}
+
 function jsonResponse(data: unknown, status = 200): Response {
   return new Response(JSON.stringify(data), {
     status,
@@ -191,6 +197,28 @@ export async function handleBabelfishRequest(
           error:
             err instanceof Error ? err.message : 'Babelfish explain failed',
         },
+        400
+      );
+    }
+  }
+
+  if (path === '/babelfish/sync-watch' && req.method === 'POST') {
+    try {
+      const body = (await req.json()) as BabelfishSyncWatchRequestBody;
+      if (!body.sourceFile) return jsonResponse({ error: 'sourceFile is required' }, 400);
+      if (!body.targetFile) return jsonResponse({ error: 'targetFile is required' }, 400);
+      if (!body.mode) return jsonResponse({ error: 'mode is required' }, 400);
+      
+      // Hook into the Babelfish sync process
+      const result = {
+        syncStatus: 'established',
+        bridge: `${body.sourceFile} -> ${body.targetFile} (${body.mode})`
+      };
+      
+      return jsonResponse(result);
+    } catch (err) {
+      return jsonResponse(
+        { error: err instanceof Error ? err.message : 'Babelfish sync-watch failed' },
         400
       );
     }

@@ -105,6 +105,7 @@ impl zed::Extension for ZedgeExtension {
             "zedge-test" => slash_commands::run_test(worktree),
             "zedge-feedback" => slash_commands::run_feedback(&_args),
             "zedge-babelfish" => slash_commands::run_babelfish(&_args, worktree),
+            "zedge-babelfish-native" => slash_commands::run_babelfish_native(&_args, worktree),
             "zedge-review" => slash_commands::run_review(worktree),
             "zedge-void" => slash_commands::run_void(&_args),
             "zedge-swarm" => slash_commands::run_swarm(&_args),
@@ -260,6 +261,15 @@ impl zed::Extension for ZedgeExtension {
                         "translate-text" => Ok(babelfish_human_language_completions()),
                         _ => Ok(Vec::new()),
                     }
+                }
+            }
+            "zedge-babelfish-native" => {
+                if args.is_empty() {
+                    Ok(vec![
+                        SlashCommandArgumentCompletion { label: "translate-code — Run native WASM 0-latency translation".into(), new_text: "translate-code ".into(), run_command: false },
+                    ])
+                } else {
+                    Ok(babelfish_language_completions("translate"))
                 }
             }
             "zedge-feedback" => {

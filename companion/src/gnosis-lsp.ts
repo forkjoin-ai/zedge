@@ -19,6 +19,8 @@ import {
   buildBabelfishCodeActions,
   buildBabelfishHintDiagnostic,
 } from './lsp-babelfish';
+import { provideBabelfishHover } from './babelfish-lsp';
+import { handleGnotCommand } from './gnot-bridge';
 
 type JsonRpcId = string | number | null;
 
@@ -265,6 +267,10 @@ function isTypeScriptUri(uri: string): boolean {
   return uri.endsWith('.ts') || uri.endsWith('.tsx');
 }
 
+function isGnotUri(uri: string): boolean {
+  return uri.endsWith('.gnot');
+}
+
 async function publishTypeScriptDiagnostics(
   uri: string,
   text: string
@@ -307,9 +313,60 @@ async function publishTypeScriptDiagnostics(
   }
 }
 
+async function publishGnotDiagnostics(
+  uri: string,
+  text: string
+): Promise<void> {
+  try {
+    const filePath = uri.startsWith('file://') ? uri.slice(7) : uri;
+    const result = await handleGnotCommand({
+      action: 'lint',
+      filePath,
+      sourceText: text,
+      timeoutMs: 5000,
+    });
+    
+    // Convert gnot diagnostics to LSP diagnostics
+    const diagnostics: LspDiagnostic[] = [];
+    if (Array.isArray(result.diagnostics)) {
+      for (const d of result.diagnostics) {
+        if (!d.line || !d.column || !d.message) continue;
+        const line = Math.max(0, d.line - 1);
+        const character = Math.max(0, d.column - 1);
+        diagnostics.push({
+          range: {
+            start: { line, character },
+            end: { line, character: character + 1 }, // Simple range for structural tokens
+          },
+          severity: d.severity === 'error' ? 1 : d.severity === 'warning' ? 2 : 3,
+          message: `[gnot] ${d.message}`,
+          source: 'gnot-compiler',
+        });
+      }
+    }
+
+    send({
+      jsonrpc: '2.0',
+      method: 'textDocument/publishDiagnostics',
+      params: { uri, diagnostics },
+    });
+  } catch (err) {
+    send({
+      jsonrpc: '2.0',
+      method: 'textDocument/publishDiagnostics',
+      params: { uri, diagnostics: [] },
+    });
+  }
+}
+
 async function publishDiagnostics(uri: string, text: string): Promise<void> {
   if (isTypeScriptUri(uri)) {
     await publishTypeScriptDiagnostics(uri, text);
+    return;
+  }
+
+  if (isGnotUri(uri)) {
+    await publishGnotDiagnostics(uri, text);
     return;
   }
 
@@ -543,6 +600,14 @@ export async function dispatchRequest(req: JsonRpcRequest): Promise<unknown> {
       }
 
       const text = documents.get(uri) ?? '';
+      
+      // Intercept hover with Babelfish hooks if enabled
+      const config = configGetter();
+      if (config.babelfish.enabled) {
+        const babelHover = await provideBabelfishHover({ uri, position, sourceText: text });
+        if (babelHover) return babelHover;
+      }
+
       const sourceLine = text.split('\n')[position.line] ?? '';
       const token = tokenAt(sourceLine, position.character);
       if (!token) {

@@ -1372,6 +1372,42 @@ pub fn run_feedback(args: &[String]) -> Result<SlashCommandOutput, String> {
     }
 }
 
+pub fn run_babelfish_native(
+    args: &[String],
+    _worktree: Option<&Worktree>,
+) -> Result<SlashCommandOutput, String> {
+    if args.is_empty() {
+        return Ok(output_with_section("Usage: /zedge-babelfish-native translate-code <target_language> <file_path>".to_string(), "Babelfish Native"));
+    }
+    
+    let target_language = args[0].clone();
+    let file_paths = args[1..].to_vec();
+    
+    let body = serde_json::json!({
+        "strategy": "evolve",
+        "target_language": target_language,
+        "files": file_paths
+    });
+
+    match companion_post_json("/babelfish/native/evolve", body) {
+        Ok(response_body) => {
+            if let Ok(v) = serde_json::from_str::<serde_json::Value>(&response_body) {
+                let status = v["status"].as_str().unwrap_or("unknown");
+                let checkpoint = v["checkpoint_gnot"].as_str().unwrap_or("None");
+                let output = v["output"].as_str().unwrap_or(&response_body);
+                
+                let text = format!("## Native Topology Betti Evolve\nStatus: `{status}`\nCheckpoint: `{checkpoint}`\n\n```\n{output}\n```");
+                Ok(output_with_section(text, "Babelfish Native"))
+            } else {
+                Ok(output_with_section(format!("```json\n{response_body}\n```"), "Babelfish Native"))
+            }
+        }
+        Err(e) => {
+            Ok(output_with_section(format!("**Companion offline or error**: {e}"), "Babelfish Native"))
+        }
+    }
+}
+
 pub fn run_babelfish(
     args: &[String],
     worktree: Option<&Worktree>,

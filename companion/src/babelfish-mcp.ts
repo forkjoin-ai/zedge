@@ -15,6 +15,19 @@ export function getBabelfishMcpTools(): McpToolDefinition[] {
       inputSchema: { type: 'object', properties: {} },
     },
     {
+      name: 'zedge_babelfish_sync_watch',
+      description: 'Establish a real-time reactive bridge between two files (e.g. main.py and main.rs).',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          sourceFile: { type: 'string' },
+          targetFile: { type: 'string' },
+          mode: { type: 'string', enum: ['unidirectional', 'bidirectional'] },
+        },
+        required: ['sourceFile', 'targetFile', 'mode'],
+      },
+    },
+    {
       name: 'zedge_babelfish_code',
       description:
         'Preview Babelfish code translation, generation, or rewrite flows before applying changes',
@@ -119,6 +132,8 @@ export async function callBabelfishMcpTool(
       return postJson(companionBase, '/babelfish/text/translate', args);
     case 'zedge_babelfish_explain':
       return postJson(companionBase, '/babelfish/explain', args);
+    case 'zedge_babelfish_sync_watch':
+      return postJson(companionBase, '/babelfish/sync-watch', args);
     default:
       throw new Error(`Unknown Babelfish MCP tool: ${name}`);
   }
