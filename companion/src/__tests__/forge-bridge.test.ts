@@ -1,8 +1,9 @@
 import { describe, test, expect, beforeEach } from '@a0n/gnosis/test';
 import { ForgeBridge } from '../forge-bridge';
 import { join } from 'node:path';
-import { mkdirSync, writeFileSync, rmSync, existsSync } from 'node:fs';
+import { mkdirSync, writeFileSync, rmSync, existsSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
+import { fileURLToPath } from 'node:url';
 
 const TEST_DIR = join(tmpdir(), `zedge-forge-test-${Date.now()}`);
 
@@ -65,17 +66,21 @@ describe('ForgeBridge', () => {
   });
 
   test('Forge discovery keeps explicit .ts specifiers for native boot', async () => {
-    const discoverySource = Bun.file(
-      new URL('../../../../aeon-forge/src/deploy/discovery.ts', import.meta.url)
+    const discoveryText = readFileSync(
+      fileURLToPath(
+        new URL('../../../../aeon-forge/src/deploy/discovery.ts', import.meta.url)
+      ),
+      'utf8'
     );
-    const wranglerCompatSource = Bun.file(
-      new URL(
-        '../../../../aeon-forge/src/deploy/wrangler-compat.ts',
-        import.meta.url
-      )
+    const wranglerCompatText = readFileSync(
+      fileURLToPath(
+        new URL(
+          '../../../../aeon-forge/src/deploy/wrangler-compat.ts',
+          import.meta.url
+        )
+      ),
+      'utf8'
     );
-    const discoveryText = await discoverySource.text();
-    const wranglerCompatText = await wranglerCompatSource.text();
 
     expect(discoveryText).toContain("from './wrangler-compat.ts'");
     expect(discoveryText).toContain("from './logger.ts'");

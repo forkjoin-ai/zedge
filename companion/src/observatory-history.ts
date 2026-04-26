@@ -18,7 +18,7 @@ import {
   existsSync,
   mkdirSync,
   readFileSync,
-  writeFileSync,
+  rmSync,
 } from 'node:fs';
 import { join } from 'node:path';
 import { homedir } from 'node:os';
@@ -68,9 +68,30 @@ export interface SystemVoidBoundary {
 // Constants
 // ---------------------------------------------------------------------------
 
+const EDGEWORK_HOME_ENV = 'ZEDGE_EDGEWORK_HOME';
 const EDGEWORK_DIR = join(homedir(), '.edgework');
-const HISTORY_FILE = join(EDGEWORK_DIR, 'observatory-history.jsonl');
 const MAX_HISTORY_ENTRIES = 10000;
+
+function resolveHistoryFile(): string {
+  const configuredHome = process.env[EDGEWORK_HOME_ENV];
+  if (configuredHome) {
+    return join(configuredHome, 'observatory-history.jsonl');
+  }
+
+  try {
+    mkdirSync(EDGEWORK_DIR, { recursive: true });
+    const probePath = join(EDGEWORK_DIR, '.write-probe');
+    appendFileSync(probePath, '');
+    rmSync(probePath, { force: true });
+    return join(EDGEWORK_DIR, 'observatory-history.jsonl');
+  } catch {
+    return join(
+      process.env.AEON_ROOT ?? process.cwd(),
+      '.edgework',
+      'observatory-history.jsonl'
+    );
+  }
+}
 
 // ---------------------------------------------------------------------------
 // History Store
@@ -94,9 +115,11 @@ function loadHistory(): void {
   if (loaded) return;
   loaded = true;
 
-  if (!existsSync(HISTORY_FILE)) return;
+  const historyFile = resolveHistoryFile();
+
+  if (!existsSync(historyFile)) return;
   try {
-    const lines = readFileSync(HISTORY_FILE, 'utf-8')
+    const lines = readFileSync(historyFile, 'utf-8')
       .split('\n')
       .filter((l) => l.trim().length > 0);
     for (const line of lines) {
@@ -116,8 +139,9 @@ function loadHistory(): void {
 
 function persistEntry(entry: HistoryEntry): void {
   try {
-    mkdirSync(EDGEWORK_DIR, { recursive: true });
-    appendFileSync(HISTORY_FILE, JSON.stringify(entry) + '\n');
+    const historyFile = resolveHistoryFile();
+    mkdirSync(join(historyFile, '..'), { recursive: true });
+    appendFileSync(historyFile, JSON.stringify(entry) + '\n');
   } catch {
     /* best effort */
   }

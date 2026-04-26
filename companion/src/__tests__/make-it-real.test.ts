@@ -106,13 +106,14 @@ describe('Make It Real -- Breeding, Sync, Observatory History', () => {
   // Path 3: Observatory history tracks trends over time
   describe('Real Observatory History', () => {
     test('recordSnapshot persists entries', async () => {
-      const { recordSnapshot, getHistorySize } = await import(
+      const { recordSnapshot, getHistory, getHistorySize } = await import(
         '../observatory-history'
       );
 
       const before = getHistorySize();
+      const timestamp = new Date().toISOString();
       recordSnapshot({
-        timestamp: new Date().toISOString(),
+        timestamp,
         voidMap: {
           totalRejections: 10,
           categoryCounts: { readability: 5 },
@@ -141,7 +142,8 @@ describe('Make It Real -- Breeding, Sync, Observatory History', () => {
         health: { companionUptime: 60000, peersConnected: 0, mcpToolCount: 30 },
       });
 
-      expect(getHistorySize()).toBe(before + 1);
+      expect(getHistorySize()).toBe(Math.min(before + 1, 10_000));
+      expect(getHistory(1)[0]?.timestamp).toBe(timestamp);
     });
 
     test('computeTrends returns time-windowed analysis', async () => {
@@ -179,13 +181,16 @@ describe('Make It Real -- Breeding, Sync, Observatory History', () => {
 
     test('observatory snapshot auto-persists to history', async () => {
       const { getObservatorySnapshot } = await import('../observatory');
-      const { getHistorySize } = await import('../observatory-history');
+      const { getHistory, getHistorySize } = await import(
+        '../observatory-history'
+      );
 
       const before = getHistorySize();
-      await getObservatorySnapshot();
+      const snapshot = await getObservatorySnapshot();
       const after = getHistorySize();
 
-      expect(after).toBeGreaterThan(before);
+      expect(after).toBe(Math.min(before + 1, 10_000));
+      expect(getHistory(1)[0]?.timestamp).toBe(snapshot.timestamp);
     });
   });
 });

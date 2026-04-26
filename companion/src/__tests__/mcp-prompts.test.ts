@@ -97,7 +97,7 @@ describe('Zedge MCP prompt surface', () => {
   test('runs the selftest command through the generic zedge command tool', async () => {
     const fetchMock = mock(async (url: string | URL) => {
       expect(String(url)).toBe(
-        'http://localhost:7331/selftest/inference?model=qwen-2.5-coder-7b'
+        'http://127.0.0.1:7331/selftest/inference?model=qwen-2.5-coder-7b'
       );
 
       return new Response(JSON.stringify({ ok: true }), {
@@ -131,7 +131,7 @@ describe('Zedge MCP prompt surface', () => {
 
   test('reads file-backed command inputs from the repo root instead of the companion cwd', async () => {
     const fetchMock = mock(async (url: string | URL, init?: RequestInit) => {
-      expect(String(url)).toBe('http://localhost:7331/gnosis/eval');
+      expect(String(url)).toBe('http://127.0.0.1:7331/gnosis/eval');
       expect(init?.method).toBe('POST');
 
       const body = JSON.parse(String(init?.body)) as { code?: string };
@@ -171,7 +171,7 @@ describe('Zedge MCP prompt surface', () => {
 
   test('submits feedback with quoted comments through the generic tool surface', async () => {
     const fetchMock = mock(async (url: string | URL, init?: RequestInit) => {
-      expect(String(url)).toBe('http://localhost:7331/feedback');
+      expect(String(url)).toBe('http://127.0.0.1:7331/feedback');
       expect(init?.method).toBe('POST');
 
       const body = JSON.parse(String(init?.body)) as {
@@ -214,7 +214,7 @@ describe('Zedge MCP prompt surface', () => {
 
   test('routes structured gnot actions through the dedicated gnot tool', async () => {
     const fetchMock = mock(async (url: string | URL, init?: RequestInit) => {
-      expect(String(url)).toBe('http://localhost:7331/gnot/command');
+      expect(String(url)).toBe('http://127.0.0.1:7331/gnot/command');
       expect(init?.method).toBe('POST');
 
       const body = JSON.parse(String(init?.body)) as {

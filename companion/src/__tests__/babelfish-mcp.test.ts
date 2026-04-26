@@ -22,7 +22,7 @@ describe('Babelfish MCP stdio bridge', () => {
 
   test('proxies Babelfish tool calls through the MCP tools/call method', async () => {
     const fetchMock = mock(async (url: string | URL, init?: RequestInit) => {
-      expect(String(url)).toBe('http://localhost:7331/babelfish/code/preview');
+      expect(String(url)).toBe('http://127.0.0.1:7331/babelfish/code/preview');
       expect(init?.method).toBe('POST');
       expect(String(init?.body)).toContain('"targetLanguage":"rust"');
       return new Response(JSON.stringify({ previewId: 'preview-123' }), {

@@ -94,6 +94,10 @@ requires_argument = false
 description = "Babelfish over Gnosis: capabilities, explain, translate, generate, and preview/apply rewrites"
 requires_argument = true
 
+[slash_commands.zedge-babelfish-native]
+description = "Run native WASM 0-latency Babelfish translation"
+requires_argument = true
+
 [slash_commands.zedge-review]
 description = "Consensus code review — three models race on your diff, agreements and disagreements highlighted"
 requires_argument = false

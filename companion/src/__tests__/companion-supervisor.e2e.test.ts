@@ -53,6 +53,14 @@ const SUPERVISOR_ENTRY = fileURLToPath(
 let supervisorProcess: ChildProcess | null = null;
 let companionPort = 0;
 let supervisorLogs = '';
+let skipReason: string | null = null;
+
+function isLoopbackListenDenied(error: unknown): boolean {
+  return (
+    error instanceof Error &&
+    /listen EPERM|operation not permitted/i.test(error.message)
+  );
+}
 
 function appendLogChunk(chunk: Buffer | string): void {
   supervisorLogs = `${supervisorLogs}${chunk.toString()}`;
@@ -214,41 +222,54 @@ async function stopSupervisor(): Promise<void> {
   });
 }
 
-beforeAll(async () => {
-  companionPort = await reservePort();
+describe('companion supervisor end to end', () => {
+  beforeAll(async () => {
+    try {
+      companionPort = await reservePort();
 
-  const tempHome = mkdtempSync(join(tmpdir(), 'zedge-supervisor-home-'));
-  const tempWorkspace = mkdtempSync(
-    join(tmpdir(), 'zedge-supervisor-workspace-')
-  );
-  mkdirSync(join(tempHome, '.edgework'), { recursive: true });
+      const tempHome = mkdtempSync(join(tmpdir(), 'zedge-supervisor-home-'));
+      const tempWorkspace = mkdtempSync(
+        join(tmpdir(), 'zedge-supervisor-workspace-')
+      );
+      mkdirSync(join(tempHome, '.edgework'), { recursive: true });
 
-  const runtimeCommand = resolveTypeScriptEntrypointCommand(SUPERVISOR_ENTRY);
-  supervisorProcess = spawn(runtimeCommand.command, [...runtimeCommand.args], {
-    cwd: tempWorkspace,
-    env: {
-      ...process.env,
-      HOME: tempHome,
-      AEON_ROOT: REPO_ROOT,
-      ZEDGE_COMPANION_PORT: String(companionPort),
-      ZEDGE_LISTENER_MODE: 'bun',
-    },
-    detached: true,
-    stdio: ['ignore', 'pipe', 'pipe'],
+      const runtimeCommand =
+        resolveTypeScriptEntrypointCommand(SUPERVISOR_ENTRY);
+      supervisorProcess = spawn(runtimeCommand.command, [...runtimeCommand.args], {
+        cwd: tempWorkspace,
+        env: {
+          ...process.env,
+          HOME: tempHome,
+          AEON_ROOT: REPO_ROOT,
+          ZEDGE_COMPANION_PORT: String(companionPort),
+          ZEDGE_LISTENER_MODE: 'bun',
+        },
+        detached: true,
+        stdio: ['ignore', 'pipe', 'pipe'],
+      });
+
+      supervisorProcess.stdout?.on('data', appendLogChunk);
+      supervisorProcess.stderr?.on('data', appendLogChunk);
+
+      await waitForCompanionHealth(companionPort);
+    } catch (error) {
+      if (isLoopbackListenDenied(error)) {
+        skipReason = error.message;
+        return;
+      }
+      throw error;
+    }
+  }, 45_000);
+
+  afterAll(async () => {
+    await stopSupervisor();
   });
 
-  supervisorProcess.stdout?.on('data', appendLogChunk);
-  supervisorProcess.stderr?.on('data', appendLogChunk);
-
-  await waitForCompanionHealth(companionPort);
-}, 45_000);
-
-afterAll(async () => {
-  await stopSupervisor();
-});
-
-describe('companion supervisor end to end', () => {
   test('restarts the owned child after an unexpected exit', async () => {
+    if (skipReason !== null) {
+      return;
+    }
+
     const firstHealth = await waitForCompanionHealth(companionPort);
     const firstPid = firstHealth.inference.localRuntime.pid;
 

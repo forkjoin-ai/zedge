@@ -1221,7 +1221,6 @@ describe('server route audit', () => {
   });
 
   afterAll(() => {
-    mock.restore();
     console.log = originalConsoleLog;
     console.warn = originalConsoleWarn;
   });
@@ -1242,7 +1241,7 @@ describe('server route audit', () => {
 
     expect(missing).toEqual([]);
     expect(extra).toEqual([]);
-    expect(inventory.size).toBe(185);
+    expect(inventory.size).toBe(187);
   });
 
   test('responds to CORS preflight before route dispatch', async () => {

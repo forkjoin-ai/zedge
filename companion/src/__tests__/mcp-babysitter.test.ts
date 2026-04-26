@@ -68,6 +68,7 @@ describe('MCP companion babysitter policy', () => {
       companionSpawnedAt: now - 25_000,
       consecutiveFailures: 99,
       restartTimestamps: [
+        now - 5_000,
         now - 10_000,
         now - 20_000,
         now - 30_000,
@@ -78,6 +79,6 @@ describe('MCP companion babysitter policy', () => {
 
     expect(decision.shouldRestart).toBe(false);
     expect(decision.reason).toBe('rate_limited');
-    expect(decision.restartTimestamps).toHaveLength(4);
+    expect(decision.restartTimestamps).toHaveLength(5);
   });
 });

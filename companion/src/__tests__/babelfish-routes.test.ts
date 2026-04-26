@@ -141,7 +141,8 @@ describe('Babelfish HTTP routes', () => {
 
     expect(previewResponse?.status).toBe(200);
     const preview = await previewResponse?.json();
-    expect(preview.previewId).toEqual(expect.any(String));
+    expect(typeof preview.previewId).toBe('string');
+    expect(preview.previewId.length).toBeGreaterThan(0);
     expect(preview.summary).toContain('Prepared translate-code preview');
     expect(preview.generatedFiles).toHaveLength(1);
     expect(preview.diff).toContain('pub fn greet');

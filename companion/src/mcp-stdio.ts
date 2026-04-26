@@ -491,6 +491,13 @@ function buildGnotCommandPayload(
 
 const ZEDGE_PROMPTS: McpPromptDefinition[] = [
   {
+    name: 'zedge-setup',
+    description:
+      'One-time setup: install the local sidecar (macOS) and launch agent support',
+    instructions:
+      'Run the Zedge setup flow. Use the `zedge_command` tool with `command: "zedge-setup"` and summarize the install or launch-agent steps it returns.',
+  },
+  {
     name: 'zedge-status',
     description:
       'Show inference chain health, compute pool stats, and token balance',
@@ -636,6 +643,13 @@ const ZEDGE_PROMPTS: McpPromptDefinition[] = [
     arguments: slashArgsPrompt,
     instructions:
       'Run a Babelfish operation. Use the `zedge_command` tool with `command: "zedge-babelfish"`. With no argument, list capabilities. Supported argument forms mirror the extension slash command: `capabilities`, `explain <file-path> [audience-language]`, `translate-code <target-language> <file-path>`, `translate-text <target-language> <file-path>`, `generate <target-language> <file-path>`, `rewrite-preview <target-language> <file-path>`, and `apply <preview-id> [rewrite_in_place|generate_files]`.',
+  },
+  {
+    name: 'zedge-babelfish-native',
+    description: 'Run the native WASM 0-latency Babelfish translation path',
+    arguments: slashArgsPrompt,
+    instructions:
+      'Run the native Babelfish translation path. Use the `zedge_command` tool with `command: "zedge-babelfish-native"`. Supported argument form mirrors the extension slash command: `translate-code <target-language> <file-path>`.',
   },
   {
     name: 'zedge-review',

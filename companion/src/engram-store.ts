@@ -15,6 +15,7 @@ import {
   existsSync,
   mkdirSync,
   readFileSync,
+  rmSync,
   writeFileSync,
 } from 'node:fs';
 import { join } from 'node:path';
@@ -63,6 +64,7 @@ export interface EngramStatus {
 // Constants
 // ---------------------------------------------------------------------------
 
+const EDGEWORK_HOME_ENV = 'ZEDGE_EDGEWORK_HOME';
 const EDGEWORK_DIR = join(homedir(), '.edgework', 'engrams');
 const MAX_ENGRAMS_PER_TYPE = 500;
 
@@ -72,6 +74,23 @@ const MAX_ENGRAMS_PER_TYPE = 500;
 
 function hashWorkspace(workspacePath: string): string {
   return createHash('sha256').update(workspacePath).digest('hex').slice(0, 12);
+}
+
+function resolveEdgeworkDir(workspacePath: string): string {
+  const configuredHome = process.env[EDGEWORK_HOME_ENV];
+  if (configuredHome) {
+    return join(configuredHome, 'engrams');
+  }
+
+  try {
+    mkdirSync(EDGEWORK_DIR, { recursive: true });
+    const probePath = join(EDGEWORK_DIR, '.write-probe');
+    writeFileSync(probePath, '', 'utf8');
+    rmSync(probePath, { force: true });
+    return EDGEWORK_DIR;
+  } catch {
+    return join(workspacePath, '.edgework', 'engrams');
+  }
 }
 
 function cosineSimilarity(a: Float32Array, b: Float32Array): number {
@@ -121,7 +140,7 @@ export class EngramStore {
 
   constructor(workspacePath: string) {
     this.workspaceHash = hashWorkspace(workspacePath);
-    this.storePath = join(EDGEWORK_DIR, this.workspaceHash);
+    this.storePath = join(resolveEdgeworkDir(workspacePath), this.workspaceHash);
     this.load();
   }
 

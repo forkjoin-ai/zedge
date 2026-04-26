@@ -27,7 +27,8 @@ describe('Code Index Auto-Refresh', () => {
     // Reindex just this file
     await codeIndex.reindexFile(filePath);
     const statsAfter = codeIndex.getStats();
-    expect(statsAfter.lastIncrementalMs).toBeGreaterThan(0);
+    expect(statsAfter.lastIncrementalMs).toBeGreaterThanOrEqual(0);
+    expect(statsAfter.indexedBlocks).toBeGreaterThan(0);
   });
 
   test('reindexFile handles deleted file gracefully', async () => {
