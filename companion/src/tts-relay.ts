@@ -25,6 +25,13 @@ export interface TtsRelayStatus {
   platform: string;
 }
 
+export interface TtsVoice {
+  id: string;
+  name: string;
+  model: string;
+  local: boolean;
+}
+
 interface ResolveModeOptions {
   platform?: NodeJS.Platform | string;
   hasAlsaDevice?: () => boolean;
@@ -35,6 +42,7 @@ interface TtsSpeakOptions extends ResolveModeOptions {
   fetchImpl?: typeof fetch;
   runCommand?: (command: string, args: string[]) => Promise<boolean>;
   outputDir?: string;
+  playback?: boolean;
 }
 
 const TTS_MODES = new Set<TtsAudioMode>([
@@ -46,6 +54,11 @@ const TTS_MODES = new Set<TtsAudioMode>([
 ]);
 
 const DISABLED_TTS_VALUES = new Set(['0', 'false', 'off', 'no', 'disabled']);
+const TTS_VOICES: TtsVoice[] = [
+  { id: 'local', name: 'Moonshine Local', model: 'moonshine-tts', local: true },
+  { id: 'moonshine', name: 'Moonshine', model: 'moonshine-tts', local: true },
+  { id: 'narrator', name: 'Narrator', model: 'moonshine-tts', local: true },
+];
 
 function moonshineBaseUrl(env: NodeJS.ProcessEnv): string {
   return (env['ZEDGE_MOONSHINE_URL'] ?? 'http://127.0.0.1:8080').replace(
@@ -103,6 +116,13 @@ export function getTtsRelayStatus(
     mode: resolveTtsAudioMode(configuredAudioMode(env), options),
     moonshineUrl: moonshineBaseUrl(env),
     platform,
+  };
+}
+
+export function listTtsVoices(): { defaultVoice: string; voices: TtsVoice[] } {
+  return {
+    defaultVoice: 'local',
+    voices: TTS_VOICES,
   };
 }
 
@@ -297,6 +317,21 @@ export async function handleTtsSpeakRequest(
 
   const command = playbackCommand(mode, String(platform));
   const filePath = writeAudioFile(audio, options.outputDir);
+  if (options.playback === false) {
+    return {
+      status: 200,
+      result: {
+        ok: true,
+        mode,
+        playback: 'preview',
+        byteLength: audio.byteLength,
+        contentType,
+        filePath,
+        moonshineStatus: response.status,
+      },
+    };
+  }
+
   if (!command) {
     return {
       status: 200,
@@ -327,4 +362,11 @@ export async function handleTtsSpeakRequest(
       moonshineStatus: response.status,
     },
   };
+}
+
+export function handleTtsPreviewRequest(
+  body: unknown,
+  options: TtsSpeakOptions = {},
+): Promise<{ status: number; result: TtsSpeakResult }> {
+  return handleTtsSpeakRequest(body, { ...options, playback: false });
 }

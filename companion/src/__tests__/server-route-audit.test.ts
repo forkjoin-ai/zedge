@@ -443,6 +443,78 @@ mock.module('../tts-relay.ts', () => ({
       moonshineStatus: 200,
     },
   }),
+  handleTtsPreviewRequest: async () => ({
+    status: 200,
+    result: {
+      ok: true,
+      mode: 'host',
+      playback: 'preview',
+      byteLength: 44,
+      contentType: 'audio/wav',
+      filePath: '/tmp/zedge-tts-preview.wav',
+      moonshineStatus: 200,
+    },
+  }),
+  listTtsVoices: () => ({
+    defaultVoice: 'local',
+    voices: [{ id: 'local', name: 'Moonshine Local', model: 'moonshine-tts' }],
+  }),
+}));
+
+mock.module('../local-mcp.ts', () => ({
+  handleLocalMcpJsonRpc: async (request: { id?: string | number }) => ({
+    jsonrpc: '2.0',
+    id: request.id ?? null,
+    result: { ok: true },
+  }),
+  preflightLocalTools: async () => ({
+    tools: [{ name: 'zedge_status', inputSchema: { type: 'object' } }],
+    cached: false,
+    durationMs: 1,
+    cachedAt: 123,
+    expiresAt: 456,
+  }),
+}));
+
+mock.module('../edit-preview.ts', () => ({
+  createRangeEditPreview: () => ({
+    previewId: 'edit-test',
+    filePath: 'src/example.ts',
+    oldHash: 'old',
+    newHash: 'new',
+    diff: '-old\n+new',
+    applied: false,
+  }),
+  createSearchReplacePreview: () => ({
+    previewId: 'edit-test',
+    filePath: 'src/example.ts',
+    oldHash: 'old',
+    newHash: 'new',
+    diff: '-old\n+new',
+    applied: false,
+  }),
+  applyEditPreview: (previewId: string) => ({
+    previewId,
+    filePath: 'src/example.ts',
+    applied: true,
+  }),
+}));
+
+mock.module('../agentic-orchestrator.ts', () => ({
+  runCompanionAgenticChatCompletion: async () => ({
+    id: 'chatcmpl-agentic',
+    object: 'chat.completion',
+    created: 123,
+    model: 'tinyllama-1.1b',
+    choices: [
+      {
+        index: 0,
+        message: { role: 'assistant', content: 'agentic completion' },
+        finish_reason: 'stop',
+      },
+    ],
+    usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 },
+  }),
 }));
 
 mock.module('../babelfish-routes.ts', () => ({
@@ -979,6 +1051,8 @@ const routeCases: RouteCase[] = [
     '/gnosis/watcher/stats',
     '/admin/commands',
     '/tts/status',
+    '/tts/voices',
+    '/tools/preflight',
     '/v1/models',
     '/compute-pool/status',
     '/mesh/status',
@@ -1095,6 +1169,11 @@ const routeCases: RouteCase[] = [
     '/agent-participant/undo',
     '/agent-participant/redo',
   ].map((path) => postCase(path, 400)),
+  postCase('/mcp', 200, {
+    jsonrpc: '2.0',
+    id: 1,
+    method: 'tools/list',
+  }),
   postCase(
     '/v1/chat/completions',
     200,
@@ -1110,8 +1189,15 @@ const routeCases: RouteCase[] = [
       expect(response.headers.get('X-Zedge-Tier')).toBe('edge');
     }
   ),
+  postCase('/edit/range/preview', 200, {
+    file_path: 'src/example.ts',
+    search: 'old',
+    replace: 'new',
+  }),
+  postCase('/edit/range/apply', 200, { previewId: 'edit-test' }),
   postCase('/tts/config', 200, { enabled: true, mode: 'host' }),
   postCase('/tts/speak', 200, { input: 'hello moonshine' }),
+  postCase('/tts/preview', 200, { input: 'hello moonshine' }),
   postCase('/v1/completions', 200, { prompt: 'hello' }),
   postCase('/v1/embeddings', 200, { input: 'hello' }),
   postCase('/gnot/command', 200, { action: 'files' }),
@@ -1276,7 +1362,7 @@ describe('server route audit', () => {
 
     expect(missing).toEqual([]);
     expect(extra).toEqual([]);
-    expect(inventory.size).toBe(190);
+    expect(inventory.size).toBe(196);
   });
 
   test('responds to CORS preflight before route dispatch', async () => {
@@ -1290,6 +1376,29 @@ describe('server route audit', () => {
     expect(response.headers.get('Access-Control-Allow-Methods')).toContain(
       'GET'
     );
+    expect(response.headers.get('Access-Control-Allow-Headers')).toContain(
+      'X-Zedge-Agentic'
+    );
+  });
+
+  test('routes explicit agentic chat requests through companion tools', async () => {
+    const response = await handleWebRequest(
+      createRequest('/v1/chat/completions', {
+        method: 'POST',
+        headers: { 'X-Zedge-Agentic': 'tools' },
+        json: {
+          model: 'tinyllama-1.1b',
+          messages: [{ role: 'user', content: 'use tools' }],
+        },
+      })
+    );
+
+    const payload = (await response.clone().json()) as {
+      choices?: Array<{ message?: { content?: string } }>;
+    };
+    expect(response.headers.get('X-Zedge-Tier')).toBe('companion-agentic');
+    expect(response.headers.get('X-Zedge-Agentic')).toBe('true');
+    expect(payload.choices?.[0]?.message?.content).toBe('agentic completion');
   });
 
   test('delegates babelfish paths through the shared babelfish handler', async () => {

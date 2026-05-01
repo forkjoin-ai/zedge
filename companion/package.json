@@ -24,6 +24,7 @@
     "yjs": "^13.6.0",
     "@dashrelay/client": "workspace:*",
     "@a0n/auth": "workspace:*",
+    "@a0n/distributed-inference-host": "workspace:*",
     "@a0n/shared-utils": "workspace:*",
     "@a0n/x-gnosis": "workspace:*",
     "@a0n/buleyean-kernel": "workspace:*",

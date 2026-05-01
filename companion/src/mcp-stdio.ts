@@ -1699,7 +1699,7 @@ export async function handleToolsList(): Promise<Record<string, unknown>> {
       {
         name: 'zedge_apply_code',
         description:
-          'Apply a code change to a file. Uses CRDT-backed writes with full undo support. The search string must match exactly in the file.',
+          'Create a preview token for a code change. The search string must match exactly; call zedge_apply_edit_preview with the returned previewId to write it.',
         inputSchema: {
           type: 'object',
           properties: {
@@ -1718,6 +1718,107 @@ export async function handleToolsList(): Promise<Record<string, unknown>> {
           },
           required: ['file_path', 'search', 'replace'],
         },
+      },
+      {
+        name: 'zedge_preview_range_replace',
+        description:
+          'Create a preview token for a range replacement. No file is mutated until zedge_apply_edit_preview applies the returned previewId.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            file_path: {
+              type: 'string',
+              description: 'Workspace-relative path to the file to modify',
+            },
+            range: {
+              type: 'object',
+              description:
+                'Zero-based range with start/end line and character positions',
+              properties: {
+                start: {
+                  type: 'object',
+                  properties: {
+                    line: { type: 'integer' },
+                    character: { type: 'integer' },
+                  },
+                  required: ['line', 'character'],
+                },
+                end: {
+                  type: 'object',
+                  properties: {
+                    line: { type: 'integer' },
+                    character: { type: 'integer' },
+                  },
+                  required: ['line', 'character'],
+                },
+              },
+              required: ['start', 'end'],
+            },
+            replacement_text: {
+              type: 'string',
+              description: 'Text to insert in place of the range',
+            },
+          },
+          required: ['file_path', 'range', 'replacement_text'],
+        },
+      },
+      {
+        name: 'zedge_apply_edit_preview',
+        description:
+          'Apply a single-use edit preview token after validating path, old hash, expiry, and apply status.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            preview_id: {
+              type: 'string',
+              description: 'Preview ID returned by zedge_apply_code or zedge_preview_range_replace',
+            },
+          },
+          required: ['preview_id'],
+        },
+      },
+      {
+        name: 'zedge_tts_speak',
+        description:
+          'Speak text through the local Moonshine TTS relay and host/file playback mode.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            input: {
+              type: 'string',
+              description: 'Text to synthesize',
+            },
+            voice: {
+              type: 'string',
+              description: 'Voice ID from zedge_tts_voices',
+            },
+          },
+          required: ['input'],
+        },
+      },
+      {
+        name: 'zedge_tts_preview',
+        description:
+          'Synthesize text through Moonshine TTS and return the generated file without host playback.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            input: {
+              type: 'string',
+              description: 'Text to synthesize',
+            },
+            voice: {
+              type: 'string',
+              description: 'Voice ID from zedge_tts_voices',
+            },
+          },
+          required: ['input'],
+        },
+      },
+      {
+        name: 'zedge_tts_voices',
+        description: 'List local Moonshine TTS voices known to the companion.',
+        inputSchema: { type: 'object', properties: {} },
       },
       {
         name: 'zedge_search_codebase',
@@ -2126,9 +2227,13 @@ export async function handleToolCall(
       }
 
       case 'zedge_apply_code': {
-        const filePath = String(args.file_path ?? '');
-        const search = String(args.search ?? '');
-        const replace = String(args.replace ?? '');
+        const filePath =
+          optionalString(args.file_path) ?? optionalString(args.filePath);
+        const search = optionalString(args.search);
+        const replace =
+          typeof args.replace === 'string'
+            ? args.replace
+            : String(args.replace ?? '');
         if (!filePath || !search) {
           return {
             content: [
@@ -2138,59 +2243,102 @@ export async function handleToolCall(
           };
         }
 
-        // Read file, apply replacement, write back via companion VFS
-        const fullPath = resolve(getWorkspaceRoot(), filePath);
-        let fileContent: string;
-        try {
-          fileContent = readFileSync(fullPath, 'utf-8');
-        } catch {
-          return {
-            content: [{ type: 'text', text: `Cannot read file: ${filePath}` }],
-            isError: true,
-          };
-        }
-
-        if (!fileContent.includes(search)) {
-          return {
-            content: [
-              {
-                type: 'text',
-                text: `Search string not found in ${filePath}. The search must match exactly.`,
-              },
-            ],
-            isError: true,
-          };
-        }
-
-        const updated = fileContent.replace(search, replace);
-        try {
-          const { writeFileSync } = await import('fs');
-          writeFileSync(fullPath, updated, 'utf-8');
-          const lineCount = search.split('\n').length;
-          return {
-            content: [
-              {
-                type: 'text',
-                text: `Applied change to ${filePath} (replaced ${lineCount} line(s))`,
-              },
-            ],
-          };
-        } catch (writeErr) {
-          return {
-            content: [
-              {
-                type: 'text',
-                text: `Failed to write ${filePath}: ${
-                  writeErr instanceof Error
-                    ? writeErr.message
-                    : String(writeErr)
-                }`,
-              },
-            ],
-            isError: true,
-          };
-        }
+        return createToolResult(
+          await postCompanionJson(
+            '/edit/range/preview',
+            { file_path: filePath, search, replace },
+            10_000
+          )
+        );
       }
+
+      case 'zedge_preview_range_replace': {
+        const filePath =
+          optionalString(args.file_path) ?? optionalString(args.filePath);
+        const range = args.range;
+        const replacementText =
+          typeof args.replacement_text === 'string'
+            ? args.replacement_text
+            : typeof args.replacementText === 'string'
+            ? args.replacementText
+            : typeof args.replace === 'string'
+            ? args.replace
+            : '';
+        if (!filePath || !range) {
+          return {
+            content: [
+              {
+                type: 'text',
+                text: 'file_path and range are required',
+              },
+            ],
+            isError: true,
+          };
+        }
+
+        return createToolResult(
+          await postCompanionJson(
+            '/edit/range/preview',
+            {
+              file_path: filePath,
+              range,
+              replacement_text: replacementText,
+            },
+            10_000
+          )
+        );
+      }
+
+      case 'zedge_apply_edit_preview': {
+        const previewId =
+          optionalString(args.preview_id) ?? optionalString(args.previewId);
+        if (!previewId) {
+          return {
+            content: [
+              {
+                type: 'text',
+                text: 'preview_id is required',
+              },
+            ],
+            isError: true,
+          };
+        }
+
+        return createToolResult(
+          await postCompanionJson(
+            '/edit/range/apply',
+            { previewId },
+            10_000
+          )
+        );
+      }
+
+      case 'zedge_tts_speak':
+      case 'zedge_tts_preview': {
+        const input = optionalString(args.input) ?? optionalString(args.text);
+        if (!input) {
+          return {
+            content: [
+              {
+                type: 'text',
+                text: 'input is required',
+              },
+            ],
+            isError: true,
+          };
+        }
+
+        const body: Record<string, unknown> = { input };
+        const voice = optionalString(args.voice);
+        if (voice) body.voice = voice;
+        const path = name === 'zedge_tts_speak' ? '/tts/speak' : '/tts/preview';
+        return createToolResult(await postCompanionJson(path, body, 120_000));
+      }
+
+      case 'zedge_tts_voices':
+        return createToolResult(
+          await fetchCompanionText('/tts/voices', {}, 10_000)
+        );
 
       case 'zedge_search_codebase': {
         const query = String(args.query ?? '');

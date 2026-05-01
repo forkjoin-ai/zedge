@@ -16,9 +16,12 @@ Focused sidecar tests for MCP tooling, Babelfish behavior, gnot and deploy-helpe
 - `companion-activity.test.ts` verifies the on-disk busy marker that lets the parent watchdogs distinguish the owned sidecar's long local WASM warmup/generation windows from an actual dead child.
 - `runtime-command.test.ts` verifies the wrapper-backed TypeScript entrypoint command builder used for the `gnode` launch path.
 - `babelfish-mcp.test.ts` verifies the MCP bridge tool list and Babelfish proxying behavior.
+- `local-mcp.test.ts` verifies cached companion-local tool preflight plus local MCP tool and JSON-RPC dispatch.
+- `agentic-orchestrator.test.ts` verifies that the companion-owned agentic loop calls Moonshine with `X-Zedge-Agentic: off` to avoid recursive tool loops.
 - `mcp-prompts.test.ts` verifies that the MCP prompt list stays aligned with `extension.toml`, that the Rust dispatch table matches the same command set, and that file-backed, quoted-argument, alias-compatible command, and dedicated `gnot` tool execution resolve correctly.
 - `forge-bridge.test.ts` verifies local project discovery, deploy state, process tracking, and log/event surfaces.
 - `inference-bridge.test.ts` verifies the merged model list plus the local Aether-backed chat and embedding fallback surfaces.
-- `tts-relay.test.ts` verifies TTS audio mode resolution, runtime enable/disable config, and the mocked Moonshine-to-host playback relay so CI never emits sound.
+- `edit-preview.test.ts` verifies preview-first edits, old-hash mismatch handling, expiry, and single-use apply behavior.
+- `tts-relay.test.ts` verifies TTS audio mode resolution, runtime enable/disable config, voice listing, no-playback preview mode, and the mocked Moonshine-to-host playback relay so CI never emits sound.
 - `aether-local-runtime.test.ts` locks the local TinyLlama prompt formatting that keeps the WASM fallback producing usable English instead of echo-like near-misses.
 - `vfs-bridge.test.ts` verifies workspace-tree and change tracking behavior for the local VFS bridge.

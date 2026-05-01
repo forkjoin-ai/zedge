@@ -14,6 +14,8 @@ The HTTP shell now rides on `x-gnosis`, and the default public listener path is 
 
 For local inference, the companion now routes chat through the Moonshine OpenAI-compatible container on `127.0.0.1:8080`. The selectable fallback model is `gnosis-local`, with `tinyllama-1.1b` matching the checked-in Docker Compose default when that service reports its live catalog.
 
+The default chat path is deliberately fast and bare: companion `/v1/chat/completions` proxies to Moonshine with `X-Zedge-Agentic: off`. Requests that opt in with `X-Zedge-Agentic: tools|auto|1|true` or OpenAI tool body fields run the companion-owned agentic loop instead. That loop preflights local MCP tools from the companion cache, calls Moonshine only as a text generator, and forces the recursive Moonshine call back to bare mode.
+
 The companion also now syncs the `language_models.openai_compatible.Zedge.available_models` block in local Zed settings after the Moonshine startup probe, so model picker entries track the live container instead of drifting behind a hardcoded Edgework snippet.
 
 Local speech playback uses `POST /tts/speak` as a host relay: the companion
@@ -22,12 +24,16 @@ WAV to a temp file, and on macOS plays it with `afplay`. Linux can use `aplay`
 when ALSA is available, and `ZEDGE_TTS_AUDIO_MODE=file` keeps the generated WAV
 without attempting playback. `ZEDGE_TTS_ENABLED=0` disables the relay without
 touching the OpenAI-compatible chat path.
+`POST /tts/preview` returns the generated file without playback, and
+`GET /tts/voices` exposes the voice IDs used by the companion MCP tools.
 
 ## What It Helps You Do
 
 - run the local Zedge companion service
 - expose an OpenAI-compatible inference endpoint to Zed
 - provide the MCP entry point and other sidecar behaviors
+- own the agentic tool loop, local tool preflight cache, and preview-first edit
+  application surface
 - relay local Moonshine TTS output to the host audio device without touching
   the OpenAI chat/SSE path
 - mirror the extension slash-command catalog into Zed Agent via MCP prompts and the generic `zedge_command` tool
@@ -48,6 +54,20 @@ The companion now owns the Babelfish contract used by the extension, MCP, and LS
 
 The companion returns capability tiers from the Gnosis registry, not a hand-maintained language list in the extension. Preview responses carry the token required for any later apply step.
 Those preview tokens are single-use and mode-bound: only `rewrite_in_place_requested` previews can later apply an in-place rewrite, while `generate_files` writes immediately and does not leave a reusable mutation token behind.
+
+## Agentic And Tool Endpoints
+
+The companion exposes local agent tooling without making Moonshine pay the MCP
+startup cost:
+
+- `POST /mcp`
+- `GET /tools/preflight`
+- `POST /edit/range/preview`
+- `POST /edit/range/apply`
+
+Edit previews carry an old-content hash, expiry, and single-use apply state.
+MCP tools such as `zedge_apply_code` and `zedge_preview_range_replace` return
+preview IDs first; `zedge_apply_edit_preview` is the only write step.
 
 ## Babelfish Settings
 
@@ -115,6 +135,12 @@ curl -X POST http://127.0.0.1:7331/tts/config \
 curl -X POST http://127.0.0.1:7331/tts/speak \
   -H 'Content-Type: application/json' \
   -d '{"input":"hello from moonshine"}'
+
+curl http://127.0.0.1:7331/tts/voices
+
+curl -X POST http://127.0.0.1:7331/tts/preview \
+  -H 'Content-Type: application/json' \
+  -d '{"input":"render but do not play"}'
 ```
 
 Inside Zed, use `/edge-tts status`, `/edge-tts enable`, `/edge-tts disable`,

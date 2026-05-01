@@ -5,7 +5,9 @@ import { join } from 'path';
 import {
   configureTtsRelay,
   getTtsRelayStatus,
+  handleTtsPreviewRequest,
   handleTtsSpeakRequest,
+  listTtsVoices,
   resolveTtsAudioMode,
 } from '../tts-relay.ts';
 
@@ -93,6 +95,42 @@ describe('TTS relay', () => {
     ]);
     expect(commands.length).toBe(1);
     expect(commands[0]?.command).toBe('afplay');
+  });
+
+  test('previews speech without invoking host playback', async () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'zedge-tts-relay-'));
+    let commandCalled = false;
+    const fetchImpl = (async () =>
+      new Response(wavBytes, {
+        headers: { 'Content-Type': 'audio/wav' },
+      })) as typeof fetch;
+    const runCommand = async () => {
+      commandCalled = true;
+      return true;
+    };
+
+    const { status, result } = await handleTtsPreviewRequest(
+      { input: 'preview me', voice: 'local' },
+      {
+        env: { ZEDGE_TTS_AUDIO_MODE: 'host' },
+        platform: 'darwin',
+        fetchImpl,
+        runCommand,
+        outputDir: tempDir,
+      }
+    );
+
+    expect(status).toBe(200);
+    expect(result.ok).toBe(true);
+    expect(result.playback).toBe('preview');
+    expect(result.filePath?.startsWith(tempDir)).toBe(true);
+    expect(commandCalled).toBe(false);
+  });
+
+  test('lists local voices', () => {
+    const voices = listTtsVoices();
+    expect(voices.defaultVoice).toBe('local');
+    expect(voices.voices.some((voice) => voice.id === 'local')).toBe(true);
   });
 
   test('rejects missing input without contacting Moonshine', async () => {

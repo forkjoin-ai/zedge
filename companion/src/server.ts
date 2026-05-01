@@ -66,6 +66,8 @@ import {
 import type { ChatCompletionRequest } from './inference-bridge.ts';
 import type { ForgeBridge } from './forge-bridge.ts';
 import type { CeraBridge } from './cera-bridge.ts';
+import type { EditRange } from './edit-preview.ts';
+import type { JsonRpcRequest } from './mcp-stdio.ts';
 import {
   superinferWithPreset,
   getCompositionPreset,
@@ -80,6 +82,8 @@ import {
   configureTtsRelay,
   getTtsRelayStatus,
   handleTtsSpeakRequest,
+  handleTtsPreviewRequest,
+  listTtsVoices,
 } from './tts-relay.ts';
 // Gnosis modules -- lazy-loaded to avoid blocking the event loop at startup.
 // The file watcher, incremental checker, and betty compiler are CPU-heavy, and
@@ -241,6 +245,12 @@ interface ChatRequestBody {
   temperature?: number;
   max_tokens?: number;
   top_p?: number;
+  auto_tools?: boolean;
+  execute_tools?: boolean;
+  tool_choice?: unknown;
+  tools?: unknown[];
+  max_tool_rounds?: number;
+  response_format?: unknown;
 }
 
 interface CompletionRequestBody extends ChatRequestBody {
@@ -250,6 +260,86 @@ interface CompletionRequestBody extends ChatRequestBody {
 interface EmbeddingRequestBody {
   input?: string | string[];
   model?: string;
+}
+
+function parseAgenticHeader(value: string | null): boolean | null {
+  if (!value) return null;
+  const normalized = value.trim().toLowerCase();
+  if (['1', 'true', 'on', 'yes', 'tools', 'auto', 'agentic'].includes(normalized)) {
+    return true;
+  }
+  if (['0', 'false', 'off', 'no', 'none', 'bare'].includes(normalized)) {
+    return false;
+  }
+  return null;
+}
+
+function shouldUseCompanionAgentic(req: Request, body: ChatRequestBody): boolean {
+  const headerDecision = parseAgenticHeader(req.headers.get('x-zedge-agentic'));
+  if (headerDecision !== null) return headerDecision;
+
+  if (body.auto_tools === true || body.execute_tools === true) return true;
+  if (Array.isArray(body.tools) && body.tools.length > 0) return true;
+  if (body.tool_choice !== undefined && body.tool_choice !== null) {
+    return body.tool_choice !== 'none';
+  }
+  return false;
+}
+
+function chatCompletionToSseStream(data: Record<string, unknown>): ReadableStream<Uint8Array> {
+  const encoder = new TextEncoder();
+  const choice = (
+    data as {
+      choices?: Array<{ message?: { content?: string | null } }>;
+    }
+  ).choices?.[0];
+  const content = choice?.message?.content ?? '';
+  const id = typeof data.id === 'string' ? data.id : `chatcmpl-${Date.now()}`;
+  const created =
+    typeof data.created === 'number' ? data.created : Math.floor(Date.now() / 1000);
+  const model = typeof data.model === 'string' ? data.model : 'zedge-agentic';
+  const tokens = content.match(/\s*\S+/g) ?? [content];
+
+  return new ReadableStream<Uint8Array>({
+    start(controller) {
+      for (let i = 0; i < tokens.length; i++) {
+        controller.enqueue(
+          encoder.encode(
+            `data: ${JSON.stringify({
+              id,
+              object: 'chat.completion.chunk',
+              created,
+              model,
+              choices: [
+                {
+                  index: 0,
+                  delta:
+                    i === 0
+                      ? { role: 'assistant', content: tokens[i] }
+                      : { content: tokens[i] },
+                  finish_reason: null,
+                },
+              ],
+            })}\n\n`,
+          ),
+        );
+      }
+      controller.enqueue(
+        encoder.encode(
+          `data: ${JSON.stringify({
+            id,
+            object: 'chat.completion.chunk',
+            created,
+            model,
+            choices: [{ index: 0, delta: {}, finish_reason: 'stop' }],
+            usage: data.usage,
+          })}\n\n`,
+        ),
+      );
+      controller.enqueue(encoder.encode('data: [DONE]\n\n'));
+      controller.close();
+    },
+  });
 }
 
 interface SuperinferenceRequestBody {
@@ -471,7 +561,7 @@ function corsHeaders(): Response {
       'Access-Control-Allow-Origin': '*',
       'Access-Control-Allow-Methods': 'GET, POST, DELETE, OPTIONS',
       'Access-Control-Allow-Headers':
-        'Content-Type, Authorization, X-Zedge-Session',
+        'Content-Type, Authorization, X-Zedge-Session, X-Zedge-Agentic, X-Zedge-MCP-URL',
       'Access-Control-Expose-Headers': '*',
     },
   });
@@ -1309,12 +1399,99 @@ export async function handleWebRequest(req: Request): Promise<Response> {
     }
   }
 
+  // ==================== Local MCP + Agent Tools ====================
+
+  if (path === '/mcp' && req.method === 'POST') {
+    let body: unknown;
+    try {
+      body = await req.json();
+    } catch {
+      return jsonResponse({ error: 'invalid JSON-RPC payload' }, 400);
+    }
+    const { handleLocalMcpJsonRpc } = await import('./local-mcp.ts');
+    const response = await handleLocalMcpJsonRpc(body as JsonRpcRequest);
+    return jsonResponse(response ?? { ok: true });
+  }
+
+  if (path === '/tools/preflight' && req.method === 'GET') {
+    const { preflightLocalTools } = await import('./local-mcp.ts');
+    return jsonResponse(
+      await preflightLocalTools({
+        forceRefresh: url.searchParams.get('refresh') === '1',
+      }),
+    );
+  }
+
+  if (path === '/edit/range/preview' && req.method === 'POST') {
+    try {
+      const body = (await req.json()) as {
+        file_path?: string;
+        filePath?: string;
+        range?: unknown;
+        replacement_text?: string;
+        replacementText?: string;
+        replacement?: string;
+        search?: string;
+        replace?: string;
+      };
+      const filePath = body.file_path ?? body.filePath;
+      if (!filePath) return jsonResponse({ error: 'file_path is required' }, 400);
+      const { createRangeEditPreview, createSearchReplacePreview } = await import(
+        './edit-preview.ts'
+      );
+      const preview =
+        body.search !== undefined
+          ? createSearchReplacePreview({
+              filePath,
+              search: body.search,
+              replacementText:
+                body.replace ?? body.replacement ?? body.replacement_text ?? '',
+            })
+          : (() => {
+              if (!body.range) {
+                throw new Error('range is required unless search is provided');
+              }
+              return createRangeEditPreview({
+                filePath,
+                range: body.range as EditRange,
+                replacementText:
+                  body.replacementText ?? body.replacement_text ?? body.replacement ?? '',
+              });
+            })();
+      return jsonResponse(preview);
+    } catch (err) {
+      return jsonResponse(
+        { error: err instanceof Error ? err.message : String(err) },
+        400,
+      );
+    }
+  }
+
+  if (path === '/edit/range/apply' && req.method === 'POST') {
+    try {
+      const body = (await req.json()) as { previewId?: string; preview_id?: string };
+      const previewId = body.previewId ?? body.preview_id;
+      if (!previewId) return jsonResponse({ error: 'previewId is required' }, 400);
+      const { applyEditPreview } = await import('./edit-preview.ts');
+      return jsonResponse({ applied: true, preview: applyEditPreview(previewId) });
+    } catch (err) {
+      return jsonResponse(
+        { error: err instanceof Error ? err.message : String(err) },
+        409,
+      );
+    }
+  }
+
   // ==================== OpenAI-Compatible API ====================
 
   // Local TTS host playback relay. Kept separate from chat completions so
   // speech playback cannot perturb Zed's SSE token path.
   if (path === '/tts/status' && req.method === 'GET') {
     return jsonResponse(getTtsRelayStatus());
+  }
+
+  if (path === '/tts/voices' && req.method === 'GET') {
+    return jsonResponse(listTtsVoices());
   }
 
   if (path === '/tts/config' && req.method === 'POST') {
@@ -1338,6 +1515,18 @@ export async function handleWebRequest(req: Request): Promise<Response> {
     }
 
     const { status, result } = await handleTtsSpeakRequest(body);
+    return jsonResponse(result, status);
+  }
+
+  if (path === '/tts/preview' && req.method === 'POST') {
+    let body: unknown;
+    try {
+      body = await req.json();
+    } catch {
+      return jsonResponse({ ok: false, error: 'invalid JSON' }, 400);
+    }
+
+    const { status, result } = await handleTtsPreviewRequest(body);
     return jsonResponse(result, status);
   }
 
@@ -1428,8 +1617,50 @@ export async function handleWebRequest(req: Request): Promise<Response> {
       top_p: body.top_p,
     };
 
-    // All inference routes through the edge tier via infer() below.
-    // Edge handles routing to the right coordinator per model.
+    if (shouldUseCompanionAgentic(req, body)) {
+      try {
+        const { runCompanionAgenticChatCompletion } = await import(
+          './agentic-orchestrator.ts'
+        );
+        const result = await runCompanionAgenticChatCompletion(request, body);
+        if (request.stream) {
+          return new Response(
+            chatCompletionToSseStream(result as unknown as Record<string, unknown>),
+            {
+              headers: {
+                'Content-Type': 'text/event-stream',
+                'Cache-Control': 'no-cache',
+                Connection: 'keep-alive',
+                'Access-Control-Allow-Origin': '*',
+                'X-Zedge-Tier': 'companion-agentic',
+                'X-Zedge-Agentic': 'true',
+              },
+            }
+          );
+        }
+
+        return new Response(JSON.stringify(result), {
+          status: 200,
+          headers: {
+            'Content-Type': 'application/json',
+            'Access-Control-Allow-Origin': '*',
+            'X-Zedge-Tier': 'companion-agentic',
+            'X-Zedge-Agentic': 'true',
+          },
+        });
+      } catch (err) {
+        return jsonResponse(
+          {
+            error: err instanceof Error ? err.message : String(err),
+            agentic: true,
+          },
+          500
+        );
+      }
+    }
+
+    // Fast default: bare inference routes through Moonshine via infer().
+    // Agentic mode is only entered when the request explicitly asks for tools.
 
     if (request.stream) {
       const result = await infer(request);

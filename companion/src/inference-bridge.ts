@@ -955,7 +955,10 @@ async function tryMoonshineInference(
   try {
     const resp = await fetch(url, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Zedge-Agentic': 'off',
+      },
       body: JSON.stringify({
         model: request.model,
         messages,
