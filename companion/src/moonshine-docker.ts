@@ -65,6 +65,10 @@ const TSX_CLI =
   ].find((candidate) => existsSync(candidate));
 
 const MOONSHINE_URL = process.env.ZEDGE_MOONSHINE_URL ?? 'http://127.0.0.1:8080';
+const GNOSIS_NUM_THREADS =
+  process.env.ZEDGE_GNOSIS_NUM_THREADS ??
+  process.env.GNOSIS_NUM_THREADS ??
+  '4';
 const HEALTH_POLL_MS = 2_000;
 const HEALTH_TIMEOUT_MS = 90_000;
 const DEFAULT_KNOT_LAYER_COUNT = 22;
@@ -346,8 +350,19 @@ async function waitUrlReady(
 function spawnDetached(
   command: string,
   args: string[],
-  options: { cwd?: string; env?: NodeJS.ProcessEnv } = {}
+  options: {
+    cwd?: string;
+    env?: NodeJS.ProcessEnv;
+    stdoutPath?: string;
+    stderrPath?: string;
+  } = {}
 ): void {
+  const stdoutFd = options.stdoutPath
+    ? openSync(options.stdoutPath, 'a')
+    : 'ignore';
+  const stderrFd = options.stderrPath
+    ? openSync(options.stderrPath, 'a')
+    : 'ignore';
   const proc = spawn(command, args, {
     cwd: options.cwd,
     detached: true,
@@ -356,7 +371,7 @@ function spawnDetached(
       PATH: '/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin',
       ...options.env,
     },
-    stdio: 'ignore',
+    stdio: ['ignore', stdoutFd, stderrFd],
   });
   proc.unref();
 }
@@ -447,7 +462,7 @@ async function startLocalMoonshine(
   if (!(await probeUrl(FAT_STATION_URL))) {
     console.log(
       `[moonshine] Starting local fat-station: ${FAT_STATION_BIN} ` +
-        `(model=${modelName}, layers=${layerRange})`
+        `(model=${modelName}, layers=${layerRange}, threads=${GNOSIS_NUM_THREADS})`
     );
     spawnDetached(FAT_STATION_BIN, [
       '--knot',
@@ -458,7 +473,14 @@ async function startLocalMoonshine(
       'both',
       '--layers',
       layerRange,
-    ]);
+    ], {
+      env: {
+        GNOSIS_NUM_THREADS,
+        RUST_BACKTRACE: '1',
+      },
+      stdoutPath: '/tmp/moonshine-fat-station-launchd.out.log',
+      stderrPath: '/tmp/moonshine-fat-station-launchd.err.log',
+    });
     if (!(await waitUrlReady(FAT_STATION_URL))) {
       console.warn('[moonshine] local fat-station did not become healthy');
       return false;
@@ -476,6 +498,8 @@ async function startLocalMoonshine(
       AUX_KNOT_PATH: knotPath,
       ...(tokenizerGgufPath ? { TOKENIZER_GGUF_PATH: tokenizerGgufPath } : {}),
     },
+    stdoutPath: '/tmp/moonshine-openai-compat-launchd.out.log',
+    stderrPath: '/tmp/moonshine-openai-compat-launchd.err.log',
   });
 
   return await waitReadyForModel(modelName);
@@ -513,16 +537,22 @@ async function startDockerMoonshine(): Promise<boolean> {
 export async function ensureMoonshineRunning(): Promise<void> {
   const startupConfig = resolveStartupConfig();
   const probeResult = await probeExpectedModel(startupConfig.modelName);
-  if (probeResult.healthy && probeResult.matches) {
+  const fatStationMatches = await probeFatStationLayerRange(
+    startupConfig.layerRange
+  );
+  if (probeResult.healthy && probeResult.matches && fatStationMatches) {
     console.log('[moonshine] OpenAI-compatible endpoint already running');
     return;
   }
 
   if (probeResult.healthy) {
+    const reason = probeResult.matches
+      ? `fat-station is not ready for ${startupConfig.layerRange}`
+      : `expected ${startupConfig.modelName}`;
     console.warn(
       `[moonshine] existing OpenAI-compatible endpoint exposes ` +
-        `${probeResult.models.join(', ') || 'no models'}, expected ` +
-        `${startupConfig.modelName}; restarting local listener`
+        `${probeResult.models.join(', ') || 'no models'}, ${reason}; ` +
+        `restarting local listener`
     );
     if (stopLocalListener(MOONSHINE_URL, 'OpenAI-compatible')) {
       await allowStoppedPortsToClose();
