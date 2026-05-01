@@ -16,13 +16,20 @@ describe('Inference Bridge', () => {
       if (url.endsWith('/v1/models')) {
         return await new Promise<Response>((_resolve, reject) => {
           const signal = init?.signal;
+          const fallbackTimeout = setTimeout(() => {
+            reject(
+              new DOMException('The operation was aborted', 'AbortError')
+            );
+          }, 10);
           if (signal?.aborted) {
+            clearTimeout(fallbackTimeout);
             reject(new DOMException('The operation was aborted', 'AbortError'));
             return;
           }
           signal?.addEventListener(
             'abort',
             () => {
+              clearTimeout(fallbackTimeout);
               reject(
                 new DOMException('The operation was aborted', 'AbortError')
               );
@@ -39,6 +46,7 @@ describe('Inference Bridge', () => {
       const modelIds = models.map((model) => model.id);
       expect(modelIds).toContain('gnosis-local');
       expect(modelIds).toContain('tinyllama-1.1b');
+      expect(modelIds).toContain('qwen2.5-0.5b-instruct');
       expect(modelIds).not.toContain('wasm-local');
       expect(modelIds).not.toContain('qwen-2.5-coder-7b');
     } finally {
@@ -81,7 +89,7 @@ describe('Inference Bridge', () => {
     expect(tiers.length).toBe(2);
   });
 
-  test('infer preserves streaming and caps token requests to Moonshine', async () => {
+  test('infer preserves streaming and honors requested Moonshine token budgets', async () => {
     const originalFetch = global.fetch;
     const requestBodies: Array<Record<string, unknown>> = [];
 
@@ -128,7 +136,7 @@ describe('Inference Bridge', () => {
       expect(result.tier).toBe('moonshine');
       expect(requestBodies).toHaveLength(1);
       expect(requestBodies[0]?.stream).toBe(true);
-      expect(requestBodies[0]?.max_tokens).toBe(64);
+      expect(requestBodies[0]?.max_tokens).toBe(512);
 
       const data = (await result.response.json()) as ChatCompletionResponse;
       expect(data.choices[0]?.message.content).toBe('hi from moonshine');
@@ -137,7 +145,56 @@ describe('Inference Bridge', () => {
     }
   });
 
-  test('infer strips previous Zedge fallback assistant messages before Moonshine', async () => {
+  test('infer caps Moonshine token requests at the model catalog limit', async () => {
+    const originalFetch = global.fetch;
+    const requestBodies: Array<Record<string, unknown>> = [];
+
+    global.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url.endsWith('/v1/chat/completions')) {
+        requestBodies.push(
+          JSON.parse(String(init?.body ?? '{}')) as Record<string, unknown>
+        );
+        return new Response(
+          JSON.stringify({
+            id: 'chatcmpl-moonshine-cap-test',
+            object: 'chat.completion',
+            created: 1000,
+            model: 'qwen2.5-0.5b-instruct',
+            choices: [
+              {
+                index: 0,
+                message: { role: 'assistant', content: 'ok' },
+                finish_reason: 'stop',
+              },
+            ],
+            usage: {
+              prompt_tokens: 1,
+              completion_tokens: 1,
+              total_tokens: 2,
+            },
+          }),
+          { headers: { 'Content-Type': 'application/json' } }
+        );
+      }
+
+      return new Response('unexpected', { status: 500 });
+    }) as typeof fetch;
+
+    try {
+      await infer({
+        model: 'qwen2.5-0.5b-instruct',
+        messages: [{ role: 'user', content: 'hello' }],
+        max_tokens: 8_192,
+      });
+
+      expect(requestBodies[0]?.max_tokens).toBe(4096);
+    } finally {
+      global.fetch = originalFetch;
+    }
+  });
+
+  test('infer compacts prior Zedge artifact turns before Moonshine', async () => {
     const originalFetch = global.fetch;
     const requestBodies: Array<Record<string, unknown>> = [];
 
@@ -177,6 +234,7 @@ describe('Inference Bridge', () => {
       const result = await infer({
         model: 'gnosis-local',
         messages: [
+          { role: 'system', content: 'answer briefly' },
           { role: 'user', content: 'remember this' },
           { role: 'assistant', content: 'normal prior assistant context' },
           { role: 'user', content: 'hello' },
@@ -184,6 +242,11 @@ describe('Inference Bridge', () => {
             role: 'assistant',
             content:
               'I received your message, but Moonshine did not return a usable completion before Zedge\'s local echo fallback.',
+          },
+          {
+            role: 'assistant',
+            content:
+              '*⣿ ███ 2t/s | moonshine:ok(17ms)*\n\n<s>[INST] hello! [/INST]<s>[INST]',
           },
           { role: 'user', content: 'hello again' },
         ],
@@ -197,9 +260,7 @@ describe('Inference Bridge', () => {
         | Array<{ role: string; content: string }>
         | undefined;
       expect(messages?.map((message) => message.content)).toEqual([
-        'remember this',
-        'normal prior assistant context',
-        'hello',
+        'answer briefly',
         'hello again',
       ]);
     } finally {

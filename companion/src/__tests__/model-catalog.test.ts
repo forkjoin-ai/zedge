@@ -19,6 +19,13 @@ describe('Zedge model catalog', () => {
     expect(model?.maxTokens).toBe(2048);
   });
 
+  test('includes Qwen2.5 model metadata for the Moonshine KNOT trial', () => {
+    const model = getKnownZedgeModel('qwen2.5-0.5b-instruct');
+    expect(model).toBeDefined();
+    expect(model?.displayName).toBe('Qwen2.5 0.5B Instruct (Moonshine)');
+    expect(model?.maxTokens).toBe(4096);
+  });
+
   test('buildZedAvailableModels does not reintroduce the retired wasm model', () => {
     const models = buildZedAvailableModels(['gnosis-local'], {
       includeLocalWasm: true,

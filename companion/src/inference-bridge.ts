@@ -15,7 +15,11 @@ import { fileURLToPath } from 'url';
 import { getCloudRunAuthHeaders } from './cloudrun-auth.ts';
 import { aetherLocalRuntime } from './aether-local-runtime.ts';
 import { runWithCompanionActivity } from './companion-activity.ts';
-import { getKnownZedgeModels, isLiveModelVisible } from './model-catalog.ts';
+import {
+  getKnownZedgeModel,
+  getKnownZedgeModels,
+  isLiveModelVisible,
+} from './model-catalog.ts';
 import {
   applySystemPromptBudget,
   shouldSkipHeavySystemContext,
@@ -217,14 +221,45 @@ const MOONSHINE_BASE_URL =
 const MOONSHINE_TIMEOUT_MS = Number(
   process.env.ZEDGE_MOONSHINE_TIMEOUT_MS ?? 90_000
 );
-const MOONSHINE_DEFAULT_MAX_TOKENS = Number(
-  process.env.ZEDGE_MOONSHINE_DEFAULT_MAX_TOKENS ?? 64
+const MOONSHINE_DEFAULT_MAX_TOKENS = parsePositiveInteger(
+  process.env.ZEDGE_MOONSHINE_DEFAULT_MAX_TOKENS,
+  512
+);
+const MOONSHINE_MAX_TOKENS = parsePositiveInteger(
+  process.env.ZEDGE_MOONSHINE_MAX_TOKENS,
+  4096
 );
 const ZEDGE_FALLBACK_ASSISTANT_PATTERNS = [
   'Moonshine did not return a usable completion before Zedge',
   'Zedge could not start a usable inference tier',
   '[zedge notice]',
 ];
+const CHAT_TEMPLATE_PREFIXES = [
+  '<s>[INST]',
+  '[INST]',
+  '<s>',
+  '</s>',
+  '[/INST]',
+  '[SING]',
+  '<<SYS>>',
+  '<</SYS>>',
+];
+
+function parsePositiveInteger(value: string | undefined, fallback: number): number {
+  const parsed = value === undefined ? fallback : Number.parseInt(value, 10);
+  return Number.isInteger(parsed) && parsed > 0 ? parsed : fallback;
+}
+
+function resolveMoonshineMaxTokens(request: ChatCompletionRequest): number {
+  const requested = Number.isInteger(request.max_tokens)
+    ? request.max_tokens
+    : MOONSHINE_DEFAULT_MAX_TOKENS;
+  const modelMaxTokens = request.model
+    ? getKnownZedgeModel(request.model)?.maxTokens
+    : undefined;
+  const hardCap = Math.min(modelMaxTokens ?? MOONSHINE_MAX_TOKENS, MOONSHINE_MAX_TOKENS);
+  return Math.max(0, Math.min(requested ?? MOONSHINE_DEFAULT_MAX_TOKENS, hardCap));
+}
 
 const LOCAL_WASM_TOTAL_TIMEOUT_MS = 45_000;
 const LOCAL_WASM_BUSY_BUFFER_MS = 15_000;
@@ -265,15 +300,117 @@ function isZedgeFallbackAssistantMessage(message: ChatMessage): boolean {
   return false;
 }
 
-/** Remove previous local fallback assistant turns before calling Moonshine. */
+/** Remove Zedge's in-content prefill status before calling Moonshine. */
+function stripZedgeProgressPrefix(content: string): string {
+  return content
+    .replace(/^\s*\*?\d+t\/s\s*\|\s*[^\n]*?\u28FF\s*[\u2588\s]*\*?\s*/u, '')
+    .replace(/^\s*\*?\u28FF\s+[^\n]*\|\s*moonshine:[^\n]*\*?\s*/u, '');
+}
+
+/** True when text may be a partial chat-template control marker. */
+function isPendingChatTemplatePrefix(text: string): boolean {
+  const trimmed = text.trimStart();
+  if (!trimmed) return false;
+  for (const prefix of CHAT_TEMPLATE_PREFIXES) {
+    if (prefix.startsWith(trimmed)) return true;
+  }
+  return false;
+}
+
+/** Remove generated Llama chat-template echoes from assistant history. */
+function stripGeneratedChatTemplateEcho(content: string): string {
+  let remaining = content;
+
+  while (remaining.length > 0) {
+    remaining = remaining.trimStart();
+
+    if (remaining.startsWith('<s>[INST]')) {
+      const closeIndex = remaining.indexOf('[/INST]');
+      if (closeIndex < 0) return '';
+      remaining = remaining.slice(closeIndex + '[/INST]'.length);
+      continue;
+    }
+
+    if (remaining.startsWith('[INST]')) {
+      const closeIndex = remaining.indexOf('[/INST]');
+      if (closeIndex < 0) return '';
+      remaining = remaining.slice(closeIndex + '[/INST]'.length);
+      continue;
+    }
+
+    let removedMarker = false;
+    for (const marker of [
+      '<s>',
+      '</s>',
+      '[/INST]',
+      '[SING]',
+      '<<SYS>>',
+      '<</SYS>>',
+    ]) {
+      if (remaining.startsWith(marker)) {
+        remaining = remaining.slice(marker.length);
+        removedMarker = true;
+        break;
+      }
+    }
+    if (removedMarker) continue;
+
+    if (isPendingChatTemplatePrefix(remaining)) return '';
+    return remaining;
+  }
+
+  return '';
+}
+
+/** Clean one chat message before forwarding it to Moonshine. */
+function sanitizeMoonshineMessage(message: ChatMessage): ChatMessage | null {
+  if (isZedgeFallbackAssistantMessage(message)) {
+    return null;
+  }
+  if (message.role !== 'assistant') {
+    return message;
+  }
+
+  const content = stripGeneratedChatTemplateEcho(
+    stripZedgeProgressPrefix(message.content)
+  );
+  if (content.trim().length === 0 && content !== message.content) {
+    return null;
+  }
+  return content === message.content ? message : { ...message, content };
+}
+
+/** Remove previous local fallback and prompt-artifact turns before Moonshine. */
 function sanitizeMoonshineMessages(messages: ChatMessage[]): ChatMessage[] {
   const filteredMessages: ChatMessage[] = [];
   for (const message of messages) {
-    if (!isZedgeFallbackAssistantMessage(message)) {
-      filteredMessages.push(message);
+    const sanitized = sanitizeMoonshineMessage(message);
+    if (sanitized) {
+      filteredMessages.push(sanitized);
     }
   }
   return filteredMessages.length > 0 ? filteredMessages : messages;
+}
+
+/** Keep Moonshine prompts short: durable system context plus the newest user turn. */
+function prepareMoonshineMessages(messages: ChatMessage[]): ChatMessage[] {
+  const sanitizedMessages = sanitizeMoonshineMessages(messages);
+  const compactMessages: ChatMessage[] = [];
+  for (const message of sanitizedMessages) {
+    if (message.role === 'system' && message.content.trim().length > 0) {
+      compactMessages.push(message);
+    }
+  }
+
+  for (let i = sanitizedMessages.length - 1; i >= 0; i -= 1) {
+    const message = sanitizedMessages[i]!;
+    if (message.role === 'user' && message.content.trim().length > 0) {
+      compactMessages.push(message);
+      return compactMessages;
+    }
+  }
+
+  return sanitizedMessages;
 }
 
 function getEdgeCircuitState(model: string): EdgeCircuitState {
@@ -798,17 +935,12 @@ async function tryMoonshineInference(
   signal?: AbortSignal
 ): Promise<Response> {
   const url = `${MOONSHINE_BASE_URL}/v1/chat/completions`;
-  const maxTokens = Math.min(
-    request.max_tokens ?? MOONSHINE_DEFAULT_MAX_TOKENS,
-    MOONSHINE_DEFAULT_MAX_TOKENS
-  );
+  const maxTokens = resolveMoonshineMaxTokens(request);
   const stream = request.stream ?? false;
-  const messages = sanitizeMoonshineMessages(request.messages);
+  const messages = prepareMoonshineMessages(request.messages);
   if (messages.length !== request.messages.length) {
     logInference(
-      `[moonshine] stripped ${
-        request.messages.length - messages.length
-      } prior Zedge fallback assistant message(s)`
+      `[moonshine] compacted history ${request.messages.length}→${messages.length} message(s)`
     );
   }
   logInference(
@@ -1494,14 +1626,18 @@ export function createSSEProxyStream(
       // or as content (italic markdown). reasoning_content is better UX but
       // currently broken in Zed's openai_compatible provider (#46794).
       const useReasoning = getZedgeConfig().reasoningContent === true;
-      let lastPrefillPct = -1;
       let emittedProgress = false;
+      let emittedProgressBlocks = 0;
+      let observedPrefill = false;
       let prefillStartMs = 0;
       let lastPrefillMs = 0;
       let lastPrefillPos = 0;
-      const prefillTokSec: number[] = []; // tok/s at each checkpoint for sparkline
+      const progressBarBlocks = 20;
       const progressId = `chatcmpl-progress-${Date.now()}`;
       const progressCreated = Math.floor(Date.now() / 1000);
+      const progressChainInfo = attempts?.length
+        ? attempts.map((a) => `${a.tier}:${a.status}(${a.ms}ms)`).join(' > ')
+        : tier;
 
       const handleLine = (
         rawLine: string,
@@ -1523,11 +1659,6 @@ export function createSSEProxyStream(
                 `[sse-proxy] tier=${tier} first-data: ${payload.slice(0, 200)}`
               );
               // Emit chain debug info before first real token
-              const chainInfo = attempts?.length
-                ? attempts
-                    .map((a) => `${a.tier}:${a.status}(${a.ms}ms)`)
-                    .join(' > ')
-                : tier;
               if (useReasoning) {
                 // reasoning_content goes into Zed's thinking UI (when supported)
                 const debugChunk = {
@@ -1538,7 +1669,7 @@ export function createSSEProxyStream(
                   choices: [
                     {
                       index: 0,
-                      delta: { reasoning_content: `[${chainInfo}]\n` },
+                      delta: { reasoning_content: `[${progressChainInfo}]\n` },
                       finish_reason: null,
                     },
                   ],
@@ -1547,13 +1678,8 @@ export function createSSEProxyStream(
                   encoder.encode(`data: ${JSON.stringify(debugChunk)}\n\n`)
                 );
               } else if (emittedProgress) {
-                // Close the sparkline with stats and italic marker
-                const prefillMs = Date.now() - prefillStartMs;
-                const avgTokSec =
-                  prefillMs > 0 && lastPrefillPos > 0
-                    ? Math.round((lastPrefillPos / prefillMs) * 1000)
-                    : 0;
-                const closingText = ` ${avgTokSec}t/s | ${chainInfo}*\n\n`;
+                // Close the markdown progress line before forwarding text.
+                const closingText = '*\n\n';
                 if (useReasoning) {
                   const sep = {
                     id: progressId,
@@ -1695,51 +1821,59 @@ export function createSSEProxyStream(
             `[sse-proxy] tier=${tier} upstream: ${line.slice(0, 100)}`
           );
 
-          // Convert prefill progress into an append-friendly sparkline.
-          // Each tick emits ONE character — the sparkline grows naturally
-          // as SSE content deltas append. No replacement needed.
-          // Result: `*⠿ ▁▃▅▇████▇▅ 450t/s*`
+          // Convert prefill progress into an append-only filled bar. Zed
+          // appends deltas, so this emits only newly crossed buckets.
           const prefillMatch = line.match(/^: prefill (\d+)\/(\d+)/);
           if (prefillMatch && !firstDataLogged) {
-            const sparks = '\u2581\u2582\u2583\u2584\u2585\u2586\u2587\u2588';
             const pos = parseInt(prefillMatch[1], 10);
             const total = parseInt(prefillMatch[2], 10);
             const isStart = !emittedProgress;
             const now = Date.now();
-            if (isStart) {
+            if (!observedPrefill) {
+              observedPrefill = true;
               prefillStartMs = now;
               lastPrefillMs = now;
-              lastPrefillPos = 0;
+              lastPrefillPos = pos;
             }
-            // Compute segment tok/s for this tick's spark height
-            const segmentMs = now - lastPrefillMs;
-            const segmentToks = pos - lastPrefillPos;
-            let sparkChar = sparks[0]; // default lowest
-            if (segmentMs > 0 && segmentToks > 0) {
-              const tokSec = Math.round((segmentToks / segmentMs) * 1000);
-              prefillTokSec.push(tokSec);
-              // Scale spark: 0-500 t/s range mapped to spark index
-              const idx = Math.min(
-                sparks.length - 1,
-                Math.round((tokSec / 500) * (sparks.length - 1))
-              );
-              sparkChar = sparks[idx];
+
+            const targetBlocks =
+              total > 0 && pos > 0
+                ? Math.max(
+                    1,
+                    Math.min(
+                      progressBarBlocks,
+                      Math.ceil((pos / total) * progressBarBlocks)
+                    )
+                  )
+                : 0;
+            const newBlocks = Math.max(0, targetBlocks - emittedProgressBlocks);
+            if (isStart && targetBlocks === 0) {
+              return;
             }
+            emittedProgressBlocks = Math.max(
+              emittedProgressBlocks,
+              targetBlocks
+            );
+            const elapsedPrefillMs = Math.max(1, now - prefillStartMs);
+            const recentElapsedMs = Math.max(1, now - lastPrefillMs);
+            const recentProgress = Math.max(0, pos - lastPrefillPos);
+            const overallTokSec =
+              pos > 0 ? Math.round((pos / elapsedPrefillMs) * 1000) : 0;
+            const currentTokSec =
+              recentProgress > 0
+                ? Math.round((recentProgress / recentElapsedMs) * 1000)
+                : overallTokSec;
             lastPrefillMs = now;
             lastPrefillPos = pos;
-            lastPrefillPct = Math.floor((pos / total) * 100);
-            emittedProgress = true;
-
-            // Build the delta content for this tick
-            let tickContent: string;
-            if (isStart) {
-              // Open italic, braille spinner, first spark
-              tickContent = `*\u28FF ` + sparkChar;
-            } else {
-              // Just append one more spark character
-              tickContent = sparkChar;
+            const tickContent =
+              (isStart
+                ? `*${currentTokSec}t/s | ${progressChainInfo} \u28FF `
+                : '') + '\u2588'.repeat(newBlocks);
+            if (!tickContent) {
+              return;
             }
 
+            emittedProgress = true;
             const tickDelta = isStart
               ? { role: 'assistant' as const, content: tickContent }
               : { content: tickContent };

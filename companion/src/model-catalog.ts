@@ -26,6 +26,12 @@ const KNOWN_ZEDGE_MODELS: KnownZedgeModel[] = [
     maxTokens: 2048,
     ownedBy: 'gnosis',
   },
+  {
+    id: 'qwen2.5-0.5b-instruct',
+    displayName: 'Qwen2.5 0.5B Instruct (Moonshine)',
+    maxTokens: 4096,
+    ownedBy: 'gnosis',
+  },
 ];
 
 const KNOWN_ZEDGE_MODELS_BY_ID = new Map(

@@ -161,6 +161,44 @@ describe('SSE Chat Completions (createSSEProxyStream)', () => {
     expect(dataObjects.length).toBeGreaterThanOrEqual(1);
   });
 
+  test('renders prefill progress as a filled append-only bar', async () => {
+    const chunk = JSON.stringify({
+      id: 'chatcmpl-progress-bar',
+      object: 'chat.completion.chunk',
+      created: 1000,
+      model: 'test-model',
+      choices: [{ index: 0, delta: { content: 'Done' }, finish_reason: null }],
+    });
+    const upstream = sseStream(
+      `: prefill 0/100\n\n: prefill 50/100\n\n: prefill 100/100\n\ndata: ${chunk}\n\ndata: [DONE]\n\n`
+    );
+
+    const proxy = createSSEProxyStream(
+      upstream,
+      'moonshine',
+      {},
+      [{ tier: 'moonshine', status: 'ok', ms: 5 }],
+      'gnosis-local'
+    );
+    const output = await consumeStream(proxy);
+    const dataObjects = parseSSEDataObjects(output) as Array<{
+      choices: Array<{ delta: { content?: string } }>;
+    }>;
+    const renderedContent = dataObjects
+      .map((data) => data.choices[0].delta.content ?? '')
+      .join('');
+
+    expect(renderedContent).toMatch(/^\*\d+t\/s \| moonshine:ok\(5ms\) ⣿ /);
+    expect(renderedContent).not.toContain('*0t/s |');
+    expect(renderedContent.indexOf('t/s | moonshine:ok(5ms) ⣿')).toBeLessThan(
+      renderedContent.indexOf('████')
+    );
+    expect(renderedContent).toContain('████████████████████');
+    expect(renderedContent).toContain('moonshine:ok(5ms)');
+    expect(renderedContent).not.toContain('▁');
+    expect(renderedContent).toContain('Done');
+  });
+
   test('handles CRLF-delimited SSE frames', async () => {
     const chunk = JSON.stringify({
       id: 'chatcmpl-crlf',

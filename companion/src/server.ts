@@ -3855,9 +3855,21 @@ function requestPayloadToWebRequest(request: RequestPayload): Request {
 async function webResponseToPayload(
   response: Response
 ): Promise<ResponsePayload> {
+  const headers = Object.fromEntries(response.headers.entries());
+  const contentType = headers['content-type'] ?? headers['Content-Type'] ?? '';
+  if (response.body && contentType.includes('text/event-stream')) {
+    delete headers['content-length'];
+    delete headers['Content-Length'];
+    return {
+      status: response.status,
+      headers,
+      body: response.body as unknown as ResponsePayload['body'],
+    };
+  }
+
   return {
     status: response.status,
-    headers: Object.fromEntries(response.headers.entries()),
+    headers,
     body: response.body
       ? new Uint8Array(await response.arrayBuffer())
       : new Uint8Array(0),
