@@ -13,6 +13,7 @@ import { execFileSync, spawn } from 'child_process';
 import { closeSync, existsSync, openSync, readSync } from 'fs';
 import { basename, join, dirname } from 'path';
 import { fileURLToPath } from 'url';
+import { readZedModelSelection } from './zed-settings.ts';
 
 const __here = dirname(fileURLToPath(import.meta.url));
 // companion/src → companion → zedge → open-source → repo root
@@ -20,9 +21,18 @@ const REPO_ROOT = join(__here, '..', '..', '..', '..');
 const COMPOSE_FILE =
   process.env.ZEDGE_MOONSHINE_COMPOSE_FILE ??
   join(REPO_ROOT, 'docker-compose.moonshine.yml');
-const KNOT_PATH =
-  process.env.ZEDGE_MOONSHINE_KNOT ??
-  join(REPO_ROOT, 'open-source/bitwise/datasets/llama1b_fixed.knot');
+const DEFAULT_KNOT_PATH = join(
+  REPO_ROOT,
+  'open-source/bitwise/datasets/llama1b_fixed.knot'
+);
+const QWEN_KNOT_PATH = join(
+  REPO_ROOT,
+  'open-source/bitwise/datasets/qwen2.5-0.5b-instruct-q4_k_m.knot'
+);
+const QWEN_TOKENIZER_GGUF_PATH = join(
+  REPO_ROOT,
+  'open-source/bitwise/datasets/gguf/qwen2.5-0.5b-instruct-q4_k_m.gguf'
+);
 const DEFAULT_MOONSHINE_MODEL = 'gnosis-local';
 const QWEN_MOONSHINE_MODEL = 'qwen2.5-0.5b-instruct';
 const FAT_STATION_URL =
@@ -62,11 +72,30 @@ const DEFAULT_KNOT_LAYER_COUNT = 22;
 type KnotMetadata = Record<string, unknown>;
 
 interface MoonshineStartupConfig {
+  knotPath: string;
   knotMetadata: KnotMetadata | null;
   modelName: string;
   layerRange: string;
   tokenizerGgufPath?: string;
 }
+
+interface LocalMoonshineModelSpec {
+  modelName: string;
+  knotPath: string;
+  tokenizerGgufPath?: string;
+}
+
+const LOCAL_MOONSHINE_MODELS: Record<string, LocalMoonshineModelSpec> = {
+  [DEFAULT_MOONSHINE_MODEL]: {
+    modelName: DEFAULT_MOONSHINE_MODEL,
+    knotPath: DEFAULT_KNOT_PATH,
+  },
+  [QWEN_MOONSHINE_MODEL]: {
+    modelName: QWEN_MOONSHINE_MODEL,
+    knotPath: QWEN_KNOT_PATH,
+    tokenizerGgufPath: QWEN_TOKENIZER_GGUF_PATH,
+  },
+};
 
 interface MoonshineProbeResult {
   healthy: boolean;
@@ -125,9 +154,34 @@ function positiveInteger(value: unknown): number | null {
   return numberValue;
 }
 
-function resolveMoonshineModelName(metadata: KnotMetadata | null): string {
+function resolveZedLocalModelSpec(): LocalMoonshineModelSpec | null {
+  const selection = readZedModelSelection();
+  if (!selection) return null;
+
+  const candidates = [
+    selection.defaultModel,
+    ...selection.availableModels,
+  ].filter((modelId): modelId is string => typeof modelId === 'string');
+
+  for (const rawModelId of candidates) {
+    const modelId = rawModelId.trim();
+    const spec = LOCAL_MOONSHINE_MODELS[modelId];
+    if (spec && existsSync(spec.knotPath)) {
+      return spec;
+    }
+  }
+
+  return null;
+}
+
+function resolveMoonshineModelName(
+  metadata: KnotMetadata | null,
+  knotPath: string,
+  spec?: LocalMoonshineModelSpec
+): string {
   const configuredModel = process.env.ZEDGE_MOONSHINE_MODEL?.trim();
   if (configuredModel) return configuredModel;
+  if (spec) return spec.modelName;
 
   const metadataName = metadata?.['name'];
   if (
@@ -137,7 +191,7 @@ function resolveMoonshineModelName(metadata: KnotMetadata | null): string {
     return metadataName;
   }
 
-  if (KNOT_PATH.toLowerCase().includes('qwen')) {
+  if (knotPath.toLowerCase().includes('qwen')) {
     return QWEN_MOONSHINE_MODEL;
   }
 
@@ -166,21 +220,31 @@ function resolveMoonshineLayerRange(metadata: KnotMetadata | null): string {
   return `0..${metadataLayerCount ?? DEFAULT_KNOT_LAYER_COUNT}`;
 }
 
-function resolveTokenizerGgufPath(): string | undefined {
+function resolveTokenizerGgufPath(
+  knotPath: string,
+  spec?: LocalMoonshineModelSpec
+): string | undefined {
   const configuredPath = process.env.ZEDGE_MOONSHINE_TOKENIZER_GGUF?.trim();
   if (configuredPath) return configuredPath;
+  if (spec?.tokenizerGgufPath && existsSync(spec.tokenizerGgufPath)) {
+    return spec.tokenizerGgufPath;
+  }
 
-  const knotBaseName = basename(KNOT_PATH, '.knot');
-  const adjacentGgufPath = join(dirname(KNOT_PATH), 'gguf', `${knotBaseName}.gguf`);
+  const knotBaseName = basename(knotPath, '.knot');
+  const adjacentGgufPath = join(dirname(knotPath), 'gguf', `${knotBaseName}.gguf`);
   return existsSync(adjacentGgufPath) ? adjacentGgufPath : undefined;
 }
 
 function resolveStartupConfig(): MoonshineStartupConfig {
-  const knotMetadata = readKnotMetadata(KNOT_PATH);
-  const modelName = resolveMoonshineModelName(knotMetadata);
+  const configuredKnotPath = process.env.ZEDGE_MOONSHINE_KNOT?.trim();
+  const spec = configuredKnotPath ? undefined : resolveZedLocalModelSpec() ?? undefined;
+  const knotPath = configuredKnotPath || spec?.knotPath || DEFAULT_KNOT_PATH;
+  const knotMetadata = readKnotMetadata(knotPath);
+  const modelName = resolveMoonshineModelName(knotMetadata, knotPath, spec);
   const layerRange = resolveMoonshineLayerRange(knotMetadata);
-  const tokenizerGgufPath = resolveTokenizerGgufPath();
+  const tokenizerGgufPath = resolveTokenizerGgufPath(knotPath, spec);
   return {
+    knotPath,
     knotMetadata,
     modelName,
     layerRange,
@@ -362,12 +426,12 @@ async function startLocalMoonshine(
     console.warn('[moonshine] local tsx CLI not found');
     return false;
   }
-  if (!existsSync(KNOT_PATH)) {
-    console.warn(`[moonshine] knot file not found: ${KNOT_PATH}`);
+  if (!existsSync(config.knotPath)) {
+    console.warn(`[moonshine] knot file not found: ${config.knotPath}`);
     return false;
   }
 
-  const { modelName, layerRange, tokenizerGgufPath } = config;
+  const { knotPath, modelName, layerRange, tokenizerGgufPath } = config;
 
   const fatStationHealthy = await probeUrl(FAT_STATION_URL);
   if (fatStationHealthy && !(await probeFatStationLayerRange(layerRange))) {
@@ -387,7 +451,7 @@ async function startLocalMoonshine(
     );
     spawnDetached(FAT_STATION_BIN, [
       '--knot',
-      KNOT_PATH,
+      knotPath,
       '--port',
       '8000',
       '--role',
@@ -409,7 +473,7 @@ async function startLocalMoonshine(
       PORT: '8080',
       MODEL_NAME: modelName,
       AGENTIC: '0',
-      AUX_KNOT_PATH: KNOT_PATH,
+      AUX_KNOT_PATH: knotPath,
       ...(tokenizerGgufPath ? { TOKENIZER_GGUF_PATH: tokenizerGgufPath } : {}),
     },
   });
