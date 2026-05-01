@@ -17,115 +17,22 @@ pub struct ZedgeModel {
     pub max_tokens: u32,
 }
 
-/// Available models — all Edgework edge models via Glossolalia MOA.
-/// IDs match what edge.affectively.ai/v1/models returns.
+/// Built-in fallback models for the Moonshine OpenAI-compatible agent container.
+/// The companion syncs Zed's picker from the live `/v1/models` response when
+/// the container is running, so this list is only the offline fallback surface.
 pub const MODELS: &[ZedgeModel] = &[
-    // ── Primary coding models ──
     ZedgeModel {
-        id: "qwen-2.5-coder-7b",
-        display_name: "Qwen 2.5 Coder 7B",
+        id: "gnosis-local",
+        display_name: "Gnosis Local (Moonshine)",
         max_tokens: 4096,
-    },
-    ZedgeModel {
-        id: "mistral-7b",
-        display_name: "Mistral 7B",
-        max_tokens: 4096,
-    },
-    ZedgeModel {
-        id: "deepseek-r1-7b",
-        display_name: "DeepSeek R1 7B",
-        max_tokens: 4096,
-    },
-    // ── Reasoning / large ──
-    ZedgeModel {
-        id: "llama-70b",
-        display_name: "LLaMA 2 70B",
-        max_tokens: 4096,
-    },
-    ZedgeModel {
-        id: "glm-4-9b",
-        display_name: "GLM-4 9B",
-        max_tokens: 4096,
-    },
-    ZedgeModel {
-        id: "step-3.5-flash",
-        display_name: "Step 3.5 Flash",
-        max_tokens: 4096,
-    },
-    // ── Mid-size ──
-    ZedgeModel {
-        id: "gemma3-4b-it",
-        display_name: "Gemma 3 4B IT",
-        max_tokens: 4096,
-    },
-    ZedgeModel {
-        id: "nanbeige-3b",
-        display_name: "Nanbeige 3B",
-        max_tokens: 4096,
-    },
-    ZedgeModel {
-        id: "mamba-2.8b",
-        display_name: "Mamba 2.8B",
-        max_tokens: 4096,
-    },
-    // ── Small / fast ──
-    ZedgeModel {
-        id: "gemma3-1b-it",
-        display_name: "Gemma 3 1B IT",
-        max_tokens: 2048,
-    },
-    ZedgeModel {
-        id: "deepseek-r1-1.5b",
-        display_name: "DeepSeek R1 1.5B",
-        max_tokens: 2048,
     },
     ZedgeModel {
         id: "tinyllama-1.1b",
-        display_name: "TinyLlama 1.1B (Fast)",
+        display_name: "TinyLlama 1.1B (Moonshine)",
         max_tokens: 2048,
-    },
-    // ── Edgework internal ──
-    ZedgeModel {
-        id: "smollm2-360m",
-        display_name: "SmolLM2 360M",
-        max_tokens: 1024,
-    },
-    ZedgeModel {
-        id: "cog-360m",
-        display_name: "Cog 360M",
-        max_tokens: 1024,
-    },
-    ZedgeModel {
-        id: "cyrano-360m",
-        display_name: "Cyrano 360M",
-        max_tokens: 1024,
     },
 ];
 
 pub fn visible_models() -> Vec<&'static ZedgeModel> {
-    let show_all = std::env::var("ZEDGE_ALL_MODELS")
-        .map(|v| v == "1" || v == "true")
-        .unwrap_or(false);
-
-    MODELS
-        .iter()
-        .filter(|m| {
-            if show_all {
-                return true;
-            }
-            !matches!(
-                m.id,
-                "llama-70b"
-                    | "mistral-7b"
-                    | "glm-4-9b"
-                    | "step-3.5-flash"
-                    | "nanbeige-3b"
-                    | "mamba-2.8b"
-                    | "tinyllama-1.1b"
-                    | "smollm2-360m"
-                    | "cog-360m"
-                    | "cyrano-360m"
-            )
-        })
-        .collect()
+    MODELS.iter().collect()
 }

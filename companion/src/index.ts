@@ -28,8 +28,46 @@ async function verifyKeyTier(
   }
 }
 
+/** Normalizes unknown thrown values for log messages. */
 function getErrorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
+}
+
+/** Refreshes the live model catalog and writes it into Zed's static picker config. */
+async function syncZedSettingsFromModelCatalog(): Promise<void> {
+  const [{ getModels }, { syncZedSettingsModelCatalog }] = await Promise.all([
+    import('./inference-bridge.ts'),
+    import('./zed-settings.ts'),
+  ]);
+  const models = await getModels({ refresh: true, refreshTimeoutMs: 5_000 });
+  const syncResult = syncZedSettingsModelCatalog(
+    models.map((model) => model.id)
+  );
+  if (syncResult.updatedPaths.length > 0) {
+    console.log(
+      `[zedge] Synced ${
+        models.length
+      } models into Zed settings: ${syncResult.updatedPaths.join(', ')}`
+    );
+  }
+}
+
+/** Starts Moonshine when possible, then syncs Zed settings from whatever catalog is live. */
+async function startMoonshineAndSyncZedSettings(): Promise<void> {
+  try {
+    const { ensureMoonshineRunning } = await import('./moonshine-docker.ts');
+    await ensureMoonshineRunning();
+  } catch (err) {
+    console.warn(`[moonshine] Startup failed: ${getErrorMessage(err)}`);
+  }
+
+  try {
+    await syncZedSettingsFromModelCatalog();
+  } catch (error) {
+    console.warn(
+      `[zedge] Zed settings sync skipped: ${getErrorMessage(error)}`
+    );
+  }
 }
 
 export async function main(): Promise<void> {
@@ -44,35 +82,10 @@ async function runCompanionBootstrap(): Promise<void> {
     const serverMod = await import('./server.ts');
     await serverMod.startServer();
 
-    // Start moonshine docker container (primary inference backend) — non-blocking
-    import('./moonshine-docker.ts')
-      .then(({ ensureMoonshineRunning }) => ensureMoonshineRunning())
-      .catch((err) => console.warn(`[moonshine] Startup failed: ${err}`));
+    // Start Moonshine and then sync Zed's static picker from the live catalog.
+    void startMoonshineAndSyncZedSettings();
 
     console.log('[zedge] Companion sidecar v2.0 ready');
-
-    void Promise.all([
-      import('./inference-bridge.ts'),
-      import('./zed-settings.ts'),
-    ])
-      .then(async ([{ getModels }, { syncZedSettingsModelCatalog }]) => {
-        const models = await getModels();
-        const syncResult = syncZedSettingsModelCatalog(
-          models.map((model) => model.id)
-        );
-        if (syncResult.updatedPaths.length > 0) {
-          console.log(
-            `[zedge] Synced ${
-              models.length
-            } models into Zed settings: ${syncResult.updatedPaths.join(', ')}`
-          );
-        }
-      })
-      .catch((error) => {
-        console.warn(
-          `[zedge] Zed settings sync skipped: ${getErrorMessage(error)}`
-        );
-      });
 
     const { whoami } = await import('./auth.ts');
     const { getZedgeConfig, getApiBaseUrl, getAuthHeaders } = await import(

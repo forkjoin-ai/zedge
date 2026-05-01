@@ -8,11 +8,17 @@
 import { homedir } from 'os';
 import { join } from 'path';
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'fs';
+import {
+  DEFAULT_ZEDGE_MODEL_ID,
+  isLegacyEdgeworkModelId,
+} from './model-catalog.ts';
+import { readZedModelSelection } from './zed-settings.ts';
 
 const CONFIG_DIR = join(homedir(), '.edgework');
 const CONFIG_FILE = join(CONFIG_DIR, 'config.json');
 const API_KEY_FILE = join(CONFIG_DIR, 'api-key');
 const ZEDGE_CONFIG_FILE = join(CONFIG_DIR, 'zedge.json');
+const LOCAL_ZED_PLACEHOLDER_API_KEY = 'zedge-local';
 
 export type Environment = 'production' | 'staging' | 'development';
 
@@ -87,9 +93,9 @@ const DEFAULT_ZEDGE_CONFIG: ZedgeConfig = {
     enabled: false,
     maxCpuPercent: 50,
     maxMemoryMb: 2048,
-    allowedModels: ['tinyllama-1.1b', 'gemma3-1b-it'],
+    allowedModels: ['gnosis-local', 'tinyllama-1.1b'],
   },
-  preferredModel: 'wasm-local',
+  preferredModel: DEFAULT_ZEDGE_MODEL_ID,
   cloudRunDirect: false,
   babelfish: {
     enabled: true,
@@ -98,6 +104,63 @@ const DEFAULT_ZEDGE_CONFIG: ZedgeConfig = {
     requirePreviewForInPlaceRewrite: true,
   },
 };
+
+function normalizePreferredModel(modelId: string | null | undefined): string {
+  const normalized = modelId?.trim();
+  if (!normalized || isLegacyEdgeworkModelId(normalized)) {
+    return DEFAULT_ZEDGE_MODEL_ID;
+  }
+
+  return normalized;
+}
+
+function normalizeAllowedModels(modelIds: string[] | undefined): string[] {
+  const seen = new Set<string>();
+  const allowedModels: string[] = [];
+  const candidates = modelIds ?? DEFAULT_ZEDGE_CONFIG.computePool.allowedModels;
+
+  for (const rawModelId of candidates) {
+    const modelId = rawModelId.trim();
+    if (
+      modelId.length === 0 ||
+      isLegacyEdgeworkModelId(modelId) ||
+      seen.has(modelId)
+    ) {
+      continue;
+    }
+
+    seen.add(modelId);
+    allowedModels.push(modelId);
+  }
+
+  return allowedModels.length > 0
+    ? allowedModels
+    : [...DEFAULT_ZEDGE_CONFIG.computePool.allowedModels];
+}
+
+function getZedPreferredModelOverride(): string | null {
+  const selection = readZedModelSelection();
+  if (!selection) {
+    return null;
+  }
+
+  const availableModels = normalizeAllowedModels(selection.availableModels);
+  const selectedModel = normalizePreferredModel(selection.defaultModel);
+  if (availableModels.includes(selectedModel)) {
+    return selectedModel;
+  }
+
+  return availableModels[0] ?? selectedModel;
+}
+
+function getZedAllowedModelsOverride(): string[] | null {
+  const selection = readZedModelSelection();
+  if (!selection || selection.availableModels.length === 0) {
+    return null;
+  }
+
+  return normalizeAllowedModels(selection.availableModels);
+}
 
 function parsePortOverride(value: string | undefined): number | undefined {
   if (!value) return undefined;
@@ -134,10 +197,23 @@ function deriveDiscoveryPort(port: number): number {
 
 function mergeZedgeConfig(config: PartialZedgeConfig | undefined): ZedgeConfig {
   const port = config?.port ?? DEFAULT_ZEDGE_CONFIG.port;
+  const zedAllowedModels = getZedAllowedModelsOverride();
+  const computePool = {
+    ...DEFAULT_ZEDGE_CONFIG.computePool,
+    ...(config?.computePool ?? {}),
+    allowedModels:
+      zedAllowedModels ??
+      config?.computePool?.allowedModels ??
+      DEFAULT_ZEDGE_CONFIG.computePool.allowedModels,
+  };
+  const preferredModel =
+    getZedPreferredModelOverride() ?? normalizePreferredModel(config?.preferredModel);
+
   return {
     ...DEFAULT_ZEDGE_CONFIG,
     ...config,
     port,
+    preferredModel,
     listener: {
       ...DEFAULT_ZEDGE_CONFIG.listener,
       ...(config?.listener ?? {}),
@@ -147,8 +223,8 @@ function mergeZedgeConfig(config: PartialZedgeConfig | undefined): ZedgeConfig {
         config?.listener?.discoveryPort ?? deriveDiscoveryPort(port),
     },
     computePool: {
-      ...DEFAULT_ZEDGE_CONFIG.computePool,
-      ...(config?.computePool ?? {}),
+      ...computePool,
+      allowedModels: normalizeAllowedModels(computePool.allowedModels),
     },
     babelfish: {
       ...DEFAULT_ZEDGE_CONFIG.babelfish,
@@ -253,7 +329,7 @@ export function saveZedgeConfig(config: PartialZedgeConfig): ZedgeConfig {
 export function getApiKey(): string | null {
   // Prefer env var — check both EDGEWORK_API_TOKEN and ZEDGE_API_KEY
   const envKey = process.env.EDGEWORK_API_TOKEN ?? process.env.ZEDGE_API_KEY;
-  if (envKey) return envKey;
+  if (envKey && envKey !== LOCAL_ZED_PLACEHOLDER_API_KEY) return envKey;
   try {
     if (!existsSync(API_KEY_FILE)) return null;
     return readFileSync(API_KEY_FILE, 'utf-8').trim();

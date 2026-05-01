@@ -346,12 +346,12 @@ impl zed::Extension for EdgeAiExtension {
     ) -> Result<Option<ContextServerConfiguration>> {
         if context_server_id.as_ref() == "zedge-companion" {
             Ok(Some(ContextServerConfiguration {
-                installation_instructions: "First-time users: type **/zedge-setup** in Zed for the one-command install (macOS). Or from the repo root: `pnpm run zedge:launch-agent:install` so port 7331 stays up after reboot.\n\nThis context server runs `run-mcp-with-supervisor.sh` (starts the sidecar if health fails, then MCP). Zed Agent still uses OpenAI-compatible HTTP to 7331 directly — the launch agent covers both.\n".to_string(),
+                installation_instructions: "First-time users: type **/edge-setup** in Zed for the one-command install (macOS). Or from the repo root: `pnpm run zedge:launch-agent:install` so port 7331 stays up after reboot.\n\nThis context server runs `run-mcp-with-supervisor.sh` (starts the sidecar if health fails, then MCP). Zed Agent still uses OpenAI-compatible HTTP to 7331 directly — the launch agent covers both.\n".to_string(),
                 settings_schema: serde_json::json!({
                     "type": "object",
                     "properties": {
                         "port": { "type": "number", "default": 7331 },
-                        "preferredModel": { "type": "string", "default": "wasm-local" },
+                        "preferredModel": { "type": "string", "default": "gnosis-local" },
                         "cloudRunDirect": { "type": "boolean", "default": false },
                         "babelfish": {
                             "type": "object",
@@ -366,7 +366,7 @@ impl zed::Extension for EdgeAiExtension {
                 }).to_string(),
                 default_settings: serde_json::json!({
                     "port": 7331,
-                    "preferredModel": "wasm-local",
+                    "preferredModel": "gnosis-local",
                     "cloudRunDirect": false,
                     "babelfish": {
                         "enabled": true,

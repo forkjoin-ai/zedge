@@ -11,6 +11,7 @@ describe('Zed settings model sync', () => {
         "openai_compatible": {
           "Zedge": {
             "api_url": "http://localhost:7331/v1",
+            "api_key": "zedge-local",
             "available_models": [
               {
                 "name": "tinyllama-1.1b",
@@ -21,11 +22,17 @@ describe('Zed settings model sync', () => {
           },
         },
       },
+      "agent": {
+        "default_model": {
+          "provider": "Zedge",
+          "model": "wasm-local",
+          "enable_thinking": false,
+        },
+      },
     }`;
 
     const updatedText = updateZedSettingsModelCatalog(settingsText, [
-      'qwen-2.5-coder-7b',
-      'llama-70b',
+      'gnosis-local',
     ]);
 
     expect(updatedText).not.toBeNull();
@@ -35,14 +42,17 @@ describe('Zed settings model sync', () => {
       (parsed.language_models as Record<string, unknown>)
         .openai_compatible as Record<string, unknown>
     ).Zedge as {
+      api_key?: string;
       available_models: Array<{ name: string }>;
     };
+    const defaultModel = (parsed.agent as Record<string, unknown>)
+      .default_model as { model: string };
 
     expect(zedge.available_models.map((model) => model.name)).toEqual([
-      'wasm-local',
-      'qwen-2.5-coder-7b',
-      'llama-70b',
+      'gnosis-local',
     ]);
+    expect('api_key' in zedge).toBe(false);
+    expect(defaultModel.model).toBe('gnosis-local');
   });
 
   test('rewrites localhost:7331 to 127.0.0.1 so Zed does not hit ::1', () => {
@@ -63,7 +73,7 @@ describe('Zed settings model sync', () => {
     });
 
     const updatedText = updateZedSettingsModelCatalog(settingsText, [
-      'qwen-2.5-coder-7b',
+      'gnosis-local',
     ]);
 
     expect(updatedText).not.toBeNull();
@@ -94,8 +104,7 @@ describe('Zed settings model sync', () => {
     });
 
     const updatedText = updateZedSettingsModelCatalog(settingsText, [
-      'qwen-2.5-coder-7b',
-      'llama-70b',
+      'gnosis-local',
     ]);
 
     expect(updatedText).not.toBeNull();
@@ -109,8 +118,7 @@ describe('Zed settings model sync', () => {
     };
 
     expect(zedge.available_models.map((model) => model.name)).toEqual([
-      'qwen-2.5-coder-7b',
-      'llama-70b',
+      'gnosis-local',
     ]);
   });
 });

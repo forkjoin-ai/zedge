@@ -50,6 +50,9 @@ else
   ABS_ENTRY_PATH="${ENTRY_PATH}"
 fi
 
+: "${GNODE_FORCE_TSX:=1}"
+export GNODE_FORCE_TSX
+
 case "${ABS_ENTRY_PATH}" in
   "${WORKSPACE_ROOT}/open-source/zedge/companion/src/index.ts")
     NODE_RUNTIME="$(resolve_node_runtime)"

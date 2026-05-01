@@ -5,29 +5,25 @@ import {
 } from '../model-catalog.ts';
 
 describe('Zedge model catalog', () => {
-  test('wasm-local metadata reflects the verified TinyLlama fallback', () => {
-    const model = getKnownZedgeModel('wasm-local');
+  test('gnosis-local metadata reflects the Moonshine container fallback', () => {
+    const model = getKnownZedgeModel('gnosis-local');
     expect(model).toBeDefined();
-    expect(model?.displayName).toBe('Local WASM (TinyLlama 1.1B)');
-    expect(model?.maxTokens).toBe(2048);
-  });
-
-  test('includes llama-70b metadata', () => {
-    const model = getKnownZedgeModel('llama-70b');
-    expect(model).toBeDefined();
-    expect(model?.displayName).toBe('LLaMA 2 70B');
+    expect(model?.displayName).toBe('Gnosis Local (Moonshine)');
     expect(model?.maxTokens).toBe(4096);
   });
 
-  test('buildZedAvailableModels prepends wasm-local for localhost companion catalogs', () => {
-    const models = buildZedAvailableModels(['qwen-2.5-coder-7b', 'llama-70b'], {
+  test('includes the docker-compose TinyLlama model metadata', () => {
+    const model = getKnownZedgeModel('tinyllama-1.1b');
+    expect(model).toBeDefined();
+    expect(model?.displayName).toBe('TinyLlama 1.1B (Moonshine)');
+    expect(model?.maxTokens).toBe(2048);
+  });
+
+  test('buildZedAvailableModels does not reintroduce the retired wasm model', () => {
+    const models = buildZedAvailableModels(['gnosis-local'], {
       includeLocalWasm: true,
     });
 
-    expect(models.map((model) => model.name)).toEqual([
-      'wasm-local',
-      'qwen-2.5-coder-7b',
-      'llama-70b',
-    ]);
+    expect(models.map((model) => model.name)).toEqual(['gnosis-local']);
   });
 });

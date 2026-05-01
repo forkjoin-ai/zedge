@@ -23,6 +23,7 @@ let restartInFlight: Promise<boolean> | null = null;
 let suppressExitRestart = false;
 let shuttingDown = false;
 let healthCheckInFlight = false;
+const COMPANION_STARTUP_ATTEMPTS = 120;
 
 function getCompanionEntry(): string {
   // pnpm start runs from companion/ dir. Resolve relative to cwd.
@@ -55,7 +56,9 @@ async function isCompanionAlive(): Promise<boolean> {
   }
 }
 
-async function waitForCompanion(maxAttempts = 20): Promise<boolean> {
+async function waitForCompanion(
+  maxAttempts = COMPANION_STARTUP_ATTEMPTS
+): Promise<boolean> {
   for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
     if (await isCompanionAlive()) {
       return true;
@@ -283,12 +286,17 @@ async function runSupervisor(): Promise<void> {
 
 let shutdownResolve: (() => void) | null = null;
 
-export async function main(): Promise<void> {
+async function runSupervisorEntry(): Promise<number> {
   registerShutdownHandlers();
   await runSupervisor();
   await new Promise<void>((resolve) => {
     shutdownResolve = resolve;
   });
+  return 0;
+}
+
+export async function main(): Promise<number> {
+  return await runSupervisorEntry();
 }
 
 function registerShutdownHandlers(): void {

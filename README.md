@@ -23,9 +23,9 @@ pnpm run zedge:launch-agent:install
 
 That registers a launch agent with **KeepAlive**, so the sidecar comes back after reboots and you do not need to remember commands.
 
-**Then in Zed:** set the OpenAI-compatible base URL to `http://127.0.0.1:7331/v1` (**not** `http://localhost:7331/...` — on many Macs `localhost` resolves to IPv6 `::1` while the sidecar listens on IPv4, so Zed shows “error sending request”).
+**Then in Zed:** set the OpenAI-compatible base URL to `http://127.0.0.1:7331/v1` (**not** `http://localhost:7331/...` — on many Macs `localhost` resolves to IPv6 `::1` while the sidecar listens on IPv4, so Zed shows “error sending request”). Moonshine does not require authentication; Zed's OpenAI-compatible client still requires a provider key value, so the launch-agent install seeds a non-secret `ZEDGE_API_KEY=zedge-local` environment value for Zed.
 
-**Lost?** In Zed, run slash command **`/zedge-setup`** — same steps, copy-paste friendly.
+**Lost?** In Zed, run slash command **`/edge-setup`** — same steps, copy-paste friendly.
 
 After the companion starts, it rewrites `localhost:7331` to `127.0.0.1` in your Zed settings when it syncs the model list — or change it once in **Zed → Settings → JSON** yourself.
 
@@ -55,8 +55,8 @@ pnpm run gnode -- run open-source/zedge/companion/src/companion-supervisor.ts --
 2. **Companion sidecar** in `companion/`
    - public listener on `localhost:7331` now defaults to a native `gnosis-uring` proxy, with the x-gnosis app shell bound on loopback behind it
    - handles inference routing, collaboration bridges, compute pooling, and local integration work
-   - syncs Zed's `openai_compatible.Zedge.available_models` list from the live companion catalog at startup so the picker tracks current edge and local models
-   - defaults `preferredModel` to the selectable `wasm-local` path and runs an Aether-backed local fallback path for TinyLlama chat generation and MiniLM embeddings before dropping to echo
+   - syncs Zed's `openai_compatible.Zedge.available_models` list from the live Moonshine catalog at startup so the picker tracks the container instead of stale Edgework options
+   - defaults `preferredModel` to the selectable `gnosis-local` Moonshine path before dropping to echo
    - now exposes Babelfish polyglot translation/explanation over the Gnosis language registry
    - now exposes first-class `gnot` workspace discovery plus `doctor` / `next` / `status` deploy-shell diagnostics for local `open-source/gnot` apps
 

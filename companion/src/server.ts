@@ -38,7 +38,6 @@ import {
   handlePeerRequest,
 } from './p2p-mesh.ts';
 import { login, logout, whoami } from './auth.ts';
-import { hasCloudRunCoordinators } from './coordinator-urls.ts';
 import {
   getTierHealth,
   getProbeResults,
@@ -342,6 +341,7 @@ function isLocalOnlyModelId(model: string): boolean {
     normalized.startsWith('wasm-local') ||
     normalized.startsWith('echo-local') ||
     normalized.startsWith('local-only') ||
+    normalized === 'gnosis-local' ||
     normalized === 'tinyllama-1.1b' ||
     (normalized.includes('tinyllama') && normalized.includes('local'))
   );
@@ -587,8 +587,10 @@ export async function handleWebRequest(req: Request): Promise<Response> {
     const config = getZedgeConfig();
     const pool = getPoolStatus();
     const mesh = getMeshStatus();
-    const cloudRunDirectEnabled =
-      config.cloudRunDirect && hasCloudRunCoordinators();
+    const moonshineModels = (await getModels({
+      refresh: true,
+      refreshTimeoutMs: 500,
+    })).map((model) => model.id);
     return jsonResponse({
       status: 'ok',
       version: '2.0.0',
@@ -612,17 +614,17 @@ export async function handleWebRequest(req: Request): Promise<Response> {
         totalMemoryMb: mesh.totalCapacity.totalMemoryMb,
       },
       inference: {
-        tiers: cloudRunDirectEnabled
-          ? ['mesh', 'edge', 'cloudrun', 'wasm', 'echo']
-          : ['mesh', 'edge', 'wasm', 'echo'],
+        tiers: ['moonshine', 'echo'],
+        moonshineAvailable: moonshineModels.length > 0,
+        moonshineModels,
         meshAvailable: mesh.running && mesh.peers.length > 0,
-        edgeAvailable: true,
-        cloudRunDirect: cloudRunDirectEnabled,
-        wasmLocal: true,
+        edgeAvailable: false,
+        cloudRunDirect: false,
+        wasmLocal: false,
         localRuntime: {
           pid: process.pid,
-          chatStatus: aetherLocalRuntime.chatStatus,
-          chatModel: aetherLocalRuntime.modelId,
+          chatStatus: 'disabled',
+          chatModel: config.preferredModel,
           embeddingModel: aetherLocalRuntime.localEmbeddingModelId,
           activity: getOwnedCompanionActivity(process.pid),
         },
@@ -1444,8 +1446,9 @@ export async function handleWebRequest(req: Request): Promise<Response> {
         : content;
 
       const encoder = new TextEncoder();
-      // Split on word boundaries, preserving whitespace
-      const tokens = sseContent.match(/\S+\s*/g) ?? [sseContent];
+      // Split on word boundaries with leading whitespace so clients that trim
+      // trailing chunk text still render normal word gaps.
+      const tokens = sseContent.match(/\s*\S+/g) ?? [sseContent];
 
       const sseStream = new ReadableStream<Uint8Array>({
         async start(controller) {

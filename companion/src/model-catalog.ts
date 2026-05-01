@@ -11,120 +11,20 @@ export interface ZedAvailableModel {
   max_tokens: number;
 }
 
+export const DEFAULT_ZEDGE_MODEL_ID = 'gnosis-local';
+
 const KNOWN_ZEDGE_MODELS: KnownZedgeModel[] = [
   {
-    id: 'wasm-local',
-    displayName: 'Local WASM (TinyLlama 1.1B)',
-    maxTokens: 2048,
-    ownedBy: 'edgework-wasm',
-  },
-  {
-    id: 'qwen-2.5-coder-7b',
-    displayName: 'Qwen 2.5 Coder 7B',
+    id: DEFAULT_ZEDGE_MODEL_ID,
+    displayName: 'Gnosis Local (Moonshine)',
     maxTokens: 4096,
-    ownedBy: 'edgework',
-  },
-  {
-    id: 'qwen-edit',
-    displayName: 'Qwen 2.5 Coder 7B (Edit)',
-    maxTokens: 4096,
-    ownedBy: 'edgework',
-  },
-  {
-    id: 'mistral-7b',
-    displayName: 'Mistral 7B',
-    maxTokens: 4096,
-    ownedBy: 'edgework',
-  },
-  {
-    id: 'deepseek-r1-7b',
-    displayName: 'DeepSeek R1 7B',
-    maxTokens: 4096,
-    ownedBy: 'edgework',
-  },
-  {
-    id: 'deepseek-r1-distill-qwen-7b',
-    displayName: 'DeepSeek R1 7B (Distill)',
-    maxTokens: 4096,
-    ownedBy: 'edgework',
-  },
-  {
-    id: 'llama-70b',
-    displayName: 'LLaMA 2 70B',
-    maxTokens: 4096,
-    ownedBy: 'edgework',
-  },
-  {
-    id: 'glm-4-9b',
-    displayName: 'GLM-4 9B',
-    maxTokens: 4096,
-    ownedBy: 'edgework',
-  },
-  {
-    id: 'step-3.5-flash',
-    displayName: 'Step 3.5 Flash',
-    maxTokens: 4096,
-    ownedBy: 'edgework',
-  },
-  {
-    id: 'gemma3-4b-it',
-    displayName: 'Gemma 3 4B IT',
-    maxTokens: 4096,
-    ownedBy: 'edgework',
-  },
-  {
-    id: 'nanbeige-3b',
-    displayName: 'Nanbeige 3B',
-    maxTokens: 4096,
-    ownedBy: 'edgework',
-  },
-  {
-    id: 'gemma3-1b-it',
-    displayName: 'Gemma 3 1B IT',
-    maxTokens: 2048,
-    ownedBy: 'edgework',
+    ownedBy: 'gnosis',
   },
   {
     id: 'tinyllama-1.1b',
-    displayName: 'TinyLlama 1.1B (Fast)',
+    displayName: 'TinyLlama 1.1B (Moonshine)',
     maxTokens: 2048,
-    ownedBy: 'edgework',
-  },
-  {
-    id: 'deepseek-r1-1.5b',
-    displayName: 'DeepSeek R1 1.5B',
-    maxTokens: 2048,
-    ownedBy: 'edgework',
-  },
-  {
-    id: 'deepseek-r1-distill-qwen-1.5b',
-    displayName: 'DeepSeek R1 1.5B (Distill)',
-    maxTokens: 2048,
-    ownedBy: 'edgework',
-  },
-  {
-    id: 'mamba-2.8b',
-    displayName: 'Mamba 2.8B',
-    maxTokens: 4096,
-    ownedBy: 'edgework',
-  },
-  {
-    id: 'smollm2-360m',
-    displayName: 'SmolLM2 360M',
-    maxTokens: 1024,
-    ownedBy: 'edgework',
-  },
-  {
-    id: 'cog-360m',
-    displayName: 'Cog 360M',
-    maxTokens: 1024,
-    ownedBy: 'edgework',
-  },
-  {
-    id: 'cyrano-360m',
-    displayName: 'Cyrano 360M',
-    maxTokens: 1024,
-    ownedBy: 'edgework',
+    ownedBy: 'gnosis',
   },
 ];
 
@@ -132,36 +32,76 @@ const KNOWN_ZEDGE_MODELS_BY_ID = new Map(
   KNOWN_ZEDGE_MODELS.map((model) => [model.id, model])
 );
 
-const LEGACY_MODEL_IDS = new Set([
-  'llama-70b',
+const LEGACY_EDGEWORK_MODEL_IDS = new Set([
+  'wasm-local',
+  'qwen-2.5-coder-7b',
+  'qwen-edit',
   'mistral-7b',
+  'deepseek-r1-7b',
+  'deepseek-r1-distill-qwen-7b',
+  'llama-70b',
   'glm-4-9b',
   'step-3.5-flash',
+  'gemma3-4b-it',
   'nanbeige-3b',
+  'gemma3-1b-it',
+  'deepseek-r1-1.5b',
+  'deepseek-r1-distill-qwen-1.5b',
   'mamba-2.8b',
-  'tinyllama-1.1b',
   'smollm2-360m',
   'cog-360m',
   'cyrano-360m',
 ]);
 
-export function isModelVisible(modelId: string): boolean {
+/** Returns whether a model id belongs to the retired Edgework picker catalog. */
+export function isLegacyEdgeworkModelId(modelId: string): boolean {
+  return LEGACY_EDGEWORK_MODEL_IDS.has(modelId);
+}
+
+/** Reads the optional comma-separated model allowlist used for local overrides. */
+function getExplicitModelWhitelist(): Set<string> | null {
   const whitelist = process.env.ZEDGE_MODELS?.split(',').map((id) => id.trim());
   if (whitelist && whitelist.length > 0 && whitelist[0] !== '') {
-    return whitelist.includes(modelId);
+    return new Set(whitelist);
   }
 
+  return null;
+}
+
+/** Returns whether a fallback catalog model should be exposed by default. */
+export function isModelVisible(modelId: string): boolean {
+  const whitelist = getExplicitModelWhitelist();
+  if (whitelist) {
+    return whitelist.has(modelId);
+  }
+
+  if (shouldShowAllModels()) {
+    return true;
+  }
+
+  return !isLegacyEdgeworkModelId(modelId);
+}
+
+/** Returns whether a model reported by the live Moonshine server can be exposed. */
+export function isLiveModelVisible(modelId: string): boolean {
+  const whitelist = getExplicitModelWhitelist();
+  if (whitelist) {
+    return whitelist.has(modelId);
+  }
+
+  return modelId.trim().length > 0;
+}
+
+/** Returns whether retired fallback entries should be exposed for debugging. */
+export function shouldShowAllModels(): boolean {
   const showAll =
     process.env.ZEDGE_ALL_MODELS === '1' ||
     process.env.ZEDGE_ALL_MODELS === 'true';
 
-  if (showAll) {
-    return true;
-  }
-
-  return !LEGACY_MODEL_IDS.has(modelId);
+  return showAll;
 }
 
+/** Converts an unknown provider model id into readable Zed picker text. */
 function humanizeModelId(id: string): string {
   return id
     .split('-')
@@ -171,30 +111,28 @@ function humanizeModelId(id: string): string {
     .join(' ');
 }
 
+/** Returns the built-in Moonshine fallback catalog after visibility filtering. */
 export function getKnownZedgeModels(): KnownZedgeModel[] {
   return KNOWN_ZEDGE_MODELS.filter((model) => isModelVisible(model.id));
 }
 
+/** Returns fallback models suitable for OpenAI-compatible settings snippets. */
 export function getKnownRemoteZedgeModels(): KnownZedgeModel[] {
-  return KNOWN_ZEDGE_MODELS.filter(
-    (model) => model.id !== 'wasm-local' && isModelVisible(model.id)
-  );
+  return getKnownZedgeModels();
 }
 
+/** Finds metadata for a known fallback model id. */
 export function getKnownZedgeModel(id: string): KnownZedgeModel | undefined {
   return KNOWN_ZEDGE_MODELS_BY_ID.get(id);
 }
 
+/** Builds the model metadata shape that Zed expects in settings.json. */
 export function buildZedAvailableModels(
   modelIds: Iterable<string>,
-  options: { includeLocalWasm?: boolean } = {}
+  _options: { includeLocalWasm?: boolean } = {}
 ): ZedAvailableModel[] {
   const seen = new Set<string>();
   const orderedIds: string[] = [];
-
-  if (options.includeLocalWasm === true) {
-    orderedIds.push('wasm-local');
-  }
 
   for (const id of modelIds) {
     orderedIds.push(id);

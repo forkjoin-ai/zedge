@@ -1,6 +1,6 @@
 import { describe, test, expect } from '@a0n/gnosis/test';
 import { spawnSync } from 'child_process';
-import { mkdtempSync, mkdirSync } from 'fs';
+import { mkdtempSync, mkdirSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
 import { fileURLToPath } from 'url';
@@ -49,7 +49,7 @@ describe('Zedge Config', () => {
     expect(config.babelfish).toHaveProperty('requirePreviewForInPlaceRewrite');
   });
 
-  test('default preferred model is wasm-local', async () => {
+  test('default preferred model is gnosis-local', async () => {
     const tempHome = mkdtempSync(join(tmpdir(), 'zedge-default-model-test-'));
     mkdirSync(join(tempHome, '.edgework'), { recursive: true });
     const configModulePath = fileURLToPath(
@@ -81,8 +81,114 @@ describe('Zedge Config', () => {
       preferredModel: string;
       cloudRunDirect: boolean;
     };
-    expect(config.preferredModel).toBe('wasm-local');
+    expect(config.preferredModel).toBe('gnosis-local');
     expect(config.cloudRunDirect).toBe(false);
+  });
+
+  test('legacy persisted preferred model falls back to gnosis-local', async () => {
+    const tempHome = mkdtempSync(join(tmpdir(), 'zedge-legacy-model-test-'));
+    const edgeworkDir = join(tempHome, '.edgework');
+    mkdirSync(edgeworkDir, { recursive: true });
+    writeFileSync(
+      join(edgeworkDir, 'zedge.json'),
+      JSON.stringify({ preferredModel: 'qwen-2.5-coder-7b' })
+    );
+    const configModulePath = fileURLToPath(
+      new URL('../config.ts', import.meta.url)
+    );
+    const script = `
+      (async () => {
+        const { getZedgeConfig } = await import(${JSON.stringify(
+          configModulePath
+        )});
+        process.stdout.write(JSON.stringify(getZedgeConfig()));
+      })().catch((error) => {
+        console.error(error);
+        process.exit(1);
+      });
+    `;
+    const result = spawnSync(process.execPath, ['-e', script], {
+      env: {
+        ...process.env,
+        HOME: tempHome,
+      },
+      encoding: 'utf-8',
+    });
+
+    expect(result.status).toBe(0);
+    expect(result.stderr).toBe('');
+
+    const config = JSON.parse(result.stdout) as {
+      preferredModel: string;
+    };
+    expect(config.preferredModel).toBe('gnosis-local');
+  });
+
+  test('Zed settings override stale edgework model config', async () => {
+    const tempHome = mkdtempSync(join(tmpdir(), 'zedge-zed-source-test-'));
+    mkdirSync(join(tempHome, '.edgework'), { recursive: true });
+    mkdirSync(join(tempHome, '.config', 'zed'), { recursive: true });
+    writeFileSync(
+      join(tempHome, '.edgework', 'zedge.json'),
+      JSON.stringify({ preferredModel: 'qwen-2.5-coder-7b' })
+    );
+    writeFileSync(
+      join(tempHome, '.config', 'zed', 'settings.json'),
+      JSON.stringify({
+        agent: {
+          default_model: {
+            provider: 'Zedge',
+            model: 'tinyllama-1.1b',
+          },
+        },
+        language_models: {
+          openai_compatible: {
+            Zedge: {
+              available_models: [
+                {
+                  name: 'tinyllama-1.1b',
+                  display_name: 'TinyLlama 1.1B (Moonshine)',
+                  max_tokens: 2048,
+                },
+              ],
+            },
+          },
+        },
+      })
+    );
+    const configModulePath = fileURLToPath(
+      new URL('../config.ts', import.meta.url)
+    );
+    const script = `
+      (async () => {
+        const { getZedgeConfig } = await import(${JSON.stringify(
+          configModulePath
+        )});
+        process.stdout.write(JSON.stringify(getZedgeConfig()));
+      })().catch((error) => {
+        console.error(error);
+        process.exit(1);
+      });
+    `;
+    const result = spawnSync(process.execPath, ['-e', script], {
+      env: {
+        ...process.env,
+        HOME: tempHome,
+      },
+      encoding: 'utf-8',
+    });
+
+    expect(result.status).toBe(0);
+    expect(result.stderr).toBe('');
+
+    const config = JSON.parse(result.stdout) as {
+      preferredModel: string;
+      computePool: {
+        allowedModels: string[];
+      };
+    };
+    expect(config.preferredModel).toBe('tinyllama-1.1b');
+    expect(config.computePool.allowedModels).toEqual(['tinyllama-1.1b']);
   });
 
   test('env overrides can force companion port and listener mode', async () => {

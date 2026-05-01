@@ -44,6 +44,7 @@ PLIST_PATH="${LAUNCH_AGENT_DIR}/${LABEL}.plist"
 OUT_LOG="/tmp/zedge-sidecar-launchd.out.log"
 ERR_LOG="/tmp/zedge-sidecar-launchd.err.log"
 DOMAIN_STATE="${HOME}/.edgework/zedge-launchd-domain"
+LOCAL_ZED_API_KEY="${ZEDGE_LOCAL_API_KEY:-zedge-local}"
 
 escape_xml() {
   printf '%s' "$1" | sed -e 's/&/\&amp;/g' -e 's/</\&lt;/g' -e 's/>/\&gt;/g'
@@ -97,6 +98,24 @@ detect_loaded_domain() {
 persist_domain() {
   mkdir -p "$(dirname "${DOMAIN_STATE}")"
   printf '%s\n' "$1" >"${DOMAIN_STATE}"
+}
+
+set_zed_openai_compatible_env() {
+  existing="$(launchctl getenv ZEDGE_API_KEY 2>/dev/null || true)"
+  if [ -n "${existing}" ]; then
+    echo "zedge: leaving existing ZEDGE_API_KEY launch environment in place"
+    return 0
+  fi
+
+  launchctl setenv ZEDGE_API_KEY "${LOCAL_ZED_API_KEY}" >/dev/null 2>&1 || true
+  echo "zedge: set ZEDGE_API_KEY=${LOCAL_ZED_API_KEY} for Zed's OpenAI-compatible local provider"
+}
+
+unset_zed_openai_compatible_env_if_placeholder() {
+  existing="$(launchctl getenv ZEDGE_API_KEY 2>/dev/null || true)"
+  if [ "${existing}" = "${LOCAL_ZED_API_KEY}" ]; then
+    launchctl unsetenv ZEDGE_API_KEY >/dev/null 2>&1 || true
+  fi
 }
 
 # SERVICE_TARGET and DOMAIN — set after resolve_service_target
@@ -166,6 +185,8 @@ write_plist() {
     <string>$(escape_xml "${HOME}")</string>
     <key>AEON_ROOT</key>
     <string>${WD_XML}</string>
+    <key>GNODE_FORCE_TSX</key>
+    <string>1</string>
     <key>PATH</key>
     <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
   </dict>
@@ -310,24 +331,42 @@ print_status() {
   echo
 }
 
+wait_for_health() {
+  attempts="${1:-60}"
+  attempt=1
+  while [ "${attempt}" -le "${attempts}" ]; do
+    if curl -fsS -m 2 "http://127.0.0.1:7331/health" >/dev/null 2>&1; then
+      return 0
+    fi
+    attempt=$((attempt + 1))
+    sleep 1
+  done
+  echo "zedge: companion did not become healthy after ${attempts}s" >&2
+  return 1
+}
+
 case "${ACTION}" in
   install)
+    set_zed_openai_compatible_env
     write_plist
     bootstrap_service
-    sleep 2
+    wait_for_health || true
     print_status
     ;;
   uninstall)
     bootout_all
+    unset_zed_openai_compatible_env_if_placeholder
     launchctl unload -w "${PLIST_PATH}" >/dev/null 2>&1 || true
     rm -f "${DOMAIN_STATE}"
     rm -f "${PLIST_PATH}"
     echo "zedge: removed ${PLIST_PATH}"
     ;;
   start)
+    set_zed_openai_compatible_env
     ensure_loaded
     resolve_service_target || true
     launchctl kickstart -k "${SERVICE_TARGET}"
+    wait_for_health || true
     print_status
     ;;
   stop)
@@ -347,9 +386,10 @@ case "${ACTION}" in
     kill_tcp_listener_port 7331
     sleep 2
     if [ -f "${PLIST_PATH}" ]; then
+      set_zed_openai_compatible_env
       write_plist
       bootstrap_service
-      sleep 2
+      wait_for_health || true
       print_status
     else
       echo "zedge: no launch agent at ${PLIST_PATH} — nothing to relaunch. Install with: pnpm run zedge:launch-agent:install"

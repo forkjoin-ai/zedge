@@ -233,7 +233,7 @@ pub fn run_models() -> Result<SlashCommandOutput, String> {
                 }
 
                 parts.push("\n### Model Details\n".to_string());
-                for m in provider::MODELS {
+                for m in provider::visible_models() {
                     parts.push(format!(
                         "- **{}** (`{}`) — max {} tokens",
                         m.display_name, m.id, m.max_tokens
@@ -245,8 +245,8 @@ pub fn run_models() -> Result<SlashCommandOutput, String> {
         }
         Err(e) => {
             parts.push(format!("**Companion offline**: {e}\n"));
-            parts.push("**Tip:** macOS one-time install: `pnpm run zedge:launch-agent:install` from repo root, or **`/zedge-setup`**.\n\nBuilt-in model list:\n".to_string());
-            for m in provider::MODELS {
+            parts.push("**Tip:** macOS one-time install: `pnpm run zedge:launch-agent:install` from repo root, or **`/edge-setup`**.\n\nBuilt-in model list:\n".to_string());
+            for m in provider::visible_models() {
                 parts.push(format!("- **{}** (`{}`)", m.display_name, m.id));
             }
         }
