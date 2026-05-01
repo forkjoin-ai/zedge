@@ -5,6 +5,7 @@ Parent: [Open Source](../README.md)
 Children:
 - [Companion Sidecar](./companion/README.md)
 - [Scripts](./scripts/README.md)
+- [Snippets](./snippets/README.md)
 
 Zedge brings AI-assisted coding to [Zed](https://zed.dev) through a local extension and a local companion sidecar.
 

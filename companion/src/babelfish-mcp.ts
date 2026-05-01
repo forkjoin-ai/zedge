@@ -95,6 +95,28 @@ export function getBabelfishMcpTools(): McpToolDefinition[] {
         required: ['scope'],
       },
     },
+    {
+      name: 'zedge_babelfish_gnarly',
+      description:
+        'Compile, preview fastest candidates for, or create a .gnarly multilingual GG-family source file',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          action: {
+            type: 'string',
+            enum: ['compile', 'fastest', 'from'],
+          },
+          scope: { type: 'object' },
+          candidateLanguages: {
+            type: 'array',
+            items: { type: 'string' },
+          },
+          maxRecommendations: { type: 'number' },
+          name: { type: 'string' },
+        },
+        required: ['action', 'scope'],
+      },
+    },
   ];
 }
 
@@ -132,6 +154,19 @@ export async function callBabelfishMcpTool(
       return postJson(companionBase, '/babelfish/text/translate', args);
     case 'zedge_babelfish_explain':
       return postJson(companionBase, '/babelfish/explain', args);
+    case 'zedge_babelfish_gnarly': {
+      const action = args.action;
+      if (action === 'compile') {
+        return postJson(companionBase, '/babelfish/gnarly/compile', args);
+      }
+      if (action === 'fastest') {
+        return postJson(companionBase, '/babelfish/gnarly/fastest', args);
+      }
+      if (action === 'from') {
+        return postJson(companionBase, '/babelfish/gnarly/from', args);
+      }
+      throw new Error(`Unknown Gnarly action: ${String(action)}`);
+    }
     case 'zedge_babelfish_sync_watch':
       return postJson(companionBase, '/babelfish/sync-watch', args);
     default:

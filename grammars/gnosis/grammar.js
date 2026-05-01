@@ -1,5 +1,5 @@
 /**
- * Tree-sitter grammar for Gnosis (.gg / .ggl)
+ * Tree-sitter grammar for Gnosis (.gg / .ggl / .gnarly)
  *
  * Gnosis is a graph topology language where:
  * - Nodes are declared as: (name: Type { prop: 'value' })
@@ -17,7 +17,38 @@ module.exports = grammar({
     source_file: ($) => repeat($._statement),
 
     _statement: ($) =>
-      choice($.node_declaration, $.edge_declaration, $.imperative_statement),
+      choice(
+        $.gnarly_metadata,
+        $.implementation_block,
+        $.node_declaration,
+        $.edge_declaration,
+        $.imperative_statement
+      ),
+
+    gnarly_metadata: ($) =>
+      seq(
+        'gnarly',
+        optional($.string),
+        '{',
+        repeat(choice($.metadata_assignment, $.comment)),
+        '}'
+      ),
+
+    metadata_assignment: ($) =>
+      seq($.identifier, '=', choice($.string, $.identifier, $.array)),
+
+    implementation_block: ($) =>
+      seq(
+        'impl',
+        $.identifier,
+        'in',
+        $.identifier,
+        '{',
+        repeat(choice($.implementation_text, $.comment)),
+        '}'
+      ),
+
+    implementation_text: ($) => /[^{}]+/,
 
     // Node declaration: (name: Type { prop: 'value', prop2: 'value2' })
     node_declaration: ($) =>
@@ -102,7 +133,14 @@ module.exports = grammar({
 
     property: ($) => seq($.identifier, ':', $._value),
 
-    _value: ($) => choice($.string, $.number, $.identifier),
+    _value: ($) => choice($.string, $.number, $.array, $.identifier),
+
+    array: ($) =>
+      seq(
+        '[',
+        optional(seq($._value, repeat(seq(',', $._value)), optional(','))),
+        ']'
+      ),
 
     // String: 'text' or "text"
     string: ($) => choice(seq("'", /[^']*/, "'"), seq('"', /[^"]*/, '"')),

@@ -1,8 +1,11 @@
 import { getZedgeConfig } from './config.ts';
 import {
   applyBabelfishCodePreview,
+  compileBabelfishGnarly,
+  createGnarlyFromBabelfishScope,
   explainBabelfishScope,
   getBabelfishCapabilities,
+  previewBabelfishGnarlyFastest,
   previewBabelfishCode,
   translateBabelfishText,
 } from './babelfish.ts';
@@ -62,6 +65,13 @@ interface BabelfishExplainRequestBody {
   };
   audienceLanguage?: string;
   includeGg?: boolean;
+}
+
+interface BabelfishGnarlyRequestBody {
+  scope?: BabelfishCodePreviewRequestBody['scope'];
+  candidateLanguages?: string[];
+  maxRecommendations?: number;
+  name?: string;
 }
 
 interface BabelfishSyncWatchRequestBody {
@@ -196,6 +206,69 @@ export async function handleBabelfishRequest(
         {
           error:
             err instanceof Error ? err.message : 'Babelfish explain failed',
+        },
+        400
+      );
+    }
+  }
+
+  if (path === '/babelfish/gnarly/compile' && req.method === 'POST') {
+    try {
+      const body = (await req.json()) as BabelfishGnarlyRequestBody;
+      if (!body.scope) return jsonResponse({ error: 'scope is required' }, 400);
+      const result = await compileBabelfishGnarly({
+        scope: body.scope,
+        candidateLanguages: body.candidateLanguages,
+        maxRecommendations: body.maxRecommendations,
+      });
+      return jsonResponse(result);
+    } catch (err) {
+      return jsonResponse(
+        {
+          error:
+            err instanceof Error ? err.message : 'Gnarly compile failed',
+        },
+        400
+      );
+    }
+  }
+
+  if (path === '/babelfish/gnarly/fastest' && req.method === 'POST') {
+    try {
+      const body = (await req.json()) as BabelfishGnarlyRequestBody;
+      if (!body.scope) return jsonResponse({ error: 'scope is required' }, 400);
+      const result = await previewBabelfishGnarlyFastest({
+        scope: body.scope,
+        candidateLanguages: body.candidateLanguages,
+        maxRecommendations: body.maxRecommendations,
+      });
+      return jsonResponse(result);
+    } catch (err) {
+      return jsonResponse(
+        {
+          error:
+            err instanceof Error ? err.message : 'Gnarly fastest preview failed',
+        },
+        400
+      );
+    }
+  }
+
+  if (path === '/babelfish/gnarly/from' && req.method === 'POST') {
+    try {
+      const body = (await req.json()) as BabelfishGnarlyRequestBody;
+      if (!body.scope) return jsonResponse({ error: 'scope is required' }, 400);
+      const result = await createGnarlyFromBabelfishScope({
+        scope: body.scope,
+        name: body.name,
+        candidateLanguages: body.candidateLanguages,
+      });
+      return jsonResponse(result);
+    } catch (err) {
+      return jsonResponse(
+        {
+          error:
+            err instanceof Error ? err.message : 'Gnarly creation failed',
         },
         400
       );

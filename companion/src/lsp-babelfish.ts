@@ -55,6 +55,7 @@ const EXTENSION_TO_LANGUAGE: Record<string, string> = {
   '.ex': 'elixir',
   '.exs': 'elixir',
   '.zig': 'zig',
+  '.gnarly': 'gnarly',
 };
 
 export function detectBabelfishLanguageForUri(uri: string): string | null {
@@ -95,6 +96,47 @@ export function buildBabelfishCodeActions(
     kind: 'file',
     filePath: uri.startsWith('file://') ? uri.slice(7) : uri,
   };
+
+  if (language === 'gnarly') {
+    return [
+      {
+        title: 'Gnarly: Compile',
+        kind: 'source',
+        command: {
+          title: 'Gnarly: Compile',
+          command: 'zedge.gnarly.compile',
+          arguments: [{ scope }],
+        },
+      },
+      {
+        title: 'Gnarly: Preview Fastest Topology',
+        kind: 'refactor.rewrite',
+        command: {
+          title: 'Gnarly: Preview Fastest Topology',
+          command: 'zedge.gnarly.fastest',
+          arguments: [{ scope }],
+        },
+      },
+      {
+        title: 'Gnarly: Generate Missing Implementations',
+        kind: 'refactor.extract',
+        command: {
+          title: 'Gnarly: Generate Missing Implementations',
+          command: 'zedge.gnarly.generateMissing',
+          arguments: [{ scope }],
+        },
+      },
+      {
+        title: 'Gnarly: Explain Cross-Language Path',
+        kind: 'refactor.extract',
+        command: {
+          title: 'Gnarly: Explain Cross-Language Path',
+          command: 'zedge.gnarly.explainPath',
+          arguments: [{ scope, audienceLanguage: defaultHumanLanguage }],
+        },
+      },
+    ];
+  }
 
   return [
     {

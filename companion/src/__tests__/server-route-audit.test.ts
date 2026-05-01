@@ -461,6 +461,28 @@ mock.module('../tts-relay.ts', () => ({
   }),
 }));
 
+mock.module('../prefill-window.ts', () => ({
+  extractPrefillWindowId: (headers: Headers, body: unknown) =>
+    headers.get('X-Zedge-Prefill-Window') ??
+    (body as { _zedge?: { prefill_window_id?: string } })?._zedge
+      ?.prefill_window_id,
+  handlePrefillWindowRequest: (path: string, req: Request) =>
+    jsonResponse({
+      id: path.split('/').pop() === 'windows' ? 'prefill-test' : path.split('/').pop(),
+      state: req.method === 'DELETE' ? 'aborted' : 'ready',
+      warmed_token_count: 4,
+      expires_at: Date.now() + 15_000,
+      last_miss_reason: null,
+    }),
+  requestWithPrefillWindow: (
+    request: Record<string, unknown>,
+    prefillWindowId?: string
+  ) =>
+    prefillWindowId
+      ? { ...request, prefillWindowId }
+      : request,
+}));
+
 mock.module('../local-mcp.ts', () => ({
   handleLocalMcpJsonRpc: async (request: { id?: string | number }) => ({
     jsonrpc: '2.0',
@@ -932,8 +954,8 @@ type RouteCase = {
 
 function createRequest(
   path: string,
-  init: {
-    method?: 'GET' | 'POST' | 'DELETE' | 'OPTIONS';
+	  init: {
+	    method?: 'GET' | 'POST' | 'PATCH' | 'DELETE' | 'OPTIONS';
     json?: unknown;
     headers?: Record<string, string>;
     body?: BodyInit;
@@ -997,7 +1019,7 @@ function deleteCase(
 function prefixCase(
   key: string,
   path: string,
-  method: 'GET' | 'POST' | 'DELETE',
+  method: 'GET' | 'POST' | 'PATCH' | 'DELETE',
   expectedStatus: number | number[],
   json?: unknown,
   verify?: RouteCase['verify']
@@ -1198,6 +1220,24 @@ const routeCases: RouteCase[] = [
   postCase('/tts/config', 200, { enabled: true, mode: 'host' }),
   postCase('/tts/speak', 200, { input: 'hello moonshine' }),
   postCase('/tts/preview', 200, { input: 'hello moonshine' }),
+  postCase('/prefill/windows', 200, {
+    model: 'tinyllama-1.1b',
+    messages: [{ role: 'user', content: 'draft' }],
+  }),
+  prefixCase('GET /prefill/windows/*', '/prefill/windows/prefill-test', 'GET', 200),
+  prefixCase(
+    'PATCH /prefill/windows/*',
+    '/prefill/windows/prefill-test',
+    'PATCH',
+    200,
+    { messages: [{ role: 'user', content: 'updated draft' }] }
+  ),
+  prefixCase(
+    'DELETE /prefill/windows/*',
+    '/prefill/windows/prefill-test',
+    'DELETE',
+    200
+  ),
   postCase('/v1/completions', 200, { prompt: 'hello' }),
   postCase('/v1/embeddings', 200, { input: 'hello' }),
   postCase('/gnot/command', 200, { action: 'files' }),
@@ -1362,7 +1402,7 @@ describe('server route audit', () => {
 
     expect(missing).toEqual([]);
     expect(extra).toEqual([]);
-    expect(inventory.size).toBe(196);
+    expect(inventory.size).toBe(200);
   });
 
   test('responds to CORS preflight before route dispatch', async () => {

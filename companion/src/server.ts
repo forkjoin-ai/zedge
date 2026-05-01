@@ -85,6 +85,11 @@ import {
   handleTtsPreviewRequest,
   listTtsVoices,
 } from './tts-relay.ts';
+import {
+  extractPrefillWindowId,
+  handlePrefillWindowRequest,
+  requestWithPrefillWindow,
+} from './prefill-window.ts';
 // Gnosis modules -- lazy-loaded to avoid blocking the event loop at startup.
 // The file watcher, incremental checker, and betty compiler are CPU-heavy, and
 // scanning the entire workspace directory on import would delay the companion
@@ -559,9 +564,9 @@ function corsHeaders(): Response {
     status: 204,
     headers: {
       'Access-Control-Allow-Origin': '*',
-      'Access-Control-Allow-Methods': 'GET, POST, DELETE, OPTIONS',
+      'Access-Control-Allow-Methods': 'GET, POST, PATCH, DELETE, OPTIONS',
       'Access-Control-Allow-Headers':
-        'Content-Type, Authorization, X-Zedge-Session, X-Zedge-Agentic, X-Zedge-MCP-URL',
+        'Content-Type, Authorization, X-Zedge-Session, X-Zedge-Agentic, X-Zedge-MCP-URL, X-Zedge-Prefill-Window',
       'Access-Control-Expose-Headers': '*',
     },
   });
@@ -1530,9 +1535,26 @@ export async function handleWebRequest(req: Request): Promise<Response> {
     return jsonResponse(result, status);
   }
 
+  if (path === '/prefill/windows' && req.method === 'POST') {
+    return await handlePrefillWindowRequest(path, req);
+  }
+
+  if (path.startsWith('/prefill/windows/') && req.method === 'GET') {
+    return await handlePrefillWindowRequest(path, req);
+  }
+
+  if (path.startsWith('/prefill/windows/') && req.method === 'PATCH') {
+    return await handlePrefillWindowRequest(path, req);
+  }
+
+  if (path.startsWith('/prefill/windows/') && req.method === 'DELETE') {
+    return await handlePrefillWindowRequest(path, req);
+  }
+
   // Chat completions
   if (path === '/v1/chat/completions' && req.method === 'POST') {
     const body = (await req.json()) as ChatRequestBody;
+    const prefillWindowId = extractPrefillWindowId(req.headers, body);
     const model = body.model ?? getZedgeConfig().preferredModel;
     const rawMessages = (body.messages ?? []) as Array<{
       role: string;
@@ -1605,17 +1627,20 @@ export async function handleWebRequest(req: Request): Promise<Response> {
       messages
     ) as ChatCompletionRequest['messages'];
 
-    const request: ChatCompletionRequest = {
-      model,
-      messages,
-      stream: shouldStreamChatCompletion(
-        body.stream,
-        req.headers.get('accept')
-      ),
-      temperature: body.temperature,
-      max_tokens: body.max_tokens,
-      top_p: body.top_p,
-    };
+    const request: ChatCompletionRequest = requestWithPrefillWindow(
+      {
+        model,
+        messages,
+        stream: shouldStreamChatCompletion(
+          body.stream,
+          req.headers.get('accept')
+        ),
+        temperature: body.temperature,
+        max_tokens: body.max_tokens,
+        top_p: body.top_p,
+      },
+      prefillWindowId
+    );
 
     if (shouldUseCompanionAgentic(req, body)) {
       try {

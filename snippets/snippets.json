@@ -1,0 +1,40 @@
+{
+  "Gnarly multilingual topology": {
+    "prefix": "gnarly",
+    "body": [
+      "gnarly \"${1:name}\" {",
+      "  languages = [\"${2:typescript}\", \"${3:rust}\", \"${4:go}\"]",
+      "  entry = ${5:entry}",
+      "}",
+      "",
+      "(${5:entry}: PolyglotBridgeCall {",
+      "  language: \"${2:typescript}\",",
+      "  file: \"${6:entry.ts}\",",
+      "  callee: \"${5:entry}\"",
+      "})",
+      "",
+      "(${7:transform}: PolyglotBridgeCall {",
+      "  fastest: true,",
+      "  candidates: [\"${3:rust}\", \"${4:go}\", \"${8:zig}\"],",
+      "  callee: \"${7:transform}\"",
+      "})",
+      "",
+      "(${5:entry})-[:PROCESS]->(${7:transform})",
+      "",
+      "impl ${7:transform} in ${3:rust} {",
+      "  $0",
+      "}"
+    ],
+    "description": "Creates a .gnarly multilingual GG-family topology"
+  },
+  "Gnarly fastest command": {
+    "prefix": "bffast",
+    "body": ["/edge-babelfish fastest ${1:path/to/file.gnarly} ${2:rust,go,zig}"],
+    "description": "Preview fastest Gnarly topology candidates"
+  },
+  "Gnarly compile command": {
+    "prefix": "bfgnarly",
+    "body": ["/edge-babelfish compile-gnarly ${1:path/to/file.gnarly}"],
+    "description": "Compile a .gnarly file through Babelfish"
+  }
+}

@@ -1,6 +1,6 @@
 name = "Gnosis"
 type = "language"
-path_suffixes = ["gg", "ggl"]
+path_suffixes = ["gg", "ggl", "gnarly"]
 line_comments = ["//"]
 # Use Cypher as a fallback for highlighting if available
 grammar = "gnosis"

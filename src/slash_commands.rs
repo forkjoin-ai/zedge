@@ -1614,6 +1614,75 @@ pub fn run_babelfish(
     } else {
         let subcommand = args[0].as_str();
         match subcommand {
+            "fastest" | "compile-gnarly" => {
+                let file_path = args.get(1).ok_or(
+                    "Usage: `/zedge-babelfish <fastest|compile-gnarly> <file.gnarly> [candidate-language,...]`",
+                )?;
+                let wt = worktree.ok_or("No active workspace")?;
+                let source_text = wt
+                    .read_text_file(file_path)
+                    .map_err(|_| format!("Could not read `{file_path}` from the current workspace"))?;
+                let candidate_languages: Vec<String> = args
+                    .get(2)
+                    .map(|value| {
+                        value
+                            .split(',')
+                            .map(|language| language.trim().to_string())
+                            .filter(|language| !language.is_empty())
+                            .collect()
+                    })
+                    .unwrap_or_default();
+                let body = serde_json::json!({
+                    "scope": {
+                        "kind": "file",
+                        "filePath": file_path,
+                        "sourceText": source_text,
+                    },
+                    "candidateLanguages": candidate_languages,
+                });
+                let path = if subcommand == "fastest" {
+                    "/babelfish/gnarly/fastest"
+                } else {
+                    "/babelfish/gnarly/compile"
+                };
+                let response = companion_post_json(path, body)?;
+                return Ok(output_with_section(
+                    format!("## Babelfish Gnarly {subcommand}\n\n```json\n{response}\n```"),
+                    "Babelfish Gnarly",
+                ));
+            }
+            "gnarly-from" => {
+                let file_path = args
+                    .get(1)
+                    .ok_or("Usage: `/zedge-babelfish gnarly-from <file-path> [candidate-language,...]`")?;
+                let wt = worktree.ok_or("No active workspace")?;
+                let source_text = wt
+                    .read_text_file(file_path)
+                    .map_err(|_| format!("Could not read `{file_path}` from the current workspace"))?;
+                let candidate_languages: Vec<String> = args
+                    .get(2)
+                    .map(|value| {
+                        value
+                            .split(',')
+                            .map(|language| language.trim().to_string())
+                            .filter(|language| !language.is_empty())
+                            .collect()
+                    })
+                    .unwrap_or_default();
+                let body = serde_json::json!({
+                    "scope": {
+                        "kind": "file",
+                        "filePath": file_path,
+                        "sourceText": source_text,
+                    },
+                    "candidateLanguages": candidate_languages,
+                });
+                let response = companion_post_json("/babelfish/gnarly/from", body)?;
+                return Ok(output_with_section(
+                    format!("## Babelfish Gnarly Draft\n\n```json\n{response}\n```"),
+                    "Babelfish Gnarly",
+                ));
+            }
             "apply" => {
                 let preview_id = args.get(1).ok_or("Usage: `/zedge-babelfish apply <preview-id> [rewrite_in_place|generate_files]`")?;
                 let apply_mode = args.get(2).map(|s| s.as_str()).unwrap_or("rewrite_in_place");
@@ -1714,7 +1783,7 @@ pub fn run_babelfish(
                 ));
             }
             _ => Ok(output_with_section(
-                "Usage:\n- `/zedge-babelfish capabilities`\n- `/zedge-babelfish explain <file-path> [audience-language]`\n- `/zedge-babelfish translate-code <target-language> <file-path>`\n- `/zedge-babelfish translate-text <target-language> <file-path>`\n- `/zedge-babelfish generate <target-language> <file-path>`\n- `/zedge-babelfish rewrite-preview <target-language> <file-path>`\n- `/zedge-babelfish apply <preview-id> [rewrite_in_place|generate_files]`"
+                "Usage:\n- `/zedge-babelfish capabilities`\n- `/zedge-babelfish fastest <file.gnarly> [candidate-language,...]`\n- `/zedge-babelfish compile-gnarly <file.gnarly>`\n- `/zedge-babelfish gnarly-from <file-path> [candidate-language,...]`\n- `/zedge-babelfish explain <file-path> [audience-language]`\n- `/zedge-babelfish translate-code <target-language> <file-path>`\n- `/zedge-babelfish translate-text <target-language> <file-path>`\n- `/zedge-babelfish generate <target-language> <file-path>`\n- `/zedge-babelfish rewrite-preview <target-language> <file-path>`\n- `/zedge-babelfish apply <preview-id> [rewrite_in_place|generate_files]`"
                     .to_string(),
                 "Babelfish",
             )),

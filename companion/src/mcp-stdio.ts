@@ -646,10 +646,10 @@ const ZEDGE_PROMPTS: McpPromptDefinition[] = [
   {
     name: 'zedge-babelfish',
     description:
-      'Babelfish over Gnosis: capabilities, explain, translate, generate, and apply',
+      'Babelfish over Gnosis: capabilities, Gnarly, explain, translate, generate, and apply',
     arguments: slashArgsPrompt,
     instructions:
-      'Run a Babelfish operation. Use the `zedge_command` tool with `command: "zedge-babelfish"`. With no argument, list capabilities. Supported argument forms mirror the extension slash command: `capabilities`, `explain <file-path> [audience-language]`, `translate-code <target-language> <file-path>`, `translate-text <target-language> <file-path>`, `generate <target-language> <file-path>`, `rewrite-preview <target-language> <file-path>`, and `apply <preview-id> [rewrite_in_place|generate_files]`.',
+      'Run a Babelfish operation. Use the `zedge_command` tool with `command: "zedge-babelfish"`. With no argument, list capabilities. Supported argument forms mirror the extension slash command: `capabilities`, `fastest <file.gnarly> [candidate-language,...]`, `compile-gnarly <file.gnarly>`, `gnarly-from <file-path> [candidate-language,...]`, `explain <file-path> [audience-language]`, `translate-code <target-language> <file-path>`, `translate-text <target-language> <file-path>`, `generate <target-language> <file-path>`, `rewrite-preview <target-language> <file-path>`, and `apply <preview-id> [rewrite_in_place|generate_files]`.',
   },
   {
     name: 'zedge-babelfish-native',
@@ -995,6 +995,41 @@ async function handleBabelfishSlashCommand(
         applyMode,
       });
     }
+    case 'fastest':
+    case 'compile-gnarly': {
+      const filePath = optionalString(parts[1]);
+      if (!filePath) {
+        throw new Error(
+          'Usage: /zedge-babelfish <fastest|compile-gnarly> <file.gnarly> [candidate-language,...]'
+        );
+      }
+      const candidateLanguages = optionalString(parts[2])
+        ?.split(',')
+        .map((language) => language.trim())
+        .filter((language) => language.length > 0);
+      return callBabelfishMcpTool(getCompanionBase(), 'zedge_babelfish_gnarly', {
+        action: subcommand === 'fastest' ? 'fastest' : 'compile',
+        scope: createBabelfishScope(filePath),
+        candidateLanguages,
+      });
+    }
+    case 'gnarly-from': {
+      const filePath = optionalString(parts[1]);
+      if (!filePath) {
+        throw new Error(
+          'Usage: /zedge-babelfish gnarly-from <file-path> [candidate-language,...]'
+        );
+      }
+      const candidateLanguages = optionalString(parts[2])
+        ?.split(',')
+        .map((language) => language.trim())
+        .filter((language) => language.length > 0);
+      return callBabelfishMcpTool(getCompanionBase(), 'zedge_babelfish_gnarly', {
+        action: 'from',
+        scope: createBabelfishScope(filePath),
+        candidateLanguages,
+      });
+    }
     case 'translate-code':
     case 'generate':
     case 'rewrite-preview': {
@@ -1060,6 +1095,9 @@ async function handleBabelfishSlashCommand(
       return [
         'Usage:',
         '- /zedge-babelfish capabilities',
+        '- /zedge-babelfish fastest <file.gnarly> [candidate-language,...]',
+        '- /zedge-babelfish compile-gnarly <file.gnarly>',
+        '- /zedge-babelfish gnarly-from <file-path> [candidate-language,...]',
         '- /zedge-babelfish explain <file-path> [audience-language]',
         '- /zedge-babelfish translate-code <target-language> <file-path>',
         '- /zedge-babelfish translate-text <target-language> <file-path>',

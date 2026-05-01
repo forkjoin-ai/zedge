@@ -8,6 +8,10 @@ import {
 } from './babelfish-gnosis.ts';
 import { extractFunctions, translate } from './babelfish-gnosis.ts';
 import {
+  compileGnarly,
+  type GnarlyCompileResult,
+} from './babelfish-gnosis.ts';
+import {
   getPolyglotCapabilityMatrix,
   type PolyglotCapabilityMatrix,
   type PolyglotCapabilityStatus,
@@ -101,6 +105,49 @@ export interface BabelfishExplainResponse {
   summary: string;
   explanation: string;
   ggSource?: string;
+  warnings: string[];
+}
+
+export interface BabelfishGnarlyRequest {
+  scope: BabelfishScope;
+  candidateLanguages?: string[];
+  maxRecommendations?: number;
+}
+
+export interface BabelfishGnarlyFromRequest {
+  scope: BabelfishScope;
+  name?: string;
+  candidateLanguages?: string[];
+}
+
+export interface BabelfishGnarlyManifestSummary {
+  defaultLanguage: string;
+  defaultFilePath: string;
+  nodeOverrides: Array<{
+    nodeId: string;
+    language: string;
+    filePath: string;
+  }>;
+}
+
+export interface BabelfishGnarlyResponse {
+  summary: string;
+  ggSource: string;
+  diagnostics: GnarlyCompileResult['diagnostics'];
+  speedDiagnostics: GnarlyCompileResult['speedDiagnostics'];
+  generatedFiles: GnarlyCompileResult['generatedFiles'];
+  topoRaceGg?: string;
+  executionManifest: GnarlyCompileResult['executionManifest'];
+  multiLanguageManifest: BabelfishGnarlyManifestSummary | null;
+  implementations: GnarlyCompileResult['document']['implementations'];
+  metadata: GnarlyCompileResult['document']['metadata'];
+}
+
+export interface BabelfishGnarlyFromResponse {
+  fileName: string;
+  content: string;
+  sourceLanguage: string;
+  functionCount: number;
   warnings: string[];
 }
 
@@ -770,6 +817,132 @@ export async function explainBabelfishScope(
       ? analysis.functions.map((func) => func.ggSource).join('\n\n')
       : undefined,
     warnings,
+  };
+}
+
+function summarizeGnarlyManifest(
+  result: GnarlyCompileResult
+): BabelfishGnarlyManifestSummary | null {
+  if (!result.multiLanguageManifest) {
+    return null;
+  }
+  return {
+    defaultLanguage: result.multiLanguageManifest.defaultLanguage,
+    defaultFilePath: result.multiLanguageManifest.defaultFilePath,
+    nodeOverrides: [...result.multiLanguageManifest.nodeOverrides.entries()].map(
+      ([nodeId, override]) => ({
+        nodeId,
+        language: override.language,
+        filePath: override.filePath,
+      })
+    ),
+  };
+}
+
+function toGnarlyResponse(
+  result: GnarlyCompileResult,
+  action: 'compile' | 'fastest'
+): BabelfishGnarlyResponse {
+  const summary =
+    action === 'fastest'
+      ? `Prepared Gnarly fastest preview with ${result.speedDiagnostics.length} speed hint(s).`
+      : `Compiled Gnarly topology with ${result.executionManifest.node_execution_plans.length} execution plan node(s).`;
+  const response: BabelfishGnarlyResponse = {
+    summary,
+    ggSource: result.ggSource,
+    diagnostics: result.diagnostics,
+    speedDiagnostics: result.speedDiagnostics,
+    generatedFiles: result.generatedFiles,
+    executionManifest: result.executionManifest,
+    multiLanguageManifest: summarizeGnarlyManifest(result),
+    implementations: result.document.implementations,
+    metadata: result.document.metadata,
+  };
+  if (result.topoRaceGg) {
+    response.topoRaceGg = result.topoRaceGg;
+  }
+  return response;
+}
+
+export async function compileBabelfishGnarly(
+  request: BabelfishGnarlyRequest
+): Promise<BabelfishGnarlyResponse> {
+  ensureBabelfishEnabled();
+  const resolvedScope = await resolveScope(request.scope);
+  const result = await compileGnarly(resolvedScope.sourceText, {
+    filePath: resolvedScope.filePath,
+    maxRecommendations: request.maxRecommendations,
+  });
+  return toGnarlyResponse(result, 'compile');
+}
+
+export async function previewBabelfishGnarlyFastest(
+  request: BabelfishGnarlyRequest
+): Promise<BabelfishGnarlyResponse> {
+  ensureBabelfishEnabled();
+  const resolvedScope = await resolveScope(request.scope);
+  const sourceText =
+    request.candidateLanguages && request.candidateLanguages.length > 0
+      ? injectDefaultGnarlyCandidates(
+          resolvedScope.sourceText,
+          request.candidateLanguages
+        )
+      : resolvedScope.sourceText;
+  const result = await compileGnarly(sourceText, {
+    filePath: resolvedScope.filePath,
+    maxRecommendations: request.maxRecommendations,
+  });
+  return toGnarlyResponse(result, 'fastest');
+}
+
+function injectDefaultGnarlyCandidates(
+  sourceText: string,
+  candidateLanguages: string[]
+): string {
+  if (!sourceText.includes('fastest: true')) {
+    return sourceText;
+  }
+  if (sourceText.includes('candidates:')) {
+    return sourceText;
+  }
+  const candidates = `[${candidateLanguages
+    .map((language) => `"${language}"`)
+    .join(', ')}]`;
+  return sourceText.replace(/fastest:\s*true/g, `fastest: true, candidates: ${candidates}`);
+}
+
+export async function createGnarlyFromBabelfishScope(
+  request: BabelfishGnarlyFromRequest
+): Promise<BabelfishGnarlyFromResponse> {
+  ensureBabelfishEnabled();
+  const resolvedScope = await resolveScope(request.scope);
+  const analysis = await analyzeScope(resolvedScope);
+  const functionNames = analysis.functions.map((func) => func.functionName);
+  const entry = functionNames[0] ?? 'main';
+  const name =
+    request.name ??
+    path.basename(resolvedScope.filePath).replace(/\.[^.]+$/, '') ??
+    'gnarly-program';
+  const languages = [
+    analysis.language,
+    ...(request.candidateLanguages ?? []),
+  ].filter((language, index, values) => values.indexOf(language) === index);
+  const ggSource = analysis.functions.map((func) => func.ggSource).join('\n\n');
+  const content = [
+    `gnarly "${name}" {`,
+    `  languages = [${languages.map((language) => `"${language}"`).join(', ')}]`,
+    `  entry = ${entry}`,
+    '}',
+    '',
+    ggSource,
+  ].join('\n');
+
+  return {
+    fileName: `${name}.gnarly`,
+    content,
+    sourceLanguage: analysis.language,
+    functionCount: analysis.functions.length,
+    warnings: [...analysis.errors],
   };
 }
 

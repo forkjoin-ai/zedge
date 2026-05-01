@@ -18,6 +18,14 @@ The default chat path is deliberately fast and bare: companion `/v1/chat/complet
 
 The companion also now syncs the `language_models.openai_compatible.Zedge.available_models` block in local Zed settings after the Moonshine startup probe, so model picker entries track the live container instead of drifting behind a hardcoded Edgework snippet.
 
+Speculative prefill windows are available as an explicit backend contract for
+future draft producers: `POST /prefill/windows` creates a window from full
+OpenAI message snapshots, `PATCH|GET|DELETE /prefill/windows/:id` updates or
+inspects it, and final chat can attach with `X-Zedge-Prefill-Window: <id>` or
+`_zedge.prefill_window_id`. The companion forwards attach telemetry as
+`X-Zedge-Prefill-*`. `ZEDGE_PREFILL_WINDOWS=0` disables the companion surface,
+and normal `/v1/chat/completions` behavior is unchanged without a window id.
+
 Local speech playback uses `POST /tts/speak` as a host relay: the companion
 calls Moonshine's local `POST /v1/audio/speech` endpoint, writes the returned
 WAV to a temp file, and on macOS plays it with `afplay`. Linux can use `aplay`

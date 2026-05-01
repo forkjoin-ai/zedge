@@ -24,6 +24,10 @@ import {
   applySystemPromptBudget,
   shouldSkipHeavySystemContext,
 } from './prompt-budget.ts';
+import {
+  moonshinePrefillHeaders,
+  zedgePrefillTelemetryHeaders,
+} from './prefill-window.ts';
 
 // --- Inference log file + in-memory ring buffer ---
 const __inference_dirname = dirname(fileURLToPath(import.meta.url));
@@ -100,6 +104,7 @@ export interface ChatCompletionRequest {
   temperature?: number;
   max_tokens?: number;
   top_p?: number;
+  prefillWindowId?: string;
 }
 
 export interface CompletionChoice {
@@ -701,6 +706,7 @@ export function extractUpstreamDebugHeaders(
       headers[key] = value;
     }
   });
+  Object.assign(headers, zedgePrefillTelemetryHeaders(response.headers));
   return headers;
 }
 
@@ -958,6 +964,7 @@ async function tryMoonshineInference(
       headers: {
         'Content-Type': 'application/json',
         'X-Zedge-Agentic': 'off',
+        ...moonshinePrefillHeaders(request.prefillWindowId),
       },
       body: JSON.stringify({
         model: request.model,

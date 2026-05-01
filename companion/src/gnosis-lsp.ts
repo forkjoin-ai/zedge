@@ -11,6 +11,7 @@ import {
   type Diagnostic,
   type GraphAST,
 } from '@a0n/gnosis/betty/compiler';
+import { compileGnarly } from '@a0n/gnosis/gnarly-compiler';
 import { checkTypeScriptWithGnosis } from '@a0n/gnosis/ts-check';
 import { resolve } from 'path';
 import { fileURLToPath } from 'url';
@@ -46,6 +47,8 @@ interface LspDiagnostic {
   severity: 1 | 2 | 3 | 4;
   message: string;
   source: string;
+  code?: string;
+  data?: unknown;
 }
 
 interface CompletionItem {
@@ -127,6 +130,79 @@ function getUriFromParams(params: unknown): string | null {
     return null;
   }
   return getString(textDocument, 'uri');
+}
+
+function getExecuteCommandParams(
+  params: unknown
+): { command: string; arguments: unknown[] } | null {
+  const paramsObj = asObject(params);
+  if (!paramsObj) {
+    return null;
+  }
+  const command = getString(paramsObj, 'command');
+  const args = paramsObj.arguments;
+  if (!command || !Array.isArray(args)) {
+    return null;
+  }
+  return { command, arguments: args };
+}
+
+function uriFromScopeArgument(argument: unknown): string | null {
+  const object = asObject(argument);
+  const scope = object ? asObject(object.scope) : null;
+  const filePath = scope ? getString(scope, 'filePath') : null;
+  if (!filePath) {
+    return null;
+  }
+  return filePath.startsWith('file://') ? filePath : `file://${filePath}`;
+}
+
+async function executeGnarlyCommand(params: unknown): Promise<unknown> {
+  const commandParams = getExecuteCommandParams(params);
+  if (!commandParams) {
+    return null;
+  }
+  if (!commandParams.command.startsWith('zedge.gnarly.')) {
+    return null;
+  }
+
+  const uri = uriFromScopeArgument(commandParams.arguments[0]);
+  if (!uri) {
+    return { error: 'Gnarly command requires a file scope.' };
+  }
+  const sourceText = documents.get(uri);
+  if (sourceText === undefined) {
+    return { error: `No open document for ${uri}.` };
+  }
+  const filePath = uri.startsWith('file://') ? uri.slice(7) : uri;
+  const result = await compileGnarly(sourceText, { filePath });
+
+  if (commandParams.command === 'zedge.gnarly.generateMissing') {
+    return {
+      generatedFiles: result.generatedFiles.filter((file) => !file.embedded),
+      speedDiagnostics: result.speedDiagnostics,
+    };
+  }
+
+  if (commandParams.command === 'zedge.gnarly.explainPath') {
+    return {
+      summary: `Gnarly topology has ${result.executionManifest.node_execution_plans.length} execution node(s), ${result.document.implementations.length} embedded implementation(s), and ${result.speedDiagnostics.length} speed hint(s).`,
+      ggSource: result.ggSource,
+      speedDiagnostics: result.speedDiagnostics,
+    };
+  }
+
+  return {
+    summary:
+      commandParams.command === 'zedge.gnarly.fastest'
+        ? `Prepared Gnarly fastest preview with ${result.speedDiagnostics.length} speed hint(s).`
+        : `Compiled Gnarly topology with ${result.executionManifest.node_execution_plans.length} execution plan node(s).`,
+    ggSource: result.ggSource,
+    speedDiagnostics: result.speedDiagnostics,
+    diagnostics: result.diagnostics,
+    generatedFiles: result.generatedFiles,
+    topoRaceGg: result.topoRaceGg,
+  };
 }
 
 function getDidOpenDocument(
@@ -271,6 +347,10 @@ function isGnotUri(uri: string): boolean {
   return uri.endsWith('.gnot');
 }
 
+function isGnarlyUri(uri: string): boolean {
+  return uri.endsWith('.gnarly');
+}
+
 async function publishTypeScriptDiagnostics(
   uri: string,
   text: string
@@ -359,6 +439,74 @@ async function publishGnotDiagnostics(
   }
 }
 
+async function publishGnarlyDiagnostics(
+  uri: string,
+  text: string
+): Promise<void> {
+  try {
+    const filePath = uri.startsWith('file://') ? uri.slice(7) : uri;
+    const result = await compileGnarly(text, { filePath });
+    const diagnostics: LspDiagnostic[] = [
+      ...result.diagnostics.map((diagnostic) => ({
+        range: {
+          start: {
+            line: Math.max(0, diagnostic.line - 1),
+            character: Math.max(0, diagnostic.column - 1),
+          },
+          end: {
+            line: Math.max(0, diagnostic.line - 1),
+            character: Math.max(0, diagnostic.column),
+          },
+        },
+        severity:
+          diagnostic.severity === 'error'
+            ? 1
+            : diagnostic.severity === 'warning'
+            ? 2
+            : diagnostic.severity === 'hint'
+            ? 4
+            : 3,
+        message: `[${diagnostic.code}] ${diagnostic.message}`,
+        source: 'gnosis-gnarly',
+        code: diagnostic.code,
+      })),
+      ...result.speedDiagnostics.map((diagnostic) => ({
+        range: {
+          start: {
+            line: Math.max(0, diagnostic.line - 1),
+            character: Math.max(0, diagnostic.column - 1),
+          },
+          end: {
+            line: Math.max(0, diagnostic.line - 1),
+            character: Math.max(0, diagnostic.column),
+          },
+        },
+        severity: 4 as const,
+        message: `[${diagnostic.code}] ${diagnostic.message}`,
+        source: 'gnosis-gnarly-speed',
+        code: diagnostic.code,
+        data: {
+          nodeId: diagnostic.nodeId,
+          recommendedLanguage: diagnostic.recommendedLanguage,
+          evidence: diagnostic.evidence,
+        },
+      })),
+    ];
+
+    send({
+      jsonrpc: '2.0',
+      method: 'textDocument/publishDiagnostics',
+      params: { uri, diagnostics },
+    });
+  } catch {
+    send({
+      jsonrpc: '2.0',
+      method: 'textDocument/publishDiagnostics',
+      params: { uri, diagnostics: [] },
+    });
+  }
+}
+
 async function publishDiagnostics(uri: string, text: string): Promise<void> {
   if (isTypeScriptUri(uri)) {
     await publishTypeScriptDiagnostics(uri, text);
@@ -367,6 +515,11 @@ async function publishDiagnostics(uri: string, text: string): Promise<void> {
 
   if (isGnotUri(uri)) {
     await publishGnotDiagnostics(uri, text);
+    return;
+  }
+
+  if (isGnarlyUri(uri)) {
+    await publishGnarlyDiagnostics(uri, text);
     return;
   }
 
@@ -504,6 +657,14 @@ export async function dispatchRequest(req: JsonRpcRequest): Promise<unknown> {
           hoverProvider: true,
           documentSymbolProvider: true,
           codeActionProvider: true,
+          executeCommandProvider: {
+            commands: [
+              'zedge.gnarly.compile',
+              'zedge.gnarly.fastest',
+              'zedge.gnarly.generateMissing',
+              'zedge.gnarly.explainPath',
+            ],
+          },
           completionProvider: {
             triggerCharacters: [':', '(', '['],
           },
@@ -737,6 +898,9 @@ export async function dispatchRequest(req: JsonRpcRequest): Promise<unknown> {
         config.babelfish.defaultHumanLanguage
       );
     }
+
+    case 'workspace/executeCommand':
+      return executeGnarlyCommand(req.params);
 
     case 'gnosis/getTopologyGraph': {
       const graphUri = getUriFromParams(req.params);

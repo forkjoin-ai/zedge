@@ -428,6 +428,22 @@ impl zed::Extension for EdgeAiExtension {
                             run_command: true,
                         },
                         SlashCommandArgumentCompletion {
+                            label: "fastest — Preview fastest Gnarly topology candidates".into(),
+                            new_text: "fastest ".into(),
+                            run_command: false,
+                        },
+                        SlashCommandArgumentCompletion {
+                            label: "compile-gnarly — Compile a .gnarly file to GG and manifests"
+                                .into(),
+                            new_text: "compile-gnarly ".into(),
+                            run_command: false,
+                        },
+                        SlashCommandArgumentCompletion {
+                            label: "gnarly-from — Create a .gnarly draft from a source file".into(),
+                            new_text: "gnarly-from ".into(),
+                            run_command: false,
+                        },
+                        SlashCommandArgumentCompletion {
                             label: "explain — Explain a file via Babelfish".into(),
                             new_text: "explain ".into(),
                             run_command: false,

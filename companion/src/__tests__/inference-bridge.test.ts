@@ -92,10 +92,12 @@ describe('Inference Bridge', () => {
   test('infer preserves streaming and honors requested Moonshine token budgets', async () => {
     const originalFetch = global.fetch;
     const requestBodies: Array<Record<string, unknown>> = [];
+    const requestHeaders: Headers[] = [];
 
     global.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
       if (url.endsWith('/v1/chat/completions')) {
+        requestHeaders.push(new Headers(init?.headers));
         requestBodies.push(
           JSON.parse(String(init?.body ?? '{}')) as Record<string, unknown>
         );
@@ -131,15 +133,72 @@ describe('Inference Bridge', () => {
         messages: [{ role: 'user', content: 'hello' }],
         stream: true,
         max_tokens: 512,
+        prefillWindowId: 'prefill-test',
       });
 
       expect(result.tier).toBe('moonshine');
       expect(requestBodies).toHaveLength(1);
       expect(requestBodies[0]?.stream).toBe(true);
       expect(requestBodies[0]?.max_tokens).toBe(512);
+      expect(requestHeaders[0]?.get('X-Moonshine-Prefill-Window')).toBe(
+        'prefill-test'
+      );
 
       const data = (await result.response.json()) as ChatCompletionResponse;
       expect(data.choices[0]?.message.content).toBe('hi from moonshine');
+    } finally {
+      global.fetch = originalFetch;
+    }
+  });
+
+  test('infer forwards Moonshine prefill telemetry as Zedge headers', async () => {
+    const originalFetch = global.fetch;
+    global.fetch = (async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith('/v1/chat/completions')) {
+        return new Response(
+          JSON.stringify({
+            id: 'chatcmpl-prefill-test',
+            object: 'chat.completion',
+            created: 1000,
+            model: 'gnosis-local',
+            choices: [
+              {
+                index: 0,
+                message: { role: 'assistant', content: 'warmed' },
+                finish_reason: 'stop',
+              },
+            ],
+            usage: {
+              prompt_tokens: 4,
+              completion_tokens: 1,
+              total_tokens: 5,
+            },
+          }),
+          {
+            headers: {
+              'Content-Type': 'application/json',
+              'X-Moonshine-Prefill': 'hit',
+              'X-Moonshine-Prefill-Tokens': '4',
+              'X-Moonshine-Prefill-Saved-Ms': '17',
+            },
+          }
+        );
+      }
+
+      return new Response('unexpected', { status: 500 });
+    }) as typeof fetch;
+
+    try {
+      const result = await infer({
+        model: 'gnosis-local',
+        messages: [{ role: 'user', content: 'hello' }],
+        prefillWindowId: 'prefill-test',
+      });
+
+      expect(result.upstreamHeaders['X-Zedge-Prefill']).toBe('hit');
+      expect(result.upstreamHeaders['X-Zedge-Prefill-Tokens']).toBe('4');
+      expect(result.upstreamHeaders['X-Zedge-Prefill-Saved-Ms']).toBe('17');
     } finally {
       global.fetch = originalFetch;
     }
