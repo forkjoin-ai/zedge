@@ -1,137 +1,133 @@
-id = "zedge"
-name = "Zedge"
+id = "edge-ai"
+name = "Edge AI"
 description = "Edge inference coding IDE — AI that runs where you are"
 version = "0.1.0"
 schema_version = 1
 authors = ["Taylor William Buley"]
 repository = "https://github.com/forkjoin-ai/zedge"
 
-[slash_commands.zedge-setup]
+[slash_commands.edge-setup]
 description = "One-time setup: install the local sidecar (macOS) — copy-paste from here"
 requires_argument = false
 
-[slash_commands.zedge-status]
+[slash_commands.edge-status]
 description = "Show inference chain health, compute pool stats, and token balance"
 requires_argument = false
 
-[slash_commands.zedge-models]
+[slash_commands.edge-models]
 description = "List available models with latency tier and readiness"
 requires_argument = false
 
-[slash_commands.zedge-pool]
+[slash_commands.edge-pool]
 description = "Show compute pool status or use join/leave to change participation"
 requires_argument = false
 
-[slash_commands.zedge-logs]
+[slash_commands.edge-logs]
 description = "Show recent inference logs from the companion"
 requires_argument = false
 
-[slash_commands.zedge-clear]
+[slash_commands.edge-clear]
 description = "Clear inference logs"
 requires_argument = false
 
-[slash_commands.zedge-restart]
+[slash_commands.edge-restart]
 description = "Restart the companion sidecar"
 requires_argument = false
 
-[slash_commands.zedge-selftest]
+[slash_commands.edge-selftest]
 description = "Run a live inference self-test for health and SSE progress"
 requires_argument = false
 
-[slash_commands.zedgework]
+[slash_commands.edgework]
 description = "Run edgework commands — emotions, sentiment, entities, embeddings, usage, and more"
 requires_argument = true
 
-[slash_commands.zedge-admin]
+[slash_commands.edge-admin]
 description = "Run aeon-cli admin commands (ops, fleet, ai, mcp, etc.)"
 requires_argument = true
 
-[slash_commands.zedge-mesh]
+[slash_commands.edge-mesh]
 description = "Start, stop, or check P2P inference mesh status"
 requires_argument = true
 
-[slash_commands.zedge-crdt]
+[slash_commands.edge-crdt]
 description = "Ghostwriter CRDT collaboration status and file management"
 requires_argument = true
 
-[slash_commands.zedge-forge]
+[slash_commands.edge-forge]
 description = "Forge deployment status and project list"
 requires_argument = true
 
-[slash_commands.zedge-kernel]
+[slash_commands.edge-kernel]
 description = "Kernel daemon status, plugins, and flight log"
 requires_argument = true
 
-[slash_commands.zedge-scaffold]
+[slash_commands.edge-scaffold]
 description = "Create a new project from template (site, app, worker, mcp, agent, extension, gnosis)"
 requires_argument = true
 
-[slash_commands.zedge-gnot]
+[slash_commands.edge-gnot]
 description = "Inspect workspace gnot apps and run gnot authoring or deploy-shell diagnostics"
 requires_argument = false
 
-[slash_commands.zedge-gnosis]
+[slash_commands.edge-gnosis]
 description = "Analyze Gnosis topological graph and calculate Betti numbers"
 requires_argument = true
 
-[slash_commands.zedge-gnosis-run]
+[slash_commands.edge-gnosis-run]
 description = "Run and evaluate the active Gnosis topology file"
 requires_argument = false
 
-[slash_commands.zedge-gnosis-viz]
+[slash_commands.edge-gnosis-viz]
 description = "Open Gnosis topology visualization in browser for the active file"
 requires_argument = false
 
-[slash_commands.zedge-test]
+[slash_commands.edge-test]
 description = "Run isolated tests via Gnosis topological pipeline"
 requires_argument = false
 
-[slash_commands.zedge-feedback]
+[slash_commands.edge-feedback]
 description = "Inspect or submit local RLHF feedback on response quality"
 requires_argument = false
 
-[slash_commands.zedge-babelfish]
+[slash_commands.edge-babelfish]
 description = "Babelfish over Gnosis: capabilities, explain, translate, generate, and preview/apply rewrites"
 requires_argument = true
 
-[slash_commands.zedge-babelfish-native]
+[slash_commands.edge-babelfish-native]
 description = "Run native WASM 0-latency Babelfish translation"
 requires_argument = true
 
-[slash_commands.zedge-review]
+[slash_commands.edge-review]
 description = "Consensus code review — three models race on your diff, agreements and disagreements highlighted"
 requires_argument = false
 
-[slash_commands.zedge-void]
+[slash_commands.edge-void]
 description = "Void map — persistent rejection memory. Show density, top rejected categories, steering vectors, or export for training"
 requires_argument = false
 
-[slash_commands.zedge-swarm]
+[slash_commands.edge-swarm]
 description = "Launch an agent swarm — multiple specialized agents (reviewer, refactorer, tester, documenter, security-auditor) working simultaneously"
 requires_argument = true
 
-[slash_commands.zedge-engram]
+[slash_commands.edge-engram]
 description = "Persistent agent memory — recall, remember, or forget patterns across sessions"
 requires_argument = false
 
-[slash_commands.zedge-emotion]
+[slash_commands.edge-emotion]
 description = "Analyze the emotional profile of the active file — frustration, anxiety, confidence, and routing decisions"
 requires_argument = false
 
-[slash_commands.zedge-agent]
+[slash_commands.edge-agent]
 description = "GG agent management — list, trigger, monitor topology-driven agents deployed through Forge"
 requires_argument = true
 
-[themes]
-zedge-dark = "themes/zedge-dark.json"
+# Commented out grammar and language server to ensure basic extension functionality first
+# [grammars.gnosis]
+# repository = "https://github.com/forkjoin-ai/tree-sitter-gnosis"
+# rev = "main"
+# path = "grammars/gnosis"
 
-[grammars.gnosis]
-repository = "https://github.com/forkjoin-ai/tree-sitter-gnosis"
-commit = ""
-path = "grammars/gnosis"
-
-[context_servers.zedge-companion]
-
-[language_servers.gnosis-lsp]
-name = "Gnosis Language Server"
-languages = ["Gnosis", "TypeScript", "TSX"]
+# [language_servers.gnosis-lsp]
+# name = "Gnosis Language Server"
+# languages = ["Gnosis"]

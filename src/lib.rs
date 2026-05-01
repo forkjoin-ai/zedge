@@ -8,7 +8,7 @@ use zed_extension_api::{
     *,
 };
 
-struct ZedgeExtension;
+struct EdgeAiExtension;
 const TS_ENTRY_LAUNCHER: &str = "open-source/zedge/scripts/run-ts-entry.sh";
 /// Ensures companion /health before MCP stdio (starts supervisor if needed).
 const RUN_MCP_WITH_SUPERVISOR: &str = "open-source/zedge/scripts/run-mcp-with-supervisor.sh";
@@ -71,9 +71,9 @@ fn babelfish_human_language_completions() -> Vec<SlashCommandArgumentCompletion>
         .collect()
 }
 
-impl zed::Extension for ZedgeExtension {
+impl zed::Extension for EdgeAiExtension {
     fn new() -> Self {
-        ZedgeExtension
+        EdgeAiExtension
     }
 
     fn run_slash_command(
@@ -83,35 +83,35 @@ impl zed::Extension for ZedgeExtension {
         worktree: Option<&Worktree>,
     ) -> Result<SlashCommandOutput, String> {
         match command.name.as_str() {
-            "zedge-setup" => slash_commands::run_setup(),
-            "zedge-status" => slash_commands::run_status(worktree),
-            "zedge-models" => slash_commands::run_models(),
-            "zedge-pool" => slash_commands::run_pool(&_args),
-            "zedge-logs" => slash_commands::run_logs(),
-            "zedge-clear" => slash_commands::run_clear(),
-            "zedge-restart" => slash_commands::run_restart(),
-            "zedge-selftest" => slash_commands::run_selftest(&_args),
-            "zedgework" => slash_commands::run_edgework(&_args),
-            "zedge-admin" => slash_commands::run_admin(&_args),
-            "zedge-mesh" => slash_commands::run_mesh(&_args),
-            "zedge-crdt" => slash_commands::run_crdt(&_args),
-            "zedge-forge" => slash_commands::run_forge(&_args),
-            "zedge-kernel" => slash_commands::run_kernel(&_args),
-            "zedge-scaffold" => slash_commands::run_scaffold(&_args),
-            "zedge-gnot" => slash_commands::run_gnot(&_args),
-            "zedge-gnosis" => slash_commands::run_gnosis(&_args),
-            "zedge-gnosis-run" => slash_commands::run_gnosis_run(worktree),
-            "zedge-gnosis-viz" => slash_commands::run_gnosis_viz(worktree),
-            "zedge-test" => slash_commands::run_test(worktree),
-            "zedge-feedback" => slash_commands::run_feedback(&_args),
-            "zedge-babelfish" => slash_commands::run_babelfish(&_args, worktree),
-            "zedge-babelfish-native" => slash_commands::run_babelfish_native(&_args, worktree),
-            "zedge-review" => slash_commands::run_review(worktree),
-            "zedge-void" => slash_commands::run_void(&_args),
-            "zedge-swarm" => slash_commands::run_swarm(&_args),
-            "zedge-engram" => slash_commands::run_engram(&_args),
-            "zedge-emotion" => slash_commands::run_emotion(&_args, worktree),
-            "zedge-agent" => slash_commands::run_agent(&_args),
+            "edge-setup" => slash_commands::run_setup(),
+            "edge-status" => slash_commands::run_status(worktree),
+            "edge-models" => slash_commands::run_models(),
+            "edge-pool" => slash_commands::run_pool(&_args),
+            "edge-logs" => slash_commands::run_logs(),
+            "edge-clear" => slash_commands::run_clear(),
+            "edge-restart" => slash_commands::run_restart(),
+            "edge-selftest" => slash_commands::run_selftest(&_args),
+            "edgework" => slash_commands::run_edgework(&_args),
+            "edge-admin" => slash_commands::run_admin(&_args),
+            "edge-mesh" => slash_commands::run_mesh(&_args),
+            "edge-crdt" => slash_commands::run_crdt(&_args),
+            "edge-forge" => slash_commands::run_forge(&_args),
+            "edge-kernel" => slash_commands::run_kernel(&_args),
+            "edge-scaffold" => slash_commands::run_scaffold(&_args),
+            "edge-gnot" => slash_commands::run_gnot(&_args),
+            "edge-gnosis" => slash_commands::run_gnosis(&_args),
+            "edge-gnosis-run" => slash_commands::run_gnosis_run(worktree),
+            "edge-gnosis-viz" => slash_commands::run_gnosis_viz(worktree),
+            "edge-test" => slash_commands::run_test(worktree),
+            "edge-feedback" => slash_commands::run_feedback(&_args),
+            "edge-babelfish" => slash_commands::run_babelfish(&_args, worktree),
+            "edge-babelfish-native" => slash_commands::run_babelfish_native(&_args, worktree),
+            "edge-review" => slash_commands::run_review(worktree),
+            "edge-void" => slash_commands::run_void(&_args),
+            "edge-swarm" => slash_commands::run_swarm(&_args),
+            "edge-engram" => slash_commands::run_engram(&_args),
+            "edge-emotion" => slash_commands::run_emotion(&_args, worktree),
+            "edge-agent" => slash_commands::run_agent(&_args),
             _ => Err(format!("Unknown command: {}", command.name)),
         }
     }
@@ -122,8 +122,8 @@ impl zed::Extension for ZedgeExtension {
         args: Vec<String>,
     ) -> Result<Vec<SlashCommandArgumentCompletion>, String> {
         match command.name.as_str() {
-            "zedge-setup" => Ok(Vec::new()),
-            "zedge-models" => Ok(provider::MODELS
+            "edge-setup" => Ok(Vec::new()),
+            "edge-models" => Ok(provider::visible_models()
                 .iter()
                 .map(|m| SlashCommandArgumentCompletion {
                     label: m.display_name.to_string(),
@@ -131,7 +131,7 @@ impl zed::Extension for ZedgeExtension {
                     run_command: true,
                 })
                 .collect()),
-            "zedgework" => {
+            "edgework" => {
                 let commands = vec![
                     ("emotions", "Analyze emotions in text"),
                     ("sentiment", "Analyze sentiment"),
@@ -156,7 +156,7 @@ impl zed::Extension for ZedgeExtension {
                     run_command: true,
                 }).collect())
             }
-            "zedge-admin" => {
+            "edge-admin" => {
                 let commands = vec![
                     ("doctor", "Runtime and MCP health diagnostics"),
                     ("ops status", "Operator health snapshot"),
@@ -182,21 +182,21 @@ impl zed::Extension for ZedgeExtension {
                     run_command: true,
                 }).collect())
             }
-            "zedge-mesh" => {
+            "edge-mesh" => {
                 Ok(vec![
                     SlashCommandArgumentCompletion { label: "status — Show mesh status".into(), new_text: "status".into(), run_command: true },
                     SlashCommandArgumentCompletion { label: "start — Start P2P mesh".into(), new_text: "start".into(), run_command: true },
                     SlashCommandArgumentCompletion { label: "stop — Stop P2P mesh".into(), new_text: "stop".into(), run_command: true },
                 ])
             }
-            "zedge-pool" => {
+            "edge-pool" => {
                 Ok(vec![
                     SlashCommandArgumentCompletion { label: "status — Show compute pool status".into(), new_text: "status".into(), run_command: true },
                     SlashCommandArgumentCompletion { label: "join — Join the compute pool".into(), new_text: "join".into(), run_command: true },
                     SlashCommandArgumentCompletion { label: "leave — Leave the compute pool".into(), new_text: "leave".into(), run_command: true },
                 ])
             }
-            "zedge-crdt" => {
+            "edge-crdt" => {
                 Ok(vec![
                     SlashCommandArgumentCompletion { label: "status — CRDT overview".into(), new_text: "status".into(), run_command: true },
                     SlashCommandArgumentCompletion { label: "files — Open CRDT files".into(), new_text: "files".into(), run_command: true },
@@ -206,14 +206,14 @@ impl zed::Extension for ZedgeExtension {
                     SlashCommandArgumentCompletion { label: "diagnostics — CRDT diagnostics".into(), new_text: "diagnostics".into(), run_command: true },
                 ])
             }
-            "zedge-forge" => {
+            "edge-forge" => {
                 Ok(vec![
                     SlashCommandArgumentCompletion { label: "status — ForgeCD status".into(), new_text: "status".into(), run_command: true },
                     SlashCommandArgumentCompletion { label: "projects — List projects".into(), new_text: "projects".into(), run_command: true },
                     SlashCommandArgumentCompletion { label: "deploy — Deploy a project".into(), new_text: "deploy ".into(), run_command: false },
                 ])
             }
-            "zedge-scaffold" => {
+            "edge-scaffold" => {
                 Ok(vec![
                     SlashCommandArgumentCompletion { label: "site — Aeon Foundation site (SSR, routing, tokens)".into(), new_text: "site ".into(), run_command: false },
                     SlashCommandArgumentCompletion { label: "app — Full-stack Aeon app (site + API + auth)".into(), new_text: "app ".into(), run_command: false },
@@ -224,7 +224,7 @@ impl zed::Extension for ZedgeExtension {
                     SlashCommandArgumentCompletion { label: "gnosis — Gnosis topological graph project".into(), new_text: "gnosis ".into(), run_command: false },
                 ])
             }
-            "zedge-gnot" => {
+            "edge-gnot" => {
                 Ok(vec![
                     SlashCommandArgumentCompletion { label: "files — List workspace .gnot files".into(), new_text: "files".into(), run_command: true },
                     SlashCommandArgumentCompletion { label: "lint — Lint a .gnot file".into(), new_text: "lint ".into(), run_command: false },
@@ -234,7 +234,7 @@ impl zed::Extension for ZedgeExtension {
                     SlashCommandArgumentCompletion { label: "status — Show release status for a gnot app".into(), new_text: "status ".into(), run_command: false },
                 ])
             }
-            "zedge-kernel" => {
+            "edge-kernel" => {
                 Ok(vec![
                     SlashCommandArgumentCompletion { label: "status — Daemons and plugins".into(), new_text: "status".into(), run_command: true },
                     SlashCommandArgumentCompletion { label: "daemons — Running daemons".into(), new_text: "daemons".into(), run_command: true },
@@ -243,7 +243,7 @@ impl zed::Extension for ZedgeExtension {
                     SlashCommandArgumentCompletion { label: "flight-log — Event flight log".into(), new_text: "flight-log".into(), run_command: true },
                 ])
             }
-            "zedge-babelfish" => {
+            "edge-babelfish" => {
                 if args.is_empty() {
                     Ok(vec![
                         SlashCommandArgumentCompletion { label: "capabilities — Show supported programming and human languages".into(), new_text: "capabilities".into(), run_command: true },
@@ -263,7 +263,7 @@ impl zed::Extension for ZedgeExtension {
                     }
                 }
             }
-            "zedge-babelfish-native" => {
+            "edge-babelfish-native" => {
                 if args.is_empty() {
                     Ok(vec![
                         SlashCommandArgumentCompletion { label: "translate-code — Run native WASM 0-latency translation".into(), new_text: "translate-code ".into(), run_command: false },
@@ -272,7 +272,7 @@ impl zed::Extension for ZedgeExtension {
                     Ok(babelfish_language_completions("translate"))
                 }
             }
-            "zedge-feedback" => {
+            "edge-feedback" => {
                 Ok(vec![
                     SlashCommandArgumentCompletion { label: "1 — Poor response".into(), new_text: "1 ".into(), run_command: false },
                     SlashCommandArgumentCompletion { label: "2 — Weak response".into(), new_text: "2 ".into(), run_command: false },
@@ -281,27 +281,27 @@ impl zed::Extension for ZedgeExtension {
                     SlashCommandArgumentCompletion { label: "5 — Excellent response".into(), new_text: "5 ".into(), run_command: false },
                 ])
             }
-            "zedge-void" => Ok(vec![
+            "edge-void" => Ok(vec![
                 SlashCommandArgumentCompletion { label: "status — Show void-map status".into(), new_text: "status".into(), run_command: true },
                 SlashCommandArgumentCompletion { label: "query — Query entries by file/category".into(), new_text: "query ".into(), run_command: false },
                 SlashCommandArgumentCompletion { label: "steering — Show steering vector".into(), new_text: "steering ".into(), run_command: false },
                 SlashCommandArgumentCompletion { label: "export — Export training records".into(), new_text: "export ".into(), run_command: false },
                 SlashCommandArgumentCompletion { label: "compact — Compact old entries".into(), new_text: "compact".into(), run_command: true },
             ]),
-            "zedge-swarm" => Ok(vec![
+            "edge-swarm" => Ok(vec![
                 SlashCommandArgumentCompletion { label: "roles — Show available swarm roles".into(), new_text: "".into(), run_command: true },
                 SlashCommandArgumentCompletion { label: "review the current diff — Start a review/refactor/test swarm".into(), new_text: "review the current diff".into(), run_command: true },
             ]),
-            "zedge-engram" => Ok(vec![
+            "edge-engram" => Ok(vec![
                 SlashCommandArgumentCompletion { label: "status — Show engram-store status".into(), new_text: "status".into(), run_command: true },
                 SlashCommandArgumentCompletion { label: "recall — Recall matching memory".into(), new_text: "recall ".into(), run_command: false },
                 SlashCommandArgumentCompletion { label: "remember — Store a memory".into(), new_text: "remember ".into(), run_command: false },
                 SlashCommandArgumentCompletion { label: "forget — Remove an engram by id".into(), new_text: "forget ".into(), run_command: false },
             ]),
-            "zedge-emotion" => Ok(vec![
+            "edge-emotion" => Ok(vec![
                 SlashCommandArgumentCompletion { label: "Analyze a file path".into(), new_text: "".into(), run_command: false },
             ]),
-            "zedge-agent" => Ok(vec![
+            "edge-agent" => Ok(vec![
                 SlashCommandArgumentCompletion { label: "list — List GG agents".into(), new_text: "list".into(), run_command: true },
                 SlashCommandArgumentCompletion { label: "trigger — Trigger an agent".into(), new_text: "trigger ".into(), run_command: false },
                 SlashCommandArgumentCompletion { label: "status — Show Forge agent status".into(), new_text: "status".into(), run_command: true },
@@ -382,4 +382,4 @@ impl zed::Extension for ZedgeExtension {
     }
 }
 
-zed::register_extension!(ZedgeExtension);
+zed::register_extension!(EdgeAiExtension);

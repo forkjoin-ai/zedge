@@ -44,6 +44,11 @@ async function runCompanionBootstrap(): Promise<void> {
     const serverMod = await import('./server.ts');
     await serverMod.startServer();
 
+    // Start moonshine docker container (primary inference backend) — non-blocking
+    import('./moonshine-docker.ts')
+      .then(({ ensureMoonshineRunning }) => ensureMoonshineRunning())
+      .catch((err) => console.warn(`[moonshine] Startup failed: ${err}`));
+
     console.log('[zedge] Companion sidecar v2.0 ready');
 
     void Promise.all([

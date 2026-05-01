@@ -1,28 +1,21 @@
 /**
  * Zedge Inference Bridge
  *
- * 5-tier inference chain (v1.0):
- * 1. LAN Mesh — P2P inference via discovered companion nodes (fastest, free)
- * 2. Edge Coordinator (CF Workers) — via OpenAI-compat endpoint
- * 3. Cloud Run Coordinator — direct HTTP (bypasses CF 120s timeout)
- * 4. Local WASM — on-device Aether-backed SmolLM2/MiniLM inference
- * 5. Echo fallback — guaranteed response acknowledging the message
+ * Chat backend: Moonshine container (localhost:8080, docker-compose.moonshine.yml)
+ * Fallback: echo (guaranteed response when container is not running)
  *
- * All inference is local/coordinator-based, zero paid AI.
+ * Remote edge/cloudrun/mesh/wasm tiers deprecated.
  */
 
 import { getApiBaseUrl, getAuthHeaders, getZedgeConfig } from './config.ts';
-import {
-  CLOUD_RUN_COORDINATORS,
-  hasCloudRunCoordinatorForModel,
-} from './coordinator-urls.ts';
+import { CLOUD_RUN_COORDINATORS } from './coordinator-urls.ts';
 import { appendFileSync, mkdirSync, writeFileSync } from 'fs';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import { getCloudRunAuthHeaders } from './cloudrun-auth.ts';
 import { aetherLocalRuntime } from './aether-local-runtime.ts';
 import { runWithCompanionActivity } from './companion-activity.ts';
-import { getKnownZedgeModels } from './model-catalog.ts';
+import { getKnownZedgeModels, isModelVisible } from './model-catalog.ts';
 import {
   applySystemPromptBudget,
   shouldSkipHeavySystemContext,
@@ -134,7 +127,13 @@ export interface ModelInfo {
 
 const REMOTE_EMBEDDING_MODELS = new Set(['text-embedding-3-small']);
 
-export type InferenceTier = 'mesh' | 'edge' | 'cloudrun' | 'wasm' | 'echo';
+export type InferenceTier =
+  | 'mesh'
+  | 'edge'
+  | 'cloudrun'
+  | 'wasm'
+  | 'echo'
+  | 'moonshine';
 
 function isExplicitLocalOnlyModel(model: string): boolean {
   const normalized = model.toLowerCase();
@@ -211,6 +210,11 @@ export interface TierResult {
   attempts: TierAttempt[];
 }
 
+// Moonshine container (docker-compose.moonshine.yml openai-compat service)
+const MOONSHINE_BASE_URL =
+  process.env.ZEDGE_MOONSHINE_URL ?? 'http://127.0.0.1:8080';
+const MOONSHINE_TIMEOUT_MS = 120_000;
+
 const LOCAL_WASM_TOTAL_TIMEOUT_MS = 45_000;
 const LOCAL_WASM_BUSY_BUFFER_MS = 15_000;
 const LOCAL_WASM_PREWARM_BUSY_MS = 5 * 60_000;
@@ -249,7 +253,9 @@ function getEdgeCircuitState(model: string): EdgeCircuitState {
 
 function pruneEdgeCircuitFailures(state: EdgeCircuitState, now: number): void {
   const cutoff = now - EDGE_CIRCUIT_FAILURE_WINDOW_MS;
-  state.failureTimestamps = state.failureTimestamps.filter((ts) => ts >= cutoff);
+  state.failureTimestamps = state.failureTimestamps.filter(
+    (ts) => ts >= cutoff
+  );
 }
 
 function getEdgeCircuitSnapshot(
@@ -284,9 +290,7 @@ function recordEdgeCircuitFailure(model: string, reason: string): void {
     if (nextOpenUntil > state.openUntil) {
       state.openUntil = nextOpenUntil;
       logInference(
-        `[edge] circuit-open model=${model} windowFailures=${
-          state.failureTimestamps.length
-        } openForMs=${EDGE_CIRCUIT_OPEN_MS} reason=${state.lastFailureReason}`
+        `[edge] circuit-open model=${model} windowFailures=${state.failureTimestamps.length} openForMs=${EDGE_CIRCUIT_OPEN_MS} reason=${state.lastFailureReason}`
       );
     }
   }
@@ -421,7 +425,9 @@ async function ensureEdgeStreamingHasToken(
       const remainingMs = Math.max(1, deadline - Date.now());
       const readResult = await Promise.race([
         reader.read(),
-        new Promise<null>((resolve) => setTimeout(() => resolve(null), remainingMs)),
+        new Promise<null>((resolve) =>
+          setTimeout(() => resolve(null), remainingMs)
+        ),
       ]);
 
       if (readResult === null) {
@@ -746,6 +752,48 @@ async function collapseEdgeStreamingResponse(
     headers: upstreamHeaders,
     status: response.status,
   });
+}
+
+/**
+ * Attempt inference via Moonshine container (localhost:8080, OpenAI-compat)
+ * Primary chat backend — deprecates remote edge/cloudrun/mesh/wasm tiers.
+ */
+async function tryMoonshineInference(
+  request: ChatCompletionRequest,
+  signal?: AbortSignal
+): Promise<Response> {
+  const url = `${MOONSHINE_BASE_URL}/v1/chat/completions`;
+  logInference(
+    `[moonshine] → ${url} model=${request.model} stream=${
+      request.stream ?? false
+    }`
+  );
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), MOONSHINE_TIMEOUT_MS);
+  const abortFromUpstream = () => controller.abort();
+  signal?.addEventListener('abort', abortFromUpstream, { once: true });
+
+  try {
+    const resp = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        model: request.model,
+        messages: request.messages,
+        stream: request.stream ?? false,
+        temperature: request.temperature ?? 0.7,
+        max_tokens: request.max_tokens ?? 512,
+        top_p: request.top_p,
+      }),
+      signal: controller.signal,
+    });
+    logInference(`[moonshine] ← ${resp.status} ${resp.statusText}`);
+    return resp;
+  } finally {
+    clearTimeout(timer);
+    signal?.removeEventListener('abort', abortFromUpstream);
+  }
 }
 
 /**
@@ -1847,9 +1895,8 @@ export interface FimResult {
 /**
  * FIM inference -- optimized fast path for tab completions.
  *
- * Skips the edge tier (latency penalty, no quality gain for short completions)
- * and races Cloud Run against local WASM in parallel. WASM gives instant ghost
- * text; Cloud Run upgrades quality if it arrives within the race window.
+ * Routes through the Moonshine container (localhost:8080).
+ * Remote edge/cloudrun/mesh/wasm tiers deprecated.
  */
 export async function inferFim(
   prefix: string,
@@ -1866,237 +1913,64 @@ export async function inferFim(
     `--- FIM model=${model} prefix=${prefix.length}c suffix=${suffix.length}c`
   );
 
-  // Tier 0: Try LAN mesh first (100ms timeout -- if no peer responds, fall through)
+  // Moonshine container handles FIM
   {
-    const meshT0 = Date.now();
+    const t1 = Date.now();
     try {
-      const { meshInfer, getMeshStatus } = await import('./p2p-mesh.ts');
-      const status = getMeshStatus();
-      if (status.running && status.peers.length > 0) {
-        const meshResult = await Promise.race([
-          meshInfer({
-            model,
-            messages: [
-              {
-                role: 'system',
-                content: 'Complete the code. Output ONLY the completion.',
-              },
-              { role: 'user', content: fimPrompt },
-            ],
-            max_tokens: maxTokens,
-            temperature,
-          }),
-          new Promise<null>((resolve) => setTimeout(() => resolve(null), 100)),
-        ]);
-        if (meshResult && meshResult.content) {
-          attempts.push({
-            tier: 'mesh',
-            status: 'ok',
-            ms: Date.now() - meshT0,
-          });
-          logInference(
-            `[fim:mesh] ${meshResult.content.length}c in ${
-              Date.now() - meshT0
-            }ms`
-          );
-          return {
-            completion: meshResult.content,
-            tier: 'mesh',
-            model,
-            attempts,
-            durationMs: Date.now() - t0,
-          };
-        }
+      const resp = await tryMoonshineInference({
+        model,
+        messages: [
+          {
+            role: 'system',
+            content: 'Complete the code. Output ONLY the completion.',
+          },
+          { role: 'user', content: fimPrompt },
+        ],
+        max_tokens: maxTokens,
+        temperature,
+      });
+
+      if (resp.ok) {
+        const data = (await resp.json()) as ChatCompletionResponse;
+        const completion = data.choices?.[0]?.message?.content ?? '';
+        attempts.push({ tier: 'moonshine', status: 'ok', ms: Date.now() - t1 });
+        logInference(
+          `[fim:moonshine] ${completion.length}c in ${Date.now() - t1}ms`
+        );
+        return {
+          completion,
+          tier: 'moonshine',
+          model,
+          attempts,
+          durationMs: Date.now() - t0,
+        };
       }
       attempts.push({
-        tier: 'mesh',
-        status: 'skipped',
-        ms: Date.now() - meshT0,
-        detail: 'no peers or timeout',
+        tier: 'moonshine',
+        status: 'http_error',
+        ms: Date.now() - t1,
+        detail: `${resp.status}`,
       });
-    } catch {
-      attempts.push({
-        tier: 'mesh',
-        status: 'skipped',
-        ms: Date.now() - meshT0,
-        detail: 'mesh unavailable',
-      });
-    }
-  }
-
-  // Skip edge for FIM -- go straight to Cloud Run + WASM race
-  attempts.push({
-    tier: 'edge',
-    status: 'skipped',
-    ms: 0,
-    detail: 'FIM fast path bypasses edge',
-  });
-
-  // Race Cloud Run vs WASM in parallel
-  const cloudRunUrl = CLOUD_RUN_COORDINATORS[model];
-
-  const wasmPromise = (async (): Promise<{
-    completion: string;
-    tier: InferenceTier;
-  } | null> => {
-    const wt0 = Date.now();
-    try {
-      const content = await runWithCompanionActivity(
-        'wasm-fim',
-        LOCAL_WASM_TOTAL_TIMEOUT_MS + LOCAL_WASM_BUSY_BUFFER_MS,
-        async () => {
-          const ready = await withTimeout(
-            aetherLocalRuntime.ensureChatReady(),
-            LOCAL_WASM_TOTAL_TIMEOUT_MS,
-            'Local FIM model warm-up'
-          );
-          if (!ready) {
-            throw new Error('Local FIM model failed to load');
-          }
-
-          return await withTimeout(
-            aetherLocalRuntime.generate(
-              [
-                {
-                  role: 'system',
-                  content:
-                    'Complete the code. Output ONLY the completion, no explanation.',
-                },
-                { role: 'user', content: fimPrompt },
-              ],
-              Math.min(maxTokens, 256),
-              temperature
-            ),
-            LOCAL_WASM_TOTAL_TIMEOUT_MS,
-            'Local FIM generation'
-          );
-        },
-        model
-      );
-      attempts.push({ tier: 'wasm', status: 'ok', ms: Date.now() - wt0 });
-      logInference(`[fim:wasm] ${content.length}c in ${Date.now() - wt0}ms`);
-      return { completion: content, tier: 'wasm' };
     } catch (err) {
       attempts.push({
-        tier: 'wasm',
+        tier: 'moonshine',
         status: 'error',
-        ms: Date.now() - wt0,
+        ms: Date.now() - t1,
         detail: String(err),
       });
-      return null;
-    }
-  })();
-
-  const cloudRunPromise = cloudRunUrl
-    ? (async (): Promise<{
-        completion: string;
-        tier: InferenceTier;
-      } | null> => {
-        const ct0 = Date.now();
-        try {
-          const authHeaders = await getCloudRunAuthHeaders(cloudRunUrl);
-          const resp = await fetch(`${cloudRunUrl}/v1/chat/completions`, {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              ...authHeaders,
-            },
-            body: JSON.stringify({
-              model,
-              messages: [
-                {
-                  role: 'system',
-                  content: 'Complete the code. Output ONLY the completion.',
-                },
-                { role: 'user', content: fimPrompt },
-              ],
-              max_tokens: maxTokens,
-              temperature,
-              stream: false,
-            }),
-            signal: AbortSignal.timeout(15_000),
-          });
-
-          if (!resp.ok) {
-            attempts.push({
-              tier: 'cloudrun',
-              status: 'http_error',
-              ms: Date.now() - ct0,
-              detail: `${resp.status}`,
-            });
-            return null;
-          }
-
-          const data = (await resp.json()) as ChatCompletionResponse;
-          const content = data.choices?.[0]?.message?.content ?? '';
-          attempts.push({
-            tier: 'cloudrun',
-            status: 'ok',
-            ms: Date.now() - ct0,
-          });
-          logInference(
-            `[fim:cloudrun] ${content.length}c in ${Date.now() - ct0}ms`
-          );
-          return { completion: content, tier: 'cloudrun' };
-        } catch (err) {
-          attempts.push({
-            tier: 'cloudrun',
-            status: 'error',
-            ms: Date.now() - ct0,
-            detail: err instanceof Error ? err.message : String(err),
-          });
-          return null;
-        }
-      })()
-    : (async () => {
-        attempts.push({
-          tier: 'cloudrun',
-          status: 'skipped',
-          ms: 0,
-          detail: 'no coordinator URL',
-        });
-        return null;
-      })();
-
-  // Race: first non-null wins
-  const results = await Promise.allSettled([wasmPromise, cloudRunPromise]);
-  let winner: { completion: string; tier: InferenceTier } | null = null;
-
-  for (const result of results) {
-    if (result.status === 'fulfilled' && result.value !== null) {
-      // Prefer Cloud Run if both succeeded (higher quality)
-      if (!winner || result.value.tier === 'cloudrun') {
-        winner = result.value;
-      }
     }
   }
 
-  if (!winner) {
-    // Echo fallback for FIM
-    attempts.push({
-      tier: 'echo',
-      status: 'ok',
-      ms: 0,
-      detail: 'FIM all tiers failed',
-    });
-    return {
-      completion: '',
-      tier: 'echo',
-      model,
-      attempts,
-      durationMs: Date.now() - t0,
-    };
-  }
-
-  logInference(
-    `--- FIM DONE tier=${winner.tier} ${winner.completion.length}c ${
-      Date.now() - t0
-    }ms`
-  );
-
+  // Echo fallback for FIM
+  attempts.push({
+    tier: 'echo',
+    status: 'ok',
+    ms: 0,
+    detail: 'FIM moonshine failed',
+  });
   return {
-    completion: winner.completion,
-    tier: winner.tier,
+    completion: '',
+    tier: 'echo',
     model,
     attempts,
     durationMs: Date.now() - t0,
@@ -2104,13 +1978,13 @@ export async function inferFim(
 }
 
 /**
- * Execute the 5-tier inference chain
+ * Execute the inference chain
  *
  * Tier order:
- * 1. LAN Mesh (if running and peers available)
- * 2. Edge + Cloud Run RACED (first 200 wins, eliminates 30s edge timeout waste)
- * 3. Local WASM (on-device n-gram model)
- * 4. Echo fallback (guaranteed)
+ * 1. Moonshine container (localhost:8080 OpenAI-compat, docker-compose.moonshine.yml)
+ * 2. Echo fallback (guaranteed)
+ *
+ * Remote edge/cloudrun/mesh/wasm tiers deprecated — use Moonshine docker container.
  */
 export async function infer(
   request: ChatCompletionRequest
@@ -2161,7 +2035,6 @@ export async function infer(
     ) as ChatCompletionRequest['messages'],
   };
 
-  const config = getZedgeConfig();
   const attempts: TierAttempt[] = [];
   const lastMsg = request.messages[request.messages.length - 1];
   const msgPreview =
@@ -2174,277 +2047,49 @@ export async function infer(
     } msgs=${request.messages.length} last="${msgPreview}"`
   );
 
-  if (isExplicitLocalOnlyModel(request.model)) {
-    attempts.push({
-      tier: 'mesh',
-      status: 'skipped',
-      ms: 0,
-      detail: `model ${request.model} requires local-only execution`,
-    });
-    attempts.push({
-      tier: 'edge',
-      status: 'skipped',
-      ms: 0,
-      detail: `model ${request.model} requires local-only execution`,
-    });
-    attempts.push({
-      tier: 'cloudrun',
-      status: 'skipped',
-      ms: 0,
-      detail: `model ${request.model} requires local-only execution`,
-    });
-
-    const wasmStart = Date.now();
-    try {
-      const response = await tryWasmFallback(request);
-      attempts.push({
-        tier: 'wasm',
-        status: 'ok',
-        ms: Date.now() - wasmStart,
-        detail: 'local-only model short-circuit',
-      });
-
-      return {
-        tier: 'wasm',
-        response,
-        upstreamHeaders: {},
-        attempts,
-      };
-    } catch (err) {
-      attempts.push({
-        tier: 'wasm',
-        status: 'error',
-        ms: Date.now() - wasmStart,
-        detail: String(err),
-      });
-      attempts.push({
-        tier: 'echo',
-        status: 'ok',
-        ms: 0,
-        detail: 'local-only model fallback after WASM load failure',
-      });
-
-      return {
-        tier: 'echo',
-        response: echoFallback(request),
-        upstreamHeaders: {},
-        attempts,
-      };
-    }
-  }
-
-  function attempt(
-    tier: InferenceTier,
-    startMs: number,
-    status: TierAttempt['status'],
-    detail?: string
-  ): void {
-    attempts.push({ tier, status, ms: Date.now() - startMs, detail });
-  }
-
-  // Tier 1: LAN Mesh
+  // Tier 1: Moonshine container
   {
     const t0 = Date.now();
+    const controller = new AbortController();
     try {
-      const meshResponse = await tryMeshInference(request);
-      if (meshResponse && meshResponse.ok) {
-        attempt('mesh', t0, 'ok');
+      const resp = await tryMoonshineInference(request, controller.signal);
+      if (resp.ok) {
+        attempts.push({ tier: 'moonshine', status: 'ok', ms: Date.now() - t0 });
         logInference(
-          `model=${request.model} tier=mesh status=ok ms=${Date.now() - t0}`
+          `model=${request.model} tier=moonshine status=ok ms=${
+            Date.now() - t0
+          }`
         );
         return {
-          tier: 'mesh',
-          response: meshResponse,
-          upstreamHeaders: extractUpstreamDebugHeaders(meshResponse),
+          tier: 'moonshine',
+          response: resp,
+          upstreamHeaders: extractUpstreamDebugHeaders(resp),
           attempts,
         };
       }
-      attempt('mesh', t0, 'skipped', 'no peers or not running');
-    } catch (err) {
-      attempt('mesh', t0, 'error', String(err));
-    }
-  }
-
-  // Tier 2: Race Edge + Cloud Run in parallel
-  // Edge consistently takes 30s to timeout — racing both eliminates the waste.
-  // First successful (200 OK) response wins. Large coordinators can take a long
-  // time to cold-start, so elapsed time alone is not a failure condition here.
-  //
-  // STREAMING EXCEPTION: When stream=true and Cloud Run is available, prefer
-  // Cloud Run directly. The edge CF Worker doesn't forward per-token SSE —
-  // it buffers the entire response and sends only the stop event. Cloud Run
-  // coordinators stream real per-token deltas via TransformStream.
-  //
-  // Large models can take minutes to cold-start and load weights from GCS FUSE.
-  // The race between edge + cloudrun means whichever responds first wins.
-  // Edge handles routing internally via /ai/communicate.
-  // Cloud Run is a backup path for models the edge can't handle.
-  const canCloudRun =
-    config.cloudRunDirect && hasCloudRunCoordinatorForModel(request.model);
-  // Edge-first: always try edge, even for streaming. Cloud Run has cold starts
-  // and weight errors. The edge path (Glossolalia MOA) is more reliable.
-  const preferCloudRunForStreaming = false;
-  {
-    const t0 = Date.now();
-    const edgeController = new AbortController();
-    const cloudRunController = new AbortController();
-
-    // Edge attempt: skip when streaming + Cloud Run available (edge doesn't stream tokens)
-    let edgePromise: Promise<{
-      tier: InferenceTier;
-      response: Response;
-    } | null>;
-    if (preferCloudRunForStreaming) {
-      attempt('edge', t0, 'skipped', 'streaming prefers cloudrun direct');
-      edgePromise = Promise.resolve(null);
-    } else {
-      edgePromise = tryEdgeCoordinator(request, edgeController.signal)
-        .then(
-          (response): { tier: InferenceTier; response: Response } | null => {
-            if (response.ok) {
-              recordEdgeCircuitSuccess(request.model);
-              return { tier: 'edge', response };
-            }
-            recordEdgeCircuitFailure(
-              request.model,
-              `http ${response.status} ${response.statusText}`
-            );
-            attempt(
-              'edge',
-              t0,
-              'http_error',
-              `${response.status} ${response.statusText}`
-            );
-            return null;
-          }
-        )
-        .catch((err): null => {
-          const detail = String(err);
-          const isCircuitOpen = detail.includes('circuit-open:');
-          const isTimeout =
-            err instanceof DOMException && err.name === 'AbortError';
-          if (!isCircuitOpen) {
-            recordEdgeCircuitFailure(request.model, detail);
-          }
-          attempt(
-            'edge',
-            t0,
-            isCircuitOpen ? 'skipped' : isTimeout ? 'timeout' : 'error',
-            detail
-          );
-          return null;
-        });
-    }
-
-    // Cloud Run attempt (only if available)
-    let cloudRunPromise: Promise<{
-      tier: InferenceTier;
-      response: Response;
-    } | null>;
-    if (canCloudRun) {
-      cloudRunPromise = tryCloudRunCoordinator(
-        request,
-        cloudRunController.signal
-      )
-        .then(
-          (response): { tier: InferenceTier; response: Response } | null => {
-            if (response.ok) return { tier: 'cloudrun', response };
-            attempt(
-              'cloudrun',
-              t0,
-              'http_error',
-              `${response.status} ${response.statusText}`
-            );
-            return null;
-          }
-        )
-        .catch((err): null => {
-          const isTimeout =
-            err instanceof DOMException && err.name === 'AbortError';
-          attempt('cloudrun', t0, isTimeout ? 'timeout' : 'error', String(err));
-          return null;
-        });
-    } else {
       attempts.push({
-        tier: 'cloudrun',
-        status: 'skipped',
-        ms: 0,
-        detail: !config.cloudRunDirect
-          ? 'cloudRunDirect disabled'
-          : `no coordinator URL for ${request.model}`,
+        tier: 'moonshine',
+        status: 'http_error',
+        ms: Date.now() - t0,
+        detail: `${resp.status} ${resp.statusText}`,
       });
-      cloudRunPromise = Promise.resolve(null);
-    }
-
-    const { winner, backgroundCleanup } = await raceCoordinatorResponses({
-      requestModel: request.model,
-      startMs: t0,
-      edgePromise,
-      cloudRunPromise,
-      abortEdge: () => edgeController.abort(),
-      abortCloudRun: () => cloudRunController.abort(),
-    });
-
-    if (winner) {
-      void backgroundCleanup;
-
-      attempt(winner.tier, t0, 'ok');
-      const xHeaders = extractUpstreamDebugHeaders(winner.response);
       logInference(
-        `model=${request.model} tier=${winner.tier} status=ok ms=${
-          Date.now() - t0
-        } x-headers=${JSON.stringify(xHeaders)}`
+        `[moonshine] http_error ${resp.status} model=${request.model}`
       );
-      return {
-        tier: winner.tier,
-        response: winner.response,
-        upstreamHeaders: xHeaders,
-        attempts,
-      };
-    }
-  }
-
-  // Tier 4: Local WASM inference (real on-device generation)
-  {
-    const t0 = Date.now();
-    try {
-      const wasmRequest = compactWasmFallbackRequest(request);
-      const response = await tryWasmFallback(wasmRequest);
-      attempt(
-        'wasm',
-        t0,
-        'ok',
-        wasmRequest === request ? undefined : 'compact-remote-fallback'
-      );
-
-      // Log full chain when falling to WASM — this is always interesting
-      const chainStr = attempts
-        .map(
-          (a) =>
-            `${a.tier}:${a.status}(${a.ms}ms)${
-              a.detail ? '[' + a.detail.slice(0, 40) + ']' : ''
-            }`
-        )
-        .join(' → ');
-      console.warn(
-        `[zedge] fell to WASM for model=${request.model} | chain: ${chainStr}`
-      );
-      logInference(
-        `model=${request.model} tier=wasm FALLBACK chain: ${chainStr}`
-      );
-
-      return {
-        tier: 'wasm',
-        response,
-        upstreamHeaders: {},
-        attempts,
-      };
     } catch (err) {
-      attempt('wasm', t0, 'error', String(err));
+      const isTimeout =
+        err instanceof DOMException && err.name === 'AbortError';
+      attempts.push({
+        tier: 'moonshine',
+        status: isTimeout ? 'timeout' : 'error',
+        ms: Date.now() - t0,
+        detail: String(err),
+      });
+      logInference(`[moonshine] error: ${String(err)}`);
     }
   }
 
-  // Tier 5: Echo fallback (guaranteed response)
+  // Tier 2: Echo fallback (guaranteed response)
   attempts.push({ tier: 'echo', status: 'ok', ms: 0 });
   const echoChain = attempts
     .map((a) => `${a.tier}:${a.status}(${a.ms}ms)`)
@@ -2530,34 +2175,20 @@ export function autoLearnFromInference(
 }
 
 /**
- * Get merged model list from remote + local + mesh peers
+ * Get merged model list from moonshine container + local catalog
  */
 async function fetchRemoteModels(): Promise<ModelInfo[]> {
-  for (const edgeBase of ['https://edge.affectively.ai', getApiBaseUrl()]) {
-    try {
-      const resp = await fetch(`${edgeBase}/v1/models`, {
-        headers: {
-          ...getAuthHeaders(),
-          'User-Agent':
-            'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
-          Accept: 'application/json',
-          Origin: 'https://edge.affectively.ai',
-        },
-        signal: AbortSignal.timeout(5_000),
-      });
-      if (!resp.ok) {
-        continue;
-      }
-
-      const data = (await resp.json()) as { data?: ModelInfo[] };
-      if (Array.isArray(data.data)) {
-        return data.data;
-      }
-    } catch {
-      // This edge URL unavailable -- try next
-    }
+  try {
+    const resp = await fetch(`${MOONSHINE_BASE_URL}/v1/models`, {
+      headers: { Accept: 'application/json' },
+      signal: AbortSignal.timeout(5_000),
+    });
+    if (!resp.ok) return [];
+    const data = (await resp.json()) as { data?: ModelInfo[] };
+    if (Array.isArray(data.data)) return data.data;
+  } catch {
+    // Moonshine container not running -- return empty
   }
-
   return [];
 }
 
@@ -2590,13 +2221,13 @@ export async function getModels(): Promise<ModelInfo[]> {
   const seen = new Set<string>();
 
   for (const model of cachedRemoteModels) {
-    if (!seen.has(model.id)) {
+    if (!seen.has(model.id) && isModelVisible(model.id)) {
       seen.add(model.id);
       models.push(model);
     }
   }
 
-  // Always include all known local + edge models (canonical list).
+  // Always include all known local models (canonical list).
   for (const model of getKnownZedgeModels()) {
     if (!seen.has(model.id)) {
       seen.add(model.id);
@@ -2606,26 +2237,6 @@ export async function getModels(): Promise<ModelInfo[]> {
         owned_by: model.ownedBy,
       });
     }
-  }
-
-  // Add mesh peer models
-  try {
-    const { getMeshStatus } = await import('./p2p-mesh.ts');
-    const meshStatus = getMeshStatus();
-    for (const peer of meshStatus.peers) {
-      for (const modelId of peer.capabilities.models) {
-        if (!seen.has(modelId)) {
-          seen.add(modelId);
-          models.push({
-            id: modelId,
-            object: 'model',
-            owned_by: `edgework-mesh-${peer.hostname}`,
-          });
-        }
-      }
-    }
-  } catch {
-    // Mesh not available
   }
 
   return models;

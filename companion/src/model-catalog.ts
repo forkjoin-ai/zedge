@@ -132,6 +132,36 @@ const KNOWN_ZEDGE_MODELS_BY_ID = new Map(
   KNOWN_ZEDGE_MODELS.map((model) => [model.id, model])
 );
 
+const LEGACY_MODEL_IDS = new Set([
+  'llama-70b',
+  'mistral-7b',
+  'glm-4-9b',
+  'step-3.5-flash',
+  'nanbeige-3b',
+  'mamba-2.8b',
+  'tinyllama-1.1b',
+  'smollm2-360m',
+  'cog-360m',
+  'cyrano-360m',
+]);
+
+export function isModelVisible(modelId: string): boolean {
+  const whitelist = process.env.ZEDGE_MODELS?.split(',').map((id) => id.trim());
+  if (whitelist && whitelist.length > 0 && whitelist[0] !== '') {
+    return whitelist.includes(modelId);
+  }
+
+  const showAll =
+    process.env.ZEDGE_ALL_MODELS === '1' ||
+    process.env.ZEDGE_ALL_MODELS === 'true';
+
+  if (showAll) {
+    return true;
+  }
+
+  return !LEGACY_MODEL_IDS.has(modelId);
+}
+
 function humanizeModelId(id: string): string {
   return id
     .split('-')
@@ -142,11 +172,13 @@ function humanizeModelId(id: string): string {
 }
 
 export function getKnownZedgeModels(): KnownZedgeModel[] {
-  return [...KNOWN_ZEDGE_MODELS];
+  return KNOWN_ZEDGE_MODELS.filter((model) => isModelVisible(model.id));
 }
 
 export function getKnownRemoteZedgeModels(): KnownZedgeModel[] {
-  return KNOWN_ZEDGE_MODELS.filter((model) => model.id !== 'wasm-local');
+  return KNOWN_ZEDGE_MODELS.filter(
+    (model) => model.id !== 'wasm-local' && isModelVisible(model.id)
+  );
 }
 
 export function getKnownZedgeModel(id: string): KnownZedgeModel | undefined {

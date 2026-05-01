@@ -101,3 +101,31 @@ pub const MODELS: &[ZedgeModel] = &[
         max_tokens: 1024,
     },
 ];
+
+pub fn visible_models() -> Vec<&'static ZedgeModel> {
+    let show_all = std::env::var("ZEDGE_ALL_MODELS")
+        .map(|v| v == "1" || v == "true")
+        .unwrap_or(false);
+
+    MODELS
+        .iter()
+        .filter(|m| {
+            if show_all {
+                return true;
+            }
+            !matches!(
+                m.id,
+                "llama-70b"
+                    | "mistral-7b"
+                    | "glm-4-9b"
+                    | "step-3.5-flash"
+                    | "nanbeige-3b"
+                    | "mamba-2.8b"
+                    | "tinyllama-1.1b"
+                    | "smollm2-360m"
+                    | "cog-360m"
+                    | "cyrano-360m"
+            )
+        })
+        .collect()
+}

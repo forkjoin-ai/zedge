@@ -1,10 +1,10 @@
 {
   "$schema": "https://zed.dev/schema/themes/v0.2.0.json",
-  "name": "Zedge Dark",
+  "name": "Edge Dark",
   "author": "AFFECTIVELY",
   "themes": [
     {
-      "name": "Zedge Dark",
+      "name": "Edge Dark",
       "appearance": "dark",
       "style": {
         "background": "#09090b",
