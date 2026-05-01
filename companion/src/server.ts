@@ -76,6 +76,11 @@ import {
   applySystemPromptBudget,
   shouldSkipHeavySystemContext,
 } from './prompt-budget.ts';
+import {
+  configureTtsRelay,
+  getTtsRelayStatus,
+  handleTtsSpeakRequest,
+} from './tts-relay.ts';
 // Gnosis modules -- lazy-loaded to avoid blocking the event loop at startup.
 // The file watcher, incremental checker, and betty compiler are CPU-heavy, and
 // scanning the entire workspace directory on import would delay the companion
@@ -1305,6 +1310,36 @@ export async function handleWebRequest(req: Request): Promise<Response> {
   }
 
   // ==================== OpenAI-Compatible API ====================
+
+  // Local TTS host playback relay. Kept separate from chat completions so
+  // speech playback cannot perturb Zed's SSE token path.
+  if (path === '/tts/status' && req.method === 'GET') {
+    return jsonResponse(getTtsRelayStatus());
+  }
+
+  if (path === '/tts/config' && req.method === 'POST') {
+    let body: unknown;
+    try {
+      body = await req.json();
+    } catch {
+      return jsonResponse({ ok: false, error: 'invalid JSON' }, 400);
+    }
+
+    const { status, result } = configureTtsRelay(body);
+    return jsonResponse(result, status);
+  }
+
+  if (path === '/tts/speak' && req.method === 'POST') {
+    let body: unknown;
+    try {
+      body = await req.json();
+    } catch {
+      return jsonResponse({ ok: false, error: 'invalid JSON' }, 400);
+    }
+
+    const { status, result } = await handleTtsSpeakRequest(body);
+    return jsonResponse(result, status);
+  }
 
   // Chat completions
   if (path === '/v1/chat/completions' && req.method === 'POST') {

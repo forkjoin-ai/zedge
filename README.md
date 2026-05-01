@@ -60,6 +60,25 @@ pnpm run gnode -- run open-source/zedge/companion/src/companion-supervisor.ts --
    - now exposes Babelfish polyglot translation/explanation over the Gnosis language registry
    - now exposes first-class `gnot` workspace discovery plus `doctor` / `next` / `status` deploy-shell diagnostics for local `open-source/gnot` apps
 
+## Local TTS Slash Command
+
+Moonshine TTS is controlled from Zed through `/edge-tts`:
+
+```text
+/edge-tts status
+/edge-tts enable
+/edge-tts disable
+/edge-tts host
+/edge-tts file
+/edge-tts pulse
+/edge-tts alsa
+/edge-tts auto
+/edge-tts speak hello from Moonshine
+```
+
+`disable` only turns off the companion playback relay. It does not affect chat
+completion, SSE streaming, or the Moonshine model picker.
+
 ## Babelfish (WASM Native Compiler)
 
 Babelfish is the universal code-translation layer built on top of the Gnosis topological IR. It is integrated directly into the `zedge` extension using `gnosis-betti-wasm` for a zero-latency, high-performance compilation pipeline. Zedge queries the native Gnosis polyglot registry to expose the following capabilities:

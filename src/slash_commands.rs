@@ -258,10 +258,7 @@ pub fn run_models() -> Result<SlashCommandOutput, String> {
 
 /// /zedge-pool — compute pool status and earnings
 pub fn run_pool(args: &[String]) -> Result<SlashCommandOutput, String> {
-    let subcommand = args
-        .first()
-        .map(|value| value.as_str())
-        .unwrap_or("status");
+    let subcommand = args.first().map(|value| value.as_str()).unwrap_or("status");
 
     if subcommand == "join" {
         return match companion_post("/compute-pool/join") {
@@ -269,7 +266,10 @@ pub fn run_pool(args: &[String]) -> Result<SlashCommandOutput, String> {
                 format!("## Compute Pool Join\n\n```json\n{body}\n```"),
                 "Compute Pool",
             )),
-            Err(e) => Ok(output_with_section(format!("**Error**: {e}"), "Compute Pool")),
+            Err(e) => Ok(output_with_section(
+                format!("**Error**: {e}"),
+                "Compute Pool",
+            )),
         };
     }
 
@@ -279,7 +279,10 @@ pub fn run_pool(args: &[String]) -> Result<SlashCommandOutput, String> {
                 format!("## Compute Pool Leave\n\n```json\n{body}\n```"),
                 "Compute Pool",
             )),
-            Err(e) => Ok(output_with_section(format!("**Error**: {e}"), "Compute Pool")),
+            Err(e) => Ok(output_with_section(
+                format!("**Error**: {e}"),
+                "Compute Pool",
+            )),
         };
     }
 
@@ -306,7 +309,9 @@ pub fn run_pool(args: &[String]) -> Result<SlashCommandOutput, String> {
                     "**WASM bridge**: {}",
                     if wasm { "available" } else { "unavailable" }
                 ));
-                parts.push("\n**Slash commands**: `/zedge-pool join`, `/zedge-pool leave`".to_string());
+                parts.push(
+                    "\n**Slash commands**: `/zedge-pool join`, `/zedge-pool leave`".to_string(),
+                );
             } else {
                 parts.push(format!("```json\n{pool_json}\n```"));
             }
@@ -472,7 +477,9 @@ pub fn run_selftest(args: &[String]) -> Result<SlashCommandOutput, String> {
                         parts.push(format!("Direct Cloud Run stream error: `{error}`"));
                     }
                     if let Some(preview) = direct["bodyPreview"].as_str() {
-                        parts.push(format!("Direct Cloud Run body preview: ```\n{preview}\n```"));
+                        parts.push(format!(
+                            "Direct Cloud Run body preview: ```\n{preview}\n```"
+                        ));
                     }
                 }
 
@@ -487,6 +494,129 @@ pub fn run_selftest(args: &[String]) -> Result<SlashCommandOutput, String> {
         Err(error) => Ok(output_with_section(
             format!("**Companion unavailable**: {error}"),
             "Inference Self-Test",
+        )),
+    }
+}
+
+fn render_tts_status(value: &serde_json::Value) -> String {
+    let enabled = value["enabled"].as_bool().unwrap_or(false);
+    let requested_mode = value["requestedMode"].as_str().unwrap_or("auto");
+    let resolved_mode = value["mode"].as_str().unwrap_or("?");
+    let moonshine_url = value["moonshineUrl"].as_str().unwrap_or("?");
+    let platform = value["platform"].as_str().unwrap_or("?");
+
+    [
+        "## Moonshine TTS".to_string(),
+        String::new(),
+        format!(
+            "**Relay**: {}",
+            if enabled { "enabled" } else { "disabled" }
+        ),
+        format!("**Requested mode**: `{requested_mode}`"),
+        format!("**Resolved mode**: `{resolved_mode}`"),
+        format!("**Moonshine URL**: `{moonshine_url}`"),
+        format!("**Host platform**: `{platform}`"),
+        String::new(),
+        "**Commands**: `/edge-tts enable`, `/edge-tts disable`, `/edge-tts host`, `/edge-tts file`, `/edge-tts pulse`, `/edge-tts alsa`, `/edge-tts auto`, `/edge-tts speak <text>`".to_string(),
+    ]
+    .join("\n")
+}
+
+fn render_tts_speak_result(value: &serde_json::Value) -> String {
+    let ok = value["ok"].as_bool().unwrap_or(false);
+    let mode = value["mode"].as_str().unwrap_or("?");
+    let playback = value["playback"].as_str().unwrap_or("?");
+    let byte_length = value["byteLength"].as_u64().unwrap_or(0);
+    let content_type = value["contentType"].as_str().unwrap_or("?");
+
+    let mut parts = vec![
+        "## Moonshine TTS Speak".to_string(),
+        String::new(),
+        format!("**Status**: {}", if ok { "ok" } else { "error" }),
+        format!("**Mode**: `{mode}`"),
+        format!("**Playback**: `{playback}`"),
+        format!("**Bytes**: {byte_length}"),
+        format!("**Content type**: `{content_type}`"),
+    ];
+
+    if let Some(file_path) = value["filePath"].as_str() {
+        parts.push(format!("**File**: `{file_path}`"));
+    }
+    if let Some(error) = value["error"].as_str() {
+        parts.push(format!("**Error**: {error}"));
+    }
+
+    parts.join("\n")
+}
+
+fn tts_status_from_body(body: String) -> SlashCommandOutput {
+    if let Ok(value) = serde_json::from_str::<serde_json::Value>(&body) {
+        output_with_section(render_tts_status(&value), "TTS")
+    } else {
+        output_with_section(format!("```json\n{body}\n```"), "TTS")
+    }
+}
+
+/// /edge-tts — inspect, enable, disable, configure, or trigger local TTS playback
+pub fn run_tts(args: &[String]) -> Result<SlashCommandOutput, String> {
+    let subcommand = args.first().map(|value| value.as_str()).unwrap_or("status");
+
+    match subcommand {
+        "status" => match companion_get("/tts/status") {
+            Ok(body) => Ok(tts_status_from_body(body)),
+            Err(error) => Ok(output_with_section(
+                format!("**Companion offline**: {error}"),
+                "TTS",
+            )),
+        },
+        "enable" | "on" => {
+            match companion_post_json("/tts/config", serde_json::json!({ "enabled": true })) {
+                Ok(body) => Ok(tts_status_from_body(body)),
+                Err(error) => Ok(output_with_section(format!("**Error**: {error}"), "TTS")),
+            }
+        }
+        "disable" | "off" => {
+            match companion_post_json("/tts/config", serde_json::json!({ "enabled": false })) {
+                Ok(body) => Ok(tts_status_from_body(body)),
+                Err(error) => Ok(output_with_section(format!("**Error**: {error}"), "TTS")),
+            }
+        }
+        "auto" | "host" | "file" | "pulse" | "alsa" => match companion_post_json(
+            "/tts/config",
+            serde_json::json!({ "enabled": true, "mode": subcommand }),
+        ) {
+            Ok(body) => Ok(tts_status_from_body(body)),
+            Err(error) => Ok(output_with_section(format!("**Error**: {error}"), "TTS")),
+        },
+        "speak" => {
+            let input = args
+                .iter()
+                .skip(1)
+                .map(|value| value.as_str())
+                .collect::<Vec<_>>()
+                .join(" ");
+            if input.trim().is_empty() {
+                return Ok(output_with_section(
+                    "Usage: `/edge-tts speak <text>`".to_string(),
+                    "TTS",
+                ));
+            }
+
+            match companion_post_json("/tts/speak", serde_json::json!({ "input": input })) {
+                Ok(body) => {
+                    if let Ok(value) = serde_json::from_str::<serde_json::Value>(&body) {
+                        Ok(output_with_section(render_tts_speak_result(&value), "TTS"))
+                    } else {
+                        Ok(output_with_section(format!("```json\n{body}\n```"), "TTS"))
+                    }
+                }
+                Err(error) => Ok(output_with_section(format!("**Error**: {error}"), "TTS")),
+            }
+        }
+        _ => Ok(output_with_section(
+            "Usage: `/edge-tts [status|enable|disable|auto|host|file|pulse|alsa|speak <text>]`"
+                .to_string(),
+            "TTS",
         )),
     }
 }
@@ -1234,8 +1364,12 @@ pub fn run_gnosis_viz(worktree: Option<&Worktree>) -> Result<SlashCommandOutput,
     parts.push(format!("Open in browser: {viz_url}\n"));
     parts.push("The visualization shows:".to_string());
     parts.push("- **Nodes**: color-coded by kind (entry, call, assign, return, join)".to_string());
-    parts.push("- **Edges**: color-coded by type (FORK, RACE, FOLD, PROCESS, VENT, INTERFERE)".to_string());
-    parts.push("- **Metrics HUD**: Buley number, Wallace number, steering regime, beta-1".to_string());
+    parts.push(
+        "- **Edges**: color-coded by type (FORK, RACE, FOLD, PROCESS, VENT, INTERFERE)".to_string(),
+    );
+    parts.push(
+        "- **Metrics HUD**: Buley number, Wallace number, steering regime, beta-1".to_string(),
+    );
     parts.push("- **Interactive**: hover for details, click to navigate to source".to_string());
 
     let text = parts.join("\n");
@@ -1322,7 +1456,10 @@ pub fn run_feedback(args: &[String]) -> Result<SlashCommandOutput, String> {
                     }
                     Ok(output_with_section(parts.join("\n"), "Zedge Feedback"))
                 } else {
-                    Ok(output_with_section(format!("```\n{body}\n```"), "Zedge Feedback"))
+                    Ok(output_with_section(
+                        format!("```\n{body}\n```"),
+                        "Zedge Feedback",
+                    ))
                 }
             }
             Err(error) => Ok(output_with_section(
@@ -1377,12 +1514,16 @@ pub fn run_babelfish_native(
     _worktree: Option<&Worktree>,
 ) -> Result<SlashCommandOutput, String> {
     if args.is_empty() {
-        return Ok(output_with_section("Usage: /zedge-babelfish-native translate-code <target_language> <file_path>".to_string(), "Babelfish Native"));
+        return Ok(output_with_section(
+            "Usage: /zedge-babelfish-native translate-code <target_language> <file_path>"
+                .to_string(),
+            "Babelfish Native",
+        ));
     }
-    
+
     let target_language = args[0].clone();
     let file_paths = args[1..].to_vec();
-    
+
     let body = serde_json::json!({
         "strategy": "evolve",
         "target_language": target_language,
@@ -1395,16 +1536,20 @@ pub fn run_babelfish_native(
                 let status = v["status"].as_str().unwrap_or("unknown");
                 let checkpoint = v["checkpoint_gnot"].as_str().unwrap_or("None");
                 let output = v["output"].as_str().unwrap_or(&response_body);
-                
+
                 let text = format!("## Native Topology Betti Evolve\nStatus: `{status}`\nCheckpoint: `{checkpoint}`\n\n```\n{output}\n```");
                 Ok(output_with_section(text, "Babelfish Native"))
             } else {
-                Ok(output_with_section(format!("```json\n{response_body}\n```"), "Babelfish Native"))
+                Ok(output_with_section(
+                    format!("```json\n{response_body}\n```"),
+                    "Babelfish Native",
+                ))
             }
         }
-        Err(e) => {
-            Ok(output_with_section(format!("**Companion offline or error**: {e}"), "Babelfish Native"))
-        }
+        Err(e) => Ok(output_with_section(
+            format!("**Companion offline or error**: {e}"),
+            "Babelfish Native",
+        )),
     }
 }
 
@@ -1456,9 +1601,15 @@ pub fn run_babelfish(
 
                     return Ok(output_with_section(parts.join("\n"), "Babelfish"));
                 }
-                Ok(output_with_section(format!("```json\n{body}\n```"), "Babelfish"))
+                Ok(output_with_section(
+                    format!("```json\n{body}\n```"),
+                    "Babelfish",
+                ))
             }
-            Err(e) => Ok(output_with_section(format!("**Companion offline**: {e}"), "Babelfish")),
+            Err(e) => Ok(output_with_section(
+                format!("**Companion offline**: {e}"),
+                "Babelfish",
+            )),
         }
     } else {
         let subcommand = args[0].as_str();
@@ -1805,13 +1956,21 @@ pub fn run_review(worktree: Option<&Worktree>) -> Result<SlashCommandOutput, Str
                 parts.push("### Review\n".to_string());
                 parts.push(content.to_string());
 
-                Ok(output_with_section(parts.join("\n"), "Consensus Code Review"))
+                Ok(output_with_section(
+                    parts.join("\n"),
+                    "Consensus Code Review",
+                ))
             } else {
-                Ok(output_with_section(format!("```\n{resp_body}\n```"), "Consensus Code Review"))
+                Ok(output_with_section(
+                    format!("```\n{resp_body}\n```"),
+                    "Consensus Code Review",
+                ))
             }
         }
         Err(e) => Ok(output_with_section(
-            format!("**Superinference unavailable**: {e}\n\nEnsure the companion sidecar is running."),
+            format!(
+                "**Superinference unavailable**: {e}\n\nEnsure the companion sidecar is running."
+            ),
             "Consensus Code Review",
         )),
     }
@@ -1838,10 +1997,7 @@ pub fn run_void(args: &[String]) -> Result<SlashCommandOutput, String> {
         }
         "steering" => {
             let path = if let Some(file) = args.get(1) {
-                format!(
-                    "/void-map/steering?file={}",
-                    escape_query_component(file)
-                )
+                format!("/void-map/steering?file={}", escape_query_component(file))
             } else {
                 "/void-map/steering".to_string()
             };
@@ -1883,7 +2039,10 @@ pub fn run_swarm(args: &[String]) -> Result<SlashCommandOutput, String> {
                 format!("## Swarm Roles\n\n```json\n{body}\n```"),
                 "Swarm Roles",
             )),
-            Err(e) => Ok(output_with_section(format!("**Error**: {e}"), "Swarm Roles")),
+            Err(e) => Ok(output_with_section(
+                format!("**Error**: {e}"),
+                "Swarm Roles",
+            )),
         };
     }
 
@@ -1939,10 +2098,7 @@ pub fn run_engram(args: &[String]) -> Result<SlashCommandOutput, String> {
                     "Engram",
                 ));
             };
-            companion_delete(&format!(
-                "/engram/forget?id={}",
-                escape_query_component(id)
-            ))
+            companion_delete(&format!("/engram/forget?id={}", escape_query_component(id)))
         }
         _ => companion_get("/engram/status"),
     };

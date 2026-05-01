@@ -38,6 +38,10 @@ requires_argument = false
 description = "Run a live inference self-test for health and SSE progress"
 requires_argument = false
 
+[slash_commands.edge-tts]
+description = "Control local Moonshine TTS relay: status, enable, disable, mode, or speak"
+requires_argument = false
+
 [slash_commands.edgework]
 description = "Run edgework commands — emotions, sentiment, entities, embeddings, usage, and more"
 requires_argument = true

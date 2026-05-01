@@ -34,14 +34,17 @@ fn fetch_babelfish_capabilities() -> Option<serde_json::Value> {
     serde_json::from_slice::<serde_json::Value>(&response.body).ok()
 }
 
-fn babelfish_language_completions(
-    operation: &str,
-) -> Vec<SlashCommandArgumentCompletion> {
+fn babelfish_language_completions(operation: &str) -> Vec<SlashCommandArgumentCompletion> {
     fetch_babelfish_capabilities()
         .and_then(|value| value["languages"].as_array().cloned())
         .unwrap_or_default()
         .into_iter()
-        .filter(|language| language["operations"][operation].as_str().unwrap_or("unsupported") != "unsupported")
+        .filter(|language| {
+            language["operations"][operation]
+                .as_str()
+                .unwrap_or("unsupported")
+                != "unsupported"
+        })
         .map(|language| {
             let id = language["id"].as_str().unwrap_or("?");
             let display_name = language["displayName"].as_str().unwrap_or(id);
@@ -91,6 +94,7 @@ impl zed::Extension for EdgeAiExtension {
             "edge-clear" => slash_commands::run_clear(),
             "edge-restart" => slash_commands::run_restart(),
             "edge-selftest" => slash_commands::run_selftest(&_args),
+            "edge-tts" => slash_commands::run_tts(&_args),
             "edgework" => slash_commands::run_edgework(&_args),
             "edge-admin" => slash_commands::run_admin(&_args),
             "edge-mesh" => slash_commands::run_mesh(&_args),
@@ -150,11 +154,14 @@ impl zed::Extension for EdgeAiExtension {
                     ("workflows --list", "List AI workflows"),
                     ("test", "Test integration"),
                 ];
-                Ok(commands.into_iter().map(|(cmd, desc)| SlashCommandArgumentCompletion {
-                    label: format!("{cmd} — {desc}"),
-                    new_text: cmd.to_string(),
-                    run_command: true,
-                }).collect())
+                Ok(commands
+                    .into_iter()
+                    .map(|(cmd, desc)| SlashCommandArgumentCompletion {
+                        label: format!("{cmd} — {desc}"),
+                        new_text: cmd.to_string(),
+                        run_command: true,
+                    })
+                    .collect())
             }
             "edge-admin" => {
                 let commands = vec![
@@ -176,87 +183,287 @@ impl zed::Extension for EdgeAiExtension {
                     ("ai runbook", "Curated runbook sequences"),
                     ("workflow list", "Available workflows"),
                 ];
-                Ok(commands.into_iter().map(|(cmd, desc)| SlashCommandArgumentCompletion {
-                    label: format!("{cmd} — {desc}"),
-                    new_text: cmd.to_string(),
+                Ok(commands
+                    .into_iter()
+                    .map(|(cmd, desc)| SlashCommandArgumentCompletion {
+                        label: format!("{cmd} — {desc}"),
+                        new_text: cmd.to_string(),
+                        run_command: true,
+                    })
+                    .collect())
+            }
+            "edge-tts" => Ok(vec![
+                SlashCommandArgumentCompletion {
+                    label: "status — Show TTS relay status".into(),
+                    new_text: "status".into(),
                     run_command: true,
-                }).collect())
-            }
-            "edge-mesh" => {
-                Ok(vec![
-                    SlashCommandArgumentCompletion { label: "status — Show mesh status".into(), new_text: "status".into(), run_command: true },
-                    SlashCommandArgumentCompletion { label: "start — Start P2P mesh".into(), new_text: "start".into(), run_command: true },
-                    SlashCommandArgumentCompletion { label: "stop — Stop P2P mesh".into(), new_text: "stop".into(), run_command: true },
-                ])
-            }
-            "edge-pool" => {
-                Ok(vec![
-                    SlashCommandArgumentCompletion { label: "status — Show compute pool status".into(), new_text: "status".into(), run_command: true },
-                    SlashCommandArgumentCompletion { label: "join — Join the compute pool".into(), new_text: "join".into(), run_command: true },
-                    SlashCommandArgumentCompletion { label: "leave — Leave the compute pool".into(), new_text: "leave".into(), run_command: true },
-                ])
-            }
-            "edge-crdt" => {
-                Ok(vec![
-                    SlashCommandArgumentCompletion { label: "status — CRDT overview".into(), new_text: "status".into(), run_command: true },
-                    SlashCommandArgumentCompletion { label: "files — Open CRDT files".into(), new_text: "files".into(), run_command: true },
-                    SlashCommandArgumentCompletion { label: "cursors — Active cursors".into(), new_text: "cursors".into(), run_command: true },
-                    SlashCommandArgumentCompletion { label: "participants — Connected participants".into(), new_text: "participants".into(), run_command: true },
-                    SlashCommandArgumentCompletion { label: "ledger — Contribution ledger".into(), new_text: "ledger".into(), run_command: true },
-                    SlashCommandArgumentCompletion { label: "diagnostics — CRDT diagnostics".into(), new_text: "diagnostics".into(), run_command: true },
-                ])
-            }
-            "edge-forge" => {
-                Ok(vec![
-                    SlashCommandArgumentCompletion { label: "status — ForgeCD status".into(), new_text: "status".into(), run_command: true },
-                    SlashCommandArgumentCompletion { label: "projects — List projects".into(), new_text: "projects".into(), run_command: true },
-                    SlashCommandArgumentCompletion { label: "deploy — Deploy a project".into(), new_text: "deploy ".into(), run_command: false },
-                ])
-            }
-            "edge-scaffold" => {
-                Ok(vec![
-                    SlashCommandArgumentCompletion { label: "site — Aeon Foundation site (SSR, routing, tokens)".into(), new_text: "site ".into(), run_command: false },
-                    SlashCommandArgumentCompletion { label: "app — Full-stack Aeon app (site + API + auth)".into(), new_text: "app ".into(), run_command: false },
-                    SlashCommandArgumentCompletion { label: "worker — Edge worker (CF Workers / Bun)".into(), new_text: "worker ".into(), run_command: false },
-                    SlashCommandArgumentCompletion { label: "mcp — MCP server (Model Context Protocol)".into(), new_text: "mcp ".into(), run_command: false },
-                    SlashCommandArgumentCompletion { label: "agent — AI agent template (tool use + memory)".into(), new_text: "agent ".into(), run_command: false },
-                    SlashCommandArgumentCompletion { label: "extension — Zed editor extension".into(), new_text: "extension ".into(), run_command: false },
-                    SlashCommandArgumentCompletion { label: "gnosis — Gnosis topological graph project".into(), new_text: "gnosis ".into(), run_command: false },
-                ])
-            }
-            "edge-gnot" => {
-                Ok(vec![
-                    SlashCommandArgumentCompletion { label: "files — List workspace .gnot files".into(), new_text: "files".into(), run_command: true },
-                    SlashCommandArgumentCompletion { label: "lint — Lint a .gnot file".into(), new_text: "lint ".into(), run_command: false },
-                    SlashCommandArgumentCompletion { label: "format — Format a .gnot file".into(), new_text: "format ".into(), run_command: false },
-                    SlashCommandArgumentCompletion { label: "doctor — Inspect deploy readiness for a gnot app".into(), new_text: "doctor ".into(), run_command: false },
-                    SlashCommandArgumentCompletion { label: "next — Suggest the next gnot deploy-shell action".into(), new_text: "next ".into(), run_command: false },
-                    SlashCommandArgumentCompletion { label: "status — Show release status for a gnot app".into(), new_text: "status ".into(), run_command: false },
-                ])
-            }
-            "edge-kernel" => {
-                Ok(vec![
-                    SlashCommandArgumentCompletion { label: "status — Daemons and plugins".into(), new_text: "status".into(), run_command: true },
-                    SlashCommandArgumentCompletion { label: "daemons — Running daemons".into(), new_text: "daemons".into(), run_command: true },
-                    SlashCommandArgumentCompletion { label: "plugins — Loaded plugins".into(), new_text: "plugins".into(), run_command: true },
-                    SlashCommandArgumentCompletion { label: "commands — Available commands".into(), new_text: "commands".into(), run_command: true },
-                    SlashCommandArgumentCompletion { label: "flight-log — Event flight log".into(), new_text: "flight-log".into(), run_command: true },
-                ])
-            }
+                },
+                SlashCommandArgumentCompletion {
+                    label: "enable — Enable host playback relay".into(),
+                    new_text: "enable".into(),
+                    run_command: true,
+                },
+                SlashCommandArgumentCompletion {
+                    label: "disable — Disable host playback relay".into(),
+                    new_text: "disable".into(),
+                    run_command: true,
+                },
+                SlashCommandArgumentCompletion {
+                    label: "host — Play through the host companion".into(),
+                    new_text: "host".into(),
+                    run_command: true,
+                },
+                SlashCommandArgumentCompletion {
+                    label: "file — Write WAV files only".into(),
+                    new_text: "file".into(),
+                    run_command: true,
+                },
+                SlashCommandArgumentCompletion {
+                    label: "pulse — Play through PulseAudio TCP".into(),
+                    new_text: "pulse".into(),
+                    run_command: true,
+                },
+                SlashCommandArgumentCompletion {
+                    label: "alsa — Play through Linux /dev/snd".into(),
+                    new_text: "alsa".into(),
+                    run_command: true,
+                },
+                SlashCommandArgumentCompletion {
+                    label: "auto — Resolve platform default".into(),
+                    new_text: "auto".into(),
+                    run_command: true,
+                },
+                SlashCommandArgumentCompletion {
+                    label: "speak — Speak text through Moonshine TTS".into(),
+                    new_text: "speak ".into(),
+                    run_command: false,
+                },
+            ]),
+            "edge-mesh" => Ok(vec![
+                SlashCommandArgumentCompletion {
+                    label: "status — Show mesh status".into(),
+                    new_text: "status".into(),
+                    run_command: true,
+                },
+                SlashCommandArgumentCompletion {
+                    label: "start — Start P2P mesh".into(),
+                    new_text: "start".into(),
+                    run_command: true,
+                },
+                SlashCommandArgumentCompletion {
+                    label: "stop — Stop P2P mesh".into(),
+                    new_text: "stop".into(),
+                    run_command: true,
+                },
+            ]),
+            "edge-pool" => Ok(vec![
+                SlashCommandArgumentCompletion {
+                    label: "status — Show compute pool status".into(),
+                    new_text: "status".into(),
+                    run_command: true,
+                },
+                SlashCommandArgumentCompletion {
+                    label: "join — Join the compute pool".into(),
+                    new_text: "join".into(),
+                    run_command: true,
+                },
+                SlashCommandArgumentCompletion {
+                    label: "leave — Leave the compute pool".into(),
+                    new_text: "leave".into(),
+                    run_command: true,
+                },
+            ]),
+            "edge-crdt" => Ok(vec![
+                SlashCommandArgumentCompletion {
+                    label: "status — CRDT overview".into(),
+                    new_text: "status".into(),
+                    run_command: true,
+                },
+                SlashCommandArgumentCompletion {
+                    label: "files — Open CRDT files".into(),
+                    new_text: "files".into(),
+                    run_command: true,
+                },
+                SlashCommandArgumentCompletion {
+                    label: "cursors — Active cursors".into(),
+                    new_text: "cursors".into(),
+                    run_command: true,
+                },
+                SlashCommandArgumentCompletion {
+                    label: "participants — Connected participants".into(),
+                    new_text: "participants".into(),
+                    run_command: true,
+                },
+                SlashCommandArgumentCompletion {
+                    label: "ledger — Contribution ledger".into(),
+                    new_text: "ledger".into(),
+                    run_command: true,
+                },
+                SlashCommandArgumentCompletion {
+                    label: "diagnostics — CRDT diagnostics".into(),
+                    new_text: "diagnostics".into(),
+                    run_command: true,
+                },
+            ]),
+            "edge-forge" => Ok(vec![
+                SlashCommandArgumentCompletion {
+                    label: "status — ForgeCD status".into(),
+                    new_text: "status".into(),
+                    run_command: true,
+                },
+                SlashCommandArgumentCompletion {
+                    label: "projects — List projects".into(),
+                    new_text: "projects".into(),
+                    run_command: true,
+                },
+                SlashCommandArgumentCompletion {
+                    label: "deploy — Deploy a project".into(),
+                    new_text: "deploy ".into(),
+                    run_command: false,
+                },
+            ]),
+            "edge-scaffold" => Ok(vec![
+                SlashCommandArgumentCompletion {
+                    label: "site — Aeon Foundation site (SSR, routing, tokens)".into(),
+                    new_text: "site ".into(),
+                    run_command: false,
+                },
+                SlashCommandArgumentCompletion {
+                    label: "app — Full-stack Aeon app (site + API + auth)".into(),
+                    new_text: "app ".into(),
+                    run_command: false,
+                },
+                SlashCommandArgumentCompletion {
+                    label: "worker — Edge worker (CF Workers / Bun)".into(),
+                    new_text: "worker ".into(),
+                    run_command: false,
+                },
+                SlashCommandArgumentCompletion {
+                    label: "mcp — MCP server (Model Context Protocol)".into(),
+                    new_text: "mcp ".into(),
+                    run_command: false,
+                },
+                SlashCommandArgumentCompletion {
+                    label: "agent — AI agent template (tool use + memory)".into(),
+                    new_text: "agent ".into(),
+                    run_command: false,
+                },
+                SlashCommandArgumentCompletion {
+                    label: "extension — Zed editor extension".into(),
+                    new_text: "extension ".into(),
+                    run_command: false,
+                },
+                SlashCommandArgumentCompletion {
+                    label: "gnosis — Gnosis topological graph project".into(),
+                    new_text: "gnosis ".into(),
+                    run_command: false,
+                },
+            ]),
+            "edge-gnot" => Ok(vec![
+                SlashCommandArgumentCompletion {
+                    label: "files — List workspace .gnot files".into(),
+                    new_text: "files".into(),
+                    run_command: true,
+                },
+                SlashCommandArgumentCompletion {
+                    label: "lint — Lint a .gnot file".into(),
+                    new_text: "lint ".into(),
+                    run_command: false,
+                },
+                SlashCommandArgumentCompletion {
+                    label: "format — Format a .gnot file".into(),
+                    new_text: "format ".into(),
+                    run_command: false,
+                },
+                SlashCommandArgumentCompletion {
+                    label: "doctor — Inspect deploy readiness for a gnot app".into(),
+                    new_text: "doctor ".into(),
+                    run_command: false,
+                },
+                SlashCommandArgumentCompletion {
+                    label: "next — Suggest the next gnot deploy-shell action".into(),
+                    new_text: "next ".into(),
+                    run_command: false,
+                },
+                SlashCommandArgumentCompletion {
+                    label: "status — Show release status for a gnot app".into(),
+                    new_text: "status ".into(),
+                    run_command: false,
+                },
+            ]),
+            "edge-kernel" => Ok(vec![
+                SlashCommandArgumentCompletion {
+                    label: "status — Daemons and plugins".into(),
+                    new_text: "status".into(),
+                    run_command: true,
+                },
+                SlashCommandArgumentCompletion {
+                    label: "daemons — Running daemons".into(),
+                    new_text: "daemons".into(),
+                    run_command: true,
+                },
+                SlashCommandArgumentCompletion {
+                    label: "plugins — Loaded plugins".into(),
+                    new_text: "plugins".into(),
+                    run_command: true,
+                },
+                SlashCommandArgumentCompletion {
+                    label: "commands — Available commands".into(),
+                    new_text: "commands".into(),
+                    run_command: true,
+                },
+                SlashCommandArgumentCompletion {
+                    label: "flight-log — Event flight log".into(),
+                    new_text: "flight-log".into(),
+                    run_command: true,
+                },
+            ]),
             "edge-babelfish" => {
                 if args.is_empty() {
                     Ok(vec![
-                        SlashCommandArgumentCompletion { label: "capabilities — Show supported programming and human languages".into(), new_text: "capabilities".into(), run_command: true },
-                        SlashCommandArgumentCompletion { label: "explain — Explain a file via Babelfish".into(), new_text: "explain ".into(), run_command: false },
-                        SlashCommandArgumentCompletion { label: "translate-code — Preview source-to-source translation".into(), new_text: "translate-code ".into(), run_command: false },
-                        SlashCommandArgumentCompletion { label: "translate-text — Translate comments, docs, and diagnostics".into(), new_text: "translate-text ".into(), run_command: false },
-                        SlashCommandArgumentCompletion { label: "generate — Write generated target-language files".into(), new_text: "generate ".into(), run_command: false },
-                        SlashCommandArgumentCompletion { label: "rewrite-preview — Preview an in-place rewrite".into(), new_text: "rewrite-preview ".into(), run_command: false },
-                        SlashCommandArgumentCompletion { label: "apply — Apply a stored preview token".into(), new_text: "apply ".into(), run_command: false },
+                        SlashCommandArgumentCompletion {
+                            label: "capabilities — Show supported programming and human languages"
+                                .into(),
+                            new_text: "capabilities".into(),
+                            run_command: true,
+                        },
+                        SlashCommandArgumentCompletion {
+                            label: "explain — Explain a file via Babelfish".into(),
+                            new_text: "explain ".into(),
+                            run_command: false,
+                        },
+                        SlashCommandArgumentCompletion {
+                            label: "translate-code — Preview source-to-source translation".into(),
+                            new_text: "translate-code ".into(),
+                            run_command: false,
+                        },
+                        SlashCommandArgumentCompletion {
+                            label: "translate-text — Translate comments, docs, and diagnostics"
+                                .into(),
+                            new_text: "translate-text ".into(),
+                            run_command: false,
+                        },
+                        SlashCommandArgumentCompletion {
+                            label: "generate — Write generated target-language files".into(),
+                            new_text: "generate ".into(),
+                            run_command: false,
+                        },
+                        SlashCommandArgumentCompletion {
+                            label: "rewrite-preview — Preview an in-place rewrite".into(),
+                            new_text: "rewrite-preview ".into(),
+                            run_command: false,
+                        },
+                        SlashCommandArgumentCompletion {
+                            label: "apply — Apply a stored preview token".into(),
+                            new_text: "apply ".into(),
+                            run_command: false,
+                        },
                     ])
                 } else {
                     match args[0].as_str() {
-                        "translate-code" | "generate" => Ok(babelfish_language_completions("translate")),
+                        "translate-code" | "generate" => {
+                            Ok(babelfish_language_completions("translate"))
+                        }
                         "rewrite-preview" => Ok(babelfish_language_completions("rewritePreview")),
                         "translate-text" => Ok(babelfish_human_language_completions()),
                         _ => Ok(Vec::new()),
@@ -265,47 +472,129 @@ impl zed::Extension for EdgeAiExtension {
             }
             "edge-babelfish-native" => {
                 if args.is_empty() {
-                    Ok(vec![
-                        SlashCommandArgumentCompletion { label: "translate-code — Run native WASM 0-latency translation".into(), new_text: "translate-code ".into(), run_command: false },
-                    ])
+                    Ok(vec![SlashCommandArgumentCompletion {
+                        label: "translate-code — Run native WASM 0-latency translation".into(),
+                        new_text: "translate-code ".into(),
+                        run_command: false,
+                    }])
                 } else {
                     Ok(babelfish_language_completions("translate"))
                 }
             }
-            "edge-feedback" => {
-                Ok(vec![
-                    SlashCommandArgumentCompletion { label: "1 — Poor response".into(), new_text: "1 ".into(), run_command: false },
-                    SlashCommandArgumentCompletion { label: "2 — Weak response".into(), new_text: "2 ".into(), run_command: false },
-                    SlashCommandArgumentCompletion { label: "3 — Mixed response".into(), new_text: "3 ".into(), run_command: false },
-                    SlashCommandArgumentCompletion { label: "4 — Good response".into(), new_text: "4 ".into(), run_command: false },
-                    SlashCommandArgumentCompletion { label: "5 — Excellent response".into(), new_text: "5 ".into(), run_command: false },
-                ])
-            }
+            "edge-feedback" => Ok(vec![
+                SlashCommandArgumentCompletion {
+                    label: "1 — Poor response".into(),
+                    new_text: "1 ".into(),
+                    run_command: false,
+                },
+                SlashCommandArgumentCompletion {
+                    label: "2 — Weak response".into(),
+                    new_text: "2 ".into(),
+                    run_command: false,
+                },
+                SlashCommandArgumentCompletion {
+                    label: "3 — Mixed response".into(),
+                    new_text: "3 ".into(),
+                    run_command: false,
+                },
+                SlashCommandArgumentCompletion {
+                    label: "4 — Good response".into(),
+                    new_text: "4 ".into(),
+                    run_command: false,
+                },
+                SlashCommandArgumentCompletion {
+                    label: "5 — Excellent response".into(),
+                    new_text: "5 ".into(),
+                    run_command: false,
+                },
+            ]),
             "edge-void" => Ok(vec![
-                SlashCommandArgumentCompletion { label: "status — Show void-map status".into(), new_text: "status".into(), run_command: true },
-                SlashCommandArgumentCompletion { label: "query — Query entries by file/category".into(), new_text: "query ".into(), run_command: false },
-                SlashCommandArgumentCompletion { label: "steering — Show steering vector".into(), new_text: "steering ".into(), run_command: false },
-                SlashCommandArgumentCompletion { label: "export — Export training records".into(), new_text: "export ".into(), run_command: false },
-                SlashCommandArgumentCompletion { label: "compact — Compact old entries".into(), new_text: "compact".into(), run_command: true },
+                SlashCommandArgumentCompletion {
+                    label: "status — Show void-map status".into(),
+                    new_text: "status".into(),
+                    run_command: true,
+                },
+                SlashCommandArgumentCompletion {
+                    label: "query — Query entries by file/category".into(),
+                    new_text: "query ".into(),
+                    run_command: false,
+                },
+                SlashCommandArgumentCompletion {
+                    label: "steering — Show steering vector".into(),
+                    new_text: "steering ".into(),
+                    run_command: false,
+                },
+                SlashCommandArgumentCompletion {
+                    label: "export — Export training records".into(),
+                    new_text: "export ".into(),
+                    run_command: false,
+                },
+                SlashCommandArgumentCompletion {
+                    label: "compact — Compact old entries".into(),
+                    new_text: "compact".into(),
+                    run_command: true,
+                },
             ]),
             "edge-swarm" => Ok(vec![
-                SlashCommandArgumentCompletion { label: "roles — Show available swarm roles".into(), new_text: "".into(), run_command: true },
-                SlashCommandArgumentCompletion { label: "review the current diff — Start a review/refactor/test swarm".into(), new_text: "review the current diff".into(), run_command: true },
+                SlashCommandArgumentCompletion {
+                    label: "roles — Show available swarm roles".into(),
+                    new_text: "".into(),
+                    run_command: true,
+                },
+                SlashCommandArgumentCompletion {
+                    label: "review the current diff — Start a review/refactor/test swarm".into(),
+                    new_text: "review the current diff".into(),
+                    run_command: true,
+                },
             ]),
             "edge-engram" => Ok(vec![
-                SlashCommandArgumentCompletion { label: "status — Show engram-store status".into(), new_text: "status".into(), run_command: true },
-                SlashCommandArgumentCompletion { label: "recall — Recall matching memory".into(), new_text: "recall ".into(), run_command: false },
-                SlashCommandArgumentCompletion { label: "remember — Store a memory".into(), new_text: "remember ".into(), run_command: false },
-                SlashCommandArgumentCompletion { label: "forget — Remove an engram by id".into(), new_text: "forget ".into(), run_command: false },
+                SlashCommandArgumentCompletion {
+                    label: "status — Show engram-store status".into(),
+                    new_text: "status".into(),
+                    run_command: true,
+                },
+                SlashCommandArgumentCompletion {
+                    label: "recall — Recall matching memory".into(),
+                    new_text: "recall ".into(),
+                    run_command: false,
+                },
+                SlashCommandArgumentCompletion {
+                    label: "remember — Store a memory".into(),
+                    new_text: "remember ".into(),
+                    run_command: false,
+                },
+                SlashCommandArgumentCompletion {
+                    label: "forget — Remove an engram by id".into(),
+                    new_text: "forget ".into(),
+                    run_command: false,
+                },
             ]),
-            "edge-emotion" => Ok(vec![
-                SlashCommandArgumentCompletion { label: "Analyze a file path".into(), new_text: "".into(), run_command: false },
-            ]),
+            "edge-emotion" => Ok(vec![SlashCommandArgumentCompletion {
+                label: "Analyze a file path".into(),
+                new_text: "".into(),
+                run_command: false,
+            }]),
             "edge-agent" => Ok(vec![
-                SlashCommandArgumentCompletion { label: "list — List GG agents".into(), new_text: "list".into(), run_command: true },
-                SlashCommandArgumentCompletion { label: "trigger — Trigger an agent".into(), new_text: "trigger ".into(), run_command: false },
-                SlashCommandArgumentCompletion { label: "status — Show Forge agent status".into(), new_text: "status".into(), run_command: true },
-                SlashCommandArgumentCompletion { label: "health — Show health for one agent".into(), new_text: "health ".into(), run_command: false },
+                SlashCommandArgumentCompletion {
+                    label: "list — List GG agents".into(),
+                    new_text: "list".into(),
+                    run_command: true,
+                },
+                SlashCommandArgumentCompletion {
+                    label: "trigger — Trigger an agent".into(),
+                    new_text: "trigger ".into(),
+                    run_command: false,
+                },
+                SlashCommandArgumentCompletion {
+                    label: "status — Show Forge agent status".into(),
+                    new_text: "status".into(),
+                    run_command: true,
+                },
+                SlashCommandArgumentCompletion {
+                    label: "health — Show health for one agent".into(),
+                    new_text: "health ".into(),
+                    run_command: false,
+                },
             ]),
             _ => Ok(Vec::new()),
         }
@@ -317,7 +606,9 @@ impl zed::Extension for EdgeAiExtension {
         _worktree: &Worktree,
     ) -> Result<Command> {
         if language_server_id.as_ref() == "gnosis-lsp" {
-            Ok(ts_entry_command("open-source/zedge/companion/src/gnosis-lsp.ts"))
+            Ok(ts_entry_command(
+                "open-source/zedge/companion/src/gnosis-lsp.ts",
+            ))
         } else {
             Err(format!("Unknown language server: {language_server_id}"))
         }

@@ -129,6 +129,45 @@ describe('Zedge MCP prompt surface', () => {
     }
   });
 
+  test('accepts extension command names as generic tool aliases', async () => {
+    const fetchMock = mock(async (url: string | URL, init?: RequestInit) => {
+      expect(String(url)).toBe('http://127.0.0.1:7331/tts/config');
+      expect(init?.method).toBe('POST');
+
+      const body = JSON.parse(String(init?.body)) as {
+        enabled?: boolean;
+      };
+      expect(body.enabled).toBe(false);
+
+      return new Response(JSON.stringify({ ok: true, enabled: false }), {
+        headers: { 'Content-Type': 'application/json' },
+      });
+    });
+
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = fetchMock as typeof fetch;
+    try {
+      const response = await dispatch({
+        jsonrpc: '2.0',
+        id: 5,
+        method: 'tools/call',
+        params: {
+          name: 'zedge_command',
+          arguments: {
+            command: 'edge-tts',
+            args: 'disable',
+          },
+        },
+      });
+
+      const content = (response?.result as { content: Array<{ text: string }> })
+        .content[0]?.text;
+      expect(content).toContain('"enabled": false');
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
   test('reads file-backed command inputs from the repo root instead of the companion cwd', async () => {
     const fetchMock = mock(async (url: string | URL, init?: RequestInit) => {
       expect(String(url)).toBe('http://127.0.0.1:7331/gnosis/eval');
@@ -148,7 +187,7 @@ describe('Zedge MCP prompt surface', () => {
     try {
       const response = await dispatch({
         jsonrpc: '2.0',
-        id: 5,
+        id: 6,
         method: 'tools/call',
         params: {
           name: 'zedge_command',
@@ -193,7 +232,7 @@ describe('Zedge MCP prompt surface', () => {
     try {
       const response = await dispatch({
         jsonrpc: '2.0',
-        id: 6,
+        id: 7,
         method: 'tools/call',
         params: {
           name: 'zedge_command',

@@ -413,6 +413,38 @@ mock.module('../inference-bridge.ts', () => ({
   },
 }));
 
+mock.module('../tts-relay.ts', () => ({
+  configureTtsRelay: () => ({
+    status: 200,
+    result: {
+      ok: true,
+      enabled: true,
+      requestedMode: 'host',
+      mode: 'host',
+      moonshineUrl: 'http://127.0.0.1:8080',
+      platform: 'darwin',
+    },
+  }),
+  getTtsRelayStatus: () => ({
+    enabled: true,
+    requestedMode: 'host',
+    mode: 'host',
+    moonshineUrl: 'http://127.0.0.1:8080',
+    platform: 'darwin',
+  }),
+  handleTtsSpeakRequest: async () => ({
+    status: 200,
+    result: {
+      ok: true,
+      mode: 'host',
+      playback: 'afplay',
+      byteLength: 44,
+      contentType: 'audio/wav',
+      moonshineStatus: 200,
+    },
+  }),
+}));
+
 mock.module('../babelfish-routes.ts', () => ({
   handleBabelfishRequest: async (request: Request) => {
     const { pathname } = new URL(request.url);
@@ -946,6 +978,7 @@ const routeCases: RouteCase[] = [
     '/gnosis/viz',
     '/gnosis/watcher/stats',
     '/admin/commands',
+    '/tts/status',
     '/v1/models',
     '/compute-pool/status',
     '/mesh/status',
@@ -1077,6 +1110,8 @@ const routeCases: RouteCase[] = [
       expect(response.headers.get('X-Zedge-Tier')).toBe('edge');
     }
   ),
+  postCase('/tts/config', 200, { enabled: true, mode: 'host' }),
+  postCase('/tts/speak', 200, { input: 'hello moonshine' }),
   postCase('/v1/completions', 200, { prompt: 'hello' }),
   postCase('/v1/embeddings', 200, { input: 'hello' }),
   postCase('/gnot/command', 200, { action: 'files' }),
@@ -1241,7 +1276,7 @@ describe('server route audit', () => {
 
     expect(missing).toEqual([]);
     expect(extra).toEqual([]);
-    expect(inventory.size).toBe(187);
+    expect(inventory.size).toBe(190);
   });
 
   test('responds to CORS preflight before route dispatch', async () => {

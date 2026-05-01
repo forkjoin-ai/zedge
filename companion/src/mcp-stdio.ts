@@ -544,6 +544,13 @@ const ZEDGE_PROMPTS: McpPromptDefinition[] = [
       'Run the live Zedge inference self-test. Use the `zedge_command` tool with `command: "zedge-selftest"`. If the user supplied an argument, treat it as the model ID. Report edge-model readiness, Cloud Run health, and whether companion/direct SSE emitted prefill, heartbeat, data, and done events.',
   },
   {
+    name: 'zedge-tts',
+    description: 'Control local Moonshine TTS relay and host playback mode',
+    arguments: slashArgsPrompt,
+    instructions:
+      'Inspect or change local TTS relay state. Use the `zedge_command` tool with `command: "zedge-tts"`. Pass `args` as `status`, `enable`, `disable`, `host`, `file`, `pulse`, `alsa`, `auto`, or `speak <text>`.',
+  },
+  {
     name: 'zedgework',
     description: 'Run edgework commands for analysis and account operations',
     arguments: slashArgsPrompt,
@@ -740,6 +747,16 @@ const ZEDGE_PROMPTS: McpPromptDefinition[] = [
     },
   },
 ];
+
+function extensionPromptName(name: string): string {
+  if (name === 'zedgework') return 'edgework';
+  return name.startsWith('zedge-') ? name.replace(/^zedge-/, 'edge-') : name;
+}
+
+function canonicalZedgeCommandName(name: string): string {
+  if (name === 'edgework') return 'zedgework';
+  return name.startsWith('edge-') ? `z${name}` : name;
+}
 
 function optionalString(value: unknown): string | null {
   if (typeof value !== 'string') {
@@ -1067,11 +1084,12 @@ async function callGnotCommand(payload: Record<string, unknown>): Promise<string
 async function executeZedgeCommandTool(
   args: Record<string, unknown>
 ): Promise<Record<string, unknown>> {
-  const command = optionalString(args.command);
-  if (!command) {
+  const rawCommand = optionalString(args.command);
+  if (!rawCommand) {
     return createToolResult('Missing required `command` argument.', true);
   }
 
+  const command = canonicalZedgeCommandName(rawCommand);
   const argsText = optionalString(args.args);
   const parts = tokenizeArgs(argsText);
 
@@ -1117,6 +1135,42 @@ async function executeZedgeCommandTool(
           ? `/selftest/inference?model=${encodeURIComponent(model)}`
           : '/selftest/inference';
         return createToolResult(await fetchCompanionText(path, {}, 120_000));
+      }
+      case 'zedge-tts':
+      case 'edge-tts': {
+        const subcommand = parts[0] ?? 'status';
+        if (subcommand === 'enable' || subcommand === 'on') {
+          return createToolResult(
+            await postCompanionJson('/tts/config', { enabled: true }, 10_000)
+          );
+        }
+        if (subcommand === 'disable' || subcommand === 'off') {
+          return createToolResult(
+            await postCompanionJson('/tts/config', { enabled: false }, 10_000)
+          );
+        }
+        if (['auto', 'host', 'file', 'pulse', 'alsa'].includes(subcommand)) {
+          return createToolResult(
+            await postCompanionJson(
+              '/tts/config',
+              { enabled: true, mode: subcommand },
+              10_000
+            )
+          );
+        }
+        if (subcommand === 'speak') {
+          const input = parts.slice(1).join(' ');
+          if (!input.trim()) {
+            return createToolResult(
+              'Usage: zedge-tts speak <text>',
+              true
+            );
+          }
+          return createToolResult(
+            await postCompanionJson('/tts/speak', { input }, 60_000)
+          );
+        }
+        return createToolResult(await fetchCompanionText('/tts/status'));
       }
       case 'zedgework': {
         if (!argsText) {
@@ -1538,7 +1592,14 @@ export async function handleToolsList(): Promise<Record<string, unknown>> {
           properties: {
             command: {
               type: 'string',
-              enum: ZEDGE_PROMPTS.map((prompt) => prompt.name),
+              enum: Array.from(
+                new Set(
+                  ZEDGE_PROMPTS.flatMap((prompt) => [
+                    prompt.name,
+                    extensionPromptName(prompt.name),
+                  ])
+                )
+              ),
               description: 'The Zedge slash command to run',
             },
             args: {
@@ -1930,7 +1991,7 @@ export async function handleToolsList(): Promise<Record<string, unknown>> {
 export async function handlePromptsList(): Promise<Record<string, unknown>> {
   return {
     prompts: ZEDGE_PROMPTS.map((prompt) => ({
-      name: prompt.name,
+      name: extensionPromptName(prompt.name),
       description: prompt.description,
       arguments: prompt.arguments ?? [],
     })),
@@ -1945,7 +2006,9 @@ export async function handlePromptGet(
     throw new Error('Prompt name is required');
   }
 
-  const prompt = ZEDGE_PROMPTS.find((candidate) => candidate.name === name);
+  const prompt = ZEDGE_PROMPTS.find(
+    (candidate) => candidate.name === canonicalZedgeCommandName(name)
+  );
   if (!prompt) {
     throw new Error(`Unknown prompt: ${name}`);
   }

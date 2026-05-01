@@ -10,7 +10,6 @@
 ///
 /// This module provides utility functions for enriching inference prompts
 /// with workspace context fetched from the companion.
-
 use zed_extension_api::http_client::*;
 
 use crate::provider;
@@ -26,8 +25,7 @@ pub fn fetch_workspace_summary() -> Result<String, String> {
         .fetch()
         .map_err(|e| format!("VFS unavailable: {e}"))?;
 
-    let body = String::from_utf8(response.body)
-        .map_err(|e| format!("Invalid UTF-8: {e}"))?;
+    let body = String::from_utf8(response.body).map_err(|e| format!("Invalid UTF-8: {e}"))?;
 
     Ok(body)
 }
@@ -43,8 +41,7 @@ pub fn fetch_git_diff() -> Result<String, String> {
         .fetch()
         .map_err(|e| format!("VFS unavailable: {e}"))?;
 
-    let body = String::from_utf8(response.body)
-        .map_err(|e| format!("Invalid UTF-8: {e}"))?;
+    let body = String::from_utf8(response.body).map_err(|e| format!("Invalid UTF-8: {e}"))?;
 
     Ok(body)
 }

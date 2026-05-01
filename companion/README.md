@@ -16,11 +16,20 @@ For local inference, the companion now routes chat through the Moonshine OpenAI-
 
 The companion also now syncs the `language_models.openai_compatible.Zedge.available_models` block in local Zed settings after the Moonshine startup probe, so model picker entries track the live container instead of drifting behind a hardcoded Edgework snippet.
 
+Local speech playback uses `POST /tts/speak` as a host relay: the companion
+calls Moonshine's local `POST /v1/audio/speech` endpoint, writes the returned
+WAV to a temp file, and on macOS plays it with `afplay`. Linux can use `aplay`
+when ALSA is available, and `ZEDGE_TTS_AUDIO_MODE=file` keeps the generated WAV
+without attempting playback. `ZEDGE_TTS_ENABLED=0` disables the relay without
+touching the OpenAI-compatible chat path.
+
 ## What It Helps You Do
 
 - run the local Zedge companion service
 - expose an OpenAI-compatible inference endpoint to Zed
 - provide the MCP entry point and other sidecar behaviors
+- relay local Moonshine TTS output to the host audio device without touching
+  the OpenAI chat/SSE path
 - mirror the extension slash-command catalog into Zed Agent via MCP prompts and the generic `zedge_command` tool
 - expose a dedicated `zedge_gnot` MCP tool plus `zedge-gnot` slash-command backing for `open-source/gnot` file discovery, authoring checks, and deploy-shell diagnostics
 - store local response-quality feedback through the companion so extension and Agent surfaces can submit to the same log
@@ -83,6 +92,44 @@ The companion now owns a local feedback route for Zedge response-quality notes:
 - `POST /feedback`
 
 Entries are stored locally in `.edgework/feedback.jsonl`, so the Zed extension and Zed Agent prompt/tool surfaces can write to the same append-only feedback log without any paid external service.
+
+## Local TTS Audio
+
+Docker Desktop on macOS does not expose CoreAudio as `/dev/snd`, so the default
+path is host relay rather than device passthrough. Start Moonshine with the
+portable compose file and leave `MOONSHINE_TTS_AUDIO_MODE=host` or unset it:
+
+```bash
+docker compose -f docker-compose.moonshine.yml up openai-compat
+```
+
+Then call the companion relay:
+
+```bash
+curl http://127.0.0.1:7331/tts/status
+
+curl -X POST http://127.0.0.1:7331/tts/config \
+  -H 'Content-Type: application/json' \
+  -d '{"enabled":true,"mode":"host"}'
+
+curl -X POST http://127.0.0.1:7331/tts/speak \
+  -H 'Content-Type: application/json' \
+  -d '{"input":"hello from moonshine"}'
+```
+
+Inside Zed, use `/edge-tts status`, `/edge-tts enable`, `/edge-tts disable`,
+`/edge-tts host`, `/edge-tts file`, `/edge-tts pulse`, `/edge-tts alsa`,
+`/edge-tts auto`, or `/edge-tts speak <text>`.
+
+Native Linux Docker hosts can opt into ALSA passthrough:
+
+```bash
+docker compose -f docker-compose.moonshine.yml -f docker-compose.audio-linux.yml up openai-compat
+```
+
+PulseAudio/TCP is supported with `MOONSHINE_TTS_AUDIO_MODE=pulse` plus a host
+`PULSE_SERVER=tcp:host.docker.internal:4713` setup, but it is intentionally not
+the default because the host relay is simpler on macOS.
 
 ## Local-First Constraint
 
