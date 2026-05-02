@@ -69,6 +69,21 @@ const GNOSIS_NUM_THREADS =
   process.env.ZEDGE_GNOSIS_NUM_THREADS ??
   process.env.GNOSIS_NUM_THREADS ??
   '4';
+const GNOSIS_FFN_LEAKAGE_MODE =
+  process.env.ZEDGE_GNOSIS_FFN_LEAKAGE_MODE ??
+  process.env.GNOSIS_FFN_LEAKAGE_MODE;
+const GNOSIS_FFN_GUARD_RMS_DELTA3_THRESHOLD =
+  process.env.ZEDGE_GNOSIS_FFN_GUARD_RMS_DELTA3_THRESHOLD ??
+  process.env.GNOSIS_FFN_GUARD_RMS_DELTA3_THRESHOLD;
+const GNOSIS_FFN_GUARD_MIN_LOGIT_MARGIN =
+  process.env.ZEDGE_GNOSIS_FFN_GUARD_MIN_LOGIT_MARGIN ??
+  process.env.GNOSIS_FFN_GUARD_MIN_LOGIT_MARGIN;
+const GNOSIS_FFN_GUARD_HIGH_CONFIDENCE_LOGIT_MARGIN =
+  process.env.ZEDGE_GNOSIS_FFN_GUARD_HIGH_CONFIDENCE_LOGIT_MARGIN ??
+  process.env.GNOSIS_FFN_GUARD_HIGH_CONFIDENCE_LOGIT_MARGIN;
+const GNOSIS_FFN_GUARD_ADMIT_WEATHER_CELLS =
+  process.env.ZEDGE_GNOSIS_FFN_GUARD_ADMIT_WEATHER_CELLS ??
+  process.env.GNOSIS_FFN_GUARD_ADMIT_WEATHER_CELLS;
 const HEALTH_POLL_MS = 2_000;
 const HEALTH_TIMEOUT_MS = 90_000;
 const WATCHDOG_INTERVAL_MS = Number(
@@ -617,6 +632,19 @@ async function startLocalMoonshine(
     ], {
       env: {
         GNOSIS_NUM_THREADS,
+        ...(GNOSIS_FFN_LEAKAGE_MODE ? { GNOSIS_FFN_LEAKAGE_MODE } : {}),
+        ...(GNOSIS_FFN_GUARD_RMS_DELTA3_THRESHOLD
+          ? { GNOSIS_FFN_GUARD_RMS_DELTA3_THRESHOLD }
+          : {}),
+        ...(GNOSIS_FFN_GUARD_MIN_LOGIT_MARGIN
+          ? { GNOSIS_FFN_GUARD_MIN_LOGIT_MARGIN }
+          : {}),
+        ...(GNOSIS_FFN_GUARD_HIGH_CONFIDENCE_LOGIT_MARGIN
+          ? { GNOSIS_FFN_GUARD_HIGH_CONFIDENCE_LOGIT_MARGIN }
+          : {}),
+        ...(GNOSIS_FFN_GUARD_ADMIT_WEATHER_CELLS
+          ? { GNOSIS_FFN_GUARD_ADMIT_WEATHER_CELLS }
+          : {}),
         RUST_BACKTRACE: '1',
       },
       stdoutPath: '/tmp/moonshine-fat-station-launchd.out.log',
@@ -673,6 +701,19 @@ async function startLocalMoonshine(
     ], {
       env: {
         GNOSIS_NUM_THREADS,
+        ...(GNOSIS_FFN_LEAKAGE_MODE ? { GNOSIS_FFN_LEAKAGE_MODE } : {}),
+        ...(GNOSIS_FFN_GUARD_RMS_DELTA3_THRESHOLD
+          ? { GNOSIS_FFN_GUARD_RMS_DELTA3_THRESHOLD }
+          : {}),
+        ...(GNOSIS_FFN_GUARD_MIN_LOGIT_MARGIN
+          ? { GNOSIS_FFN_GUARD_MIN_LOGIT_MARGIN }
+          : {}),
+        ...(GNOSIS_FFN_GUARD_HIGH_CONFIDENCE_LOGIT_MARGIN
+          ? { GNOSIS_FFN_GUARD_HIGH_CONFIDENCE_LOGIT_MARGIN }
+          : {}),
+        ...(GNOSIS_FFN_GUARD_ADMIT_WEATHER_CELLS
+          ? { GNOSIS_FFN_GUARD_ADMIT_WEATHER_CELLS }
+          : {}),
         RUST_BACKTRACE: '1',
       },
       stdoutPath: '/tmp/moonshine-fat-station-launchd.out.log',
@@ -692,6 +733,10 @@ async function startLocalMoonshine(
       PORT: '8080',
       MODEL_NAME: modelName,
       AGENTIC: '0',
+      ...(GNOSIS_FFN_LEAKAGE_MODE ? { GNOSIS_FFN_LEAKAGE_MODE } : {}),
+      ...(GNOSIS_FFN_GUARD_RMS_DELTA3_THRESHOLD
+        ? { GNOSIS_FFN_GUARD_RMS_DELTA3_THRESHOLD }
+        : {}),
       ...(process.env.ZEDGE_MOONSHINE_AUX_KNOT
         ? { AUX_KNOT_PATH: process.env.ZEDGE_MOONSHINE_AUX_KNOT }
         : {}),

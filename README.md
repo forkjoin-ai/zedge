@@ -13,6 +13,30 @@ Zedge brings AI-assisted coding to [Zed](https://zed.dev) through a local extens
 
 The fair brag is architectural honesty: the extension is real, the sidecar is real, and the inference path is designed to stay close to the machine or network you control rather than disappearing into a generic hosted gateway.
 
+## Hard Wins
+
+- Zedge ships both sides of the product: a Rust/WASM Zed extension and a local
+  TypeScript companion sidecar.
+- The companion exposes an OpenAI-compatible local endpoint while also carrying
+  MCP prompts, slash-command mirrors, model sync, collaboration hooks, and
+  deploy-shell diagnostics.
+- Babelfish uses the local Gnosis language registry and WASM compiler path for
+  polyglot analysis, translation previews, `.gnarly` support, and fastest-path
+  diagnostics.
+- Local launch-agent scripts make the common macOS path restartable and
+  observable instead of requiring a remembered foreground command.
+- Mutation is preview/token gated for Babelfish rewrite paths.
+
+## Honest Boundaries
+
+- Zedge is not a hosted coding-agent service. The default posture is local
+  sidecar, local WASM, and owned inference surfaces.
+- `localhost` versus `127.0.0.1` matters for Zed on macOS; this README keeps
+  that operational detail explicit because it is a real failure mode.
+- Babelfish rewrite previews are not applied until an explicit apply step.
+- No Workers AI, paid external APIs, or permanent Cloud Run dependency should
+  be added to make the feature work.
+
 ## If you only read one thing
 
 Zedge needs a **local server** on port **7331**. You should not start it by hand every day.
