@@ -468,8 +468,11 @@ function generateNodeId(): string {
  */
 function detectGpu(): boolean {
   try {
-    // macOS: check for Metal support via system_profiler
+    // Keep startup non-blocking by default. Expensive GPU probes are useful for
+    // diagnostics, but readiness should not wait on system profiler tools.
     if (process.platform === 'darwin') {
+      if (!shouldRunSyncGpuProbe()) return true;
+
       /* eslint-disable @typescript-eslint/no-require-imports */
       const { execSync } = require('child_process');
       /* eslint-enable @typescript-eslint/no-require-imports */
@@ -485,6 +488,8 @@ function detectGpu(): boolean {
       const { existsSync } = require('fs');
       /* eslint-enable @typescript-eslint/no-require-imports */
       if (existsSync('/dev/dri')) return true;
+      if (!shouldRunSyncGpuProbe()) return false;
+
       try {
         // eslint-disable-next-line @typescript-eslint/no-require-imports
         const { execSync } = require('child_process');
@@ -498,4 +503,10 @@ function detectGpu(): boolean {
   } catch {
     return false;
   }
+}
+
+function shouldRunSyncGpuProbe(): boolean {
+  const value =
+    process.env.ZEDGE_SYNC_GPU_PROBE ?? process.env.ZEDGE_DETECT_GPU_SYNC;
+  return value === '1' || value?.toLowerCase() === 'true';
 }

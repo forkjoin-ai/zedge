@@ -63,13 +63,20 @@ resolve_tsx_loader() {
   exit 127
 }
 
-exec_gnode_bridge() {
+exec_ts_main() {
   NODE_RUNTIME="$(resolve_node_runtime)"
   TSX_LOADER="$(resolve_tsx_loader)"
   exec "${NODE_RUNTIME}" \
     --import "${TSX_LOADER}" \
-    "${WORKSPACE_ROOT}/open-source/gnosis/gnode/bridge-driver.ts" \
-    run "${ENTRY_PATH}" --export main "$@"
+    -e 'import("node:url").then(({ pathToFileURL }) => import(pathToFileURL(process.argv[1]).href)).then(async (mod) => {
+      if (typeof mod.main !== "function") throw new Error(`No exported main() in ${process.argv[1]}`);
+      const result = await mod.main();
+      if (typeof result === "number") process.exitCode = result;
+    }).catch((error) => {
+      console.error(error);
+      process.exitCode = 1;
+    })' \
+    "${ABS_ENTRY_PATH}" "$@"
 }
 
 if [ "${ENTRY_PATH#/}" = "${ENTRY_PATH}" ]; then
@@ -83,14 +90,14 @@ export GNODE_FORCE_TSX
 
 case "${ABS_ENTRY_PATH}" in
   "${WORKSPACE_ROOT}/open-source/zedge/companion/src/index.ts")
-    exec_gnode_bridge "$@"
+    exec_ts_main "$@"
     ;;
   "${WORKSPACE_ROOT}/open-source/zedge/companion/src/mcp-stdio.ts")
-    exec_gnode_bridge "$@"
+    exec_ts_main "$@"
     ;;
   "${WORKSPACE_ROOT}/open-source/zedge/companion/src/companion-supervisor.ts"|\
   "${WORKSPACE_ROOT}/open-source/zedge/companion/src/gnosis-lsp.ts")
-    exec_gnode_bridge "$@"
+    exec_ts_main "$@"
     ;;
 esac
 

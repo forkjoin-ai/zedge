@@ -34,8 +34,6 @@ fi
 
 SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 WORKSPACE_ROOT=$(CDPATH= cd -- "${SCRIPT_DIR}/../../.." && pwd)
-GNODE_JS="${WORKSPACE_ROOT}/open-source/gnosis/bin/gnode.js"
-GNODE_BRIDGE="${WORKSPACE_ROOT}/open-source/gnosis/gnode/bridge-driver.ts"
 SUPERVISOR_REL="open-source/zedge/companion/src/companion-supervisor.ts"
 
 LABEL="ai.forkjoin.zedge.sidecar"
@@ -157,19 +155,15 @@ resolve_service_target() {
 
 write_plist() {
   NODE_BIN="$(resolve_node_for_plist)" || exit 127
-  if [ ! -f "${GNODE_JS}" ]; then
-    echo "zedge: missing gnode at ${GNODE_JS} (wrong repo root?)" >&2
-    exit 1
-  fi
-  if [ ! -f "${GNODE_BRIDGE}" ]; then
-    echo "zedge: missing gnode bridge at ${GNODE_BRIDGE} (wrong repo root?)" >&2
+  if [ ! -f "${WORKSPACE_ROOT}/${SUPERVISOR_REL}" ]; then
+    echo "zedge: missing supervisor at ${WORKSPACE_ROOT}/${SUPERVISOR_REL} (wrong repo root?)" >&2
     exit 1
   fi
 
   WD_XML="$(escape_xml "${WORKSPACE_ROOT}")"
   NODE_XML="$(escape_xml "${NODE_BIN}")"
   TSX_LOADER_XML="$(escape_xml "$(resolve_tsx_loader_for_plist)")"
-  GNODE_BRIDGE_XML="$(escape_xml "${GNODE_BRIDGE}")"
+  SUPERVISOR_IMPORT_XML="$(escape_xml "import(\"./${SUPERVISOR_REL}\").then((m) => m.main())")"
 
   mkdir -p "${LAUNCH_AGENT_DIR}"
   cat >"${PLIST_PATH}" <<EOF
@@ -185,11 +179,8 @@ write_plist() {
     <string>${NODE_XML}</string>
     <string>--import</string>
     <string>${TSX_LOADER_XML}</string>
-    <string>${GNODE_BRIDGE_XML}</string>
-    <string>run</string>
-    <string>${SUPERVISOR_REL}</string>
-    <string>--export</string>
-    <string>main</string>
+    <string>-e</string>
+    <string>${SUPERVISOR_IMPORT_XML}</string>
   </array>
 
   <key>RunAtLoad</key>

@@ -1112,6 +1112,7 @@ const routeCases: RouteCase[] = [
     '/tts/status',
     '/tts/voices',
     '/tools/preflight',
+    '/vfs/tree',
     '/v1/models',
     '/compute-pool/status',
     '/mesh/status',
@@ -1439,7 +1440,7 @@ describe('server route audit', () => {
 
     expect(missing).toEqual([]);
     expect(extra).toEqual([]);
-    expect(inventory.size).toBe(201);
+    expect(inventory.size).toBe(202);
   });
 
   test('responds to CORS preflight before route dispatch', async () => {

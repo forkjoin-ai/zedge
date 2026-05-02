@@ -67,12 +67,9 @@ function spawnMeshProbe(companionPort: number): SpawnedMeshProbe {
       )});
       startMesh();
       setTimeout(() => {
-        process.stdout.write('mesh-ready\\n');
-      }, 250);
-      setTimeout(() => {
         stopMesh();
         process.exit(0);
-      }, 3000);
+      }, 15000);
     })().catch((error) => {
       console.error(error);
       process.exit(1);
@@ -176,13 +173,14 @@ describe('P2P Mesh bind behavior', () => {
       throw error;
     }
     const expectedDiscoveryPort = companionPort + 1;
+    const listenerMarker = `Discovery listener on UDP :${expectedDiscoveryPort}`;
     const firstProbe = spawnMeshProbe(companionPort);
     let secondProbe: SpawnedMeshProbe | null = null;
 
     try {
-      await waitForMarker(firstProbe, 'mesh-ready');
+      await waitForMarker(firstProbe, listenerMarker);
       secondProbe = spawnMeshProbe(companionPort);
-      await waitForMarker(secondProbe, 'mesh-ready');
+      await waitForMarker(secondProbe, listenerMarker);
       if (!firstProbe.child.pid || !secondProbe.child.pid) {
         throw new Error('Mesh probe child PID was not available');
       }

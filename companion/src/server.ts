@@ -5,6 +5,8 @@
  */
 
 import { spawn as nodeSpawn } from 'child_process';
+import { readdirSync, statSync } from 'node:fs';
+import { relative as relativePath, resolve as resolvePath } from 'node:path';
 import {
   XGnosisServer,
   type RequestPayload,
@@ -100,6 +102,114 @@ const READY_REQUIRED_TOOL_NAMES = [
   'zedge_babelfish_code',
   'zedge_daydream',
 ] as const;
+
+const LOCAL_TREE_IGNORED_NAMES = new Set([
+  '.git',
+  '.edgework',
+  '.next',
+  '.turbo',
+  'build',
+  'coverage',
+  'dist',
+  'node_modules',
+  'target',
+]);
+
+interface LocalWorkspaceTreeEntry {
+  path: string;
+  type: 'file' | 'directory';
+  size?: number;
+  children?: LocalWorkspaceTreeEntry[];
+}
+
+function getWorkspaceRootPath(): string {
+  return resolvePath(process.env.AEON_ROOT || process.cwd());
+}
+
+function numberSearchParam(
+  url: URL,
+  name: string,
+  fallback: number,
+  min: number,
+  max: number,
+): number {
+  const raw = Number(url.searchParams.get(name));
+  if (!Number.isFinite(raw)) return fallback;
+  return Math.max(min, Math.min(max, Math.trunc(raw)));
+}
+
+function buildLocalWorkspaceTree(url: URL): {
+  source: 'local';
+  root: string;
+  maxDepth: number;
+  maxEntries: number;
+  truncated: boolean;
+  entries: LocalWorkspaceTreeEntry[];
+} {
+  const root = getWorkspaceRootPath();
+  const maxDepth = numberSearchParam(url, 'depth', 3, 1, 8);
+  const maxEntries = numberSearchParam(url, 'max_entries', 400, 25, 2_000);
+  let seen = 0;
+  let truncated = false;
+
+  function visit(directory: string, depth: number): LocalWorkspaceTreeEntry[] {
+    if (seen >= maxEntries) {
+      truncated = true;
+      return [];
+    }
+
+    const entries: LocalWorkspaceTreeEntry[] = [];
+    let dirents;
+    try {
+      dirents = readdirSync(directory, { withFileTypes: true });
+    } catch {
+      return entries;
+    }
+
+    for (const dirent of dirents) {
+      if (seen >= maxEntries) {
+        truncated = true;
+        break;
+      }
+      if (LOCAL_TREE_IGNORED_NAMES.has(dirent.name)) continue;
+
+      const absolutePath = resolvePath(directory, dirent.name);
+      const relative = relativePath(root, absolutePath);
+      if (relative.startsWith('..')) continue;
+
+      seen += 1;
+      if (dirent.isDirectory()) {
+        entries.push({
+          path: relative,
+          type: 'directory',
+          children: depth < maxDepth ? visit(absolutePath, depth + 1) : [],
+        });
+      } else if (dirent.isFile()) {
+        let size = 0;
+        try {
+          size = statSync(absolutePath).size;
+        } catch {
+          // Keep unreadable files visible without size metadata.
+        }
+        entries.push({ path: relative, type: 'file', size });
+      }
+    }
+
+    return entries.sort((a, b) => {
+      if (a.type !== b.type) return a.type === 'directory' ? -1 : 1;
+      return a.path.localeCompare(b.path);
+    });
+  }
+
+  return {
+    source: 'local',
+    root,
+    maxDepth,
+    maxEntries,
+    truncated,
+    entries: visit(root, 1),
+  };
+}
 
 async function getReadinessProbePayload(): Promise<{
   status: 'ready' | 'degraded';
@@ -3158,6 +3268,31 @@ export async function handleWebRequest(req: Request): Promise<Response> {
         peerCount: m.peers.size,
       }))
     );
+  }
+
+  if (path === '/vfs/tree' && req.method === 'GET') {
+    if (vfsBridge) {
+      const mounts = vfsBridge.getMounts();
+      if (mounts.length > 0) {
+        return jsonResponse({
+          source: 'vfs',
+          mounts: mounts.map((mount) => ({
+            id: mount.id,
+            repoPath: mount.repoPath,
+            files: Array.from(mount.files.values())
+              .map((file) => ({
+                path: file.path,
+                size: file.size,
+                hash: file.hash,
+                modifiedAt: file.modifiedAt,
+              }))
+              .sort((a, b) => a.path.localeCompare(b.path)),
+          })),
+        });
+      }
+    }
+
+    return jsonResponse(buildLocalWorkspaceTree(url));
   }
 
   if (path === '/vfs/changes' && req.method === 'GET') {
