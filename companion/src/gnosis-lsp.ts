@@ -2,7 +2,8 @@
 /**
  * Gnosis Language Server (LSP)
  *
- * Provides real-time diagnostics and topological analysis for Gnosis (.gg, .ggl) files.
+ * Provides real-time diagnostics and topological analysis for Gnosis
+ * (.gg, .ggl, .gnarly) files.
  * Speaks JSON-RPC over stdin/stdout.
  */
 
@@ -255,9 +256,10 @@ function getDidChangeDocument(
   return { uri, text };
 }
 
-function diagnosticSeverity(value: Diagnostic['severity']): 1 | 2 | 3 {
+function diagnosticSeverity(value: Diagnostic['severity'] | 'hint'): 1 | 2 | 3 | 4 {
   if (value === 'error') return 1;
   if (value === 'warning') return 2;
+  if (value === 'hint') return 4;
   return 3;
 }
 
@@ -458,14 +460,7 @@ async function publishGnarlyDiagnostics(
             character: Math.max(0, diagnostic.column),
           },
         },
-        severity:
-          diagnostic.severity === 'error'
-            ? 1
-            : diagnostic.severity === 'warning'
-            ? 2
-            : diagnostic.severity === 'hint'
-            ? 4
-            : 3,
+        severity: diagnosticSeverity(diagnostic.severity),
         message: `[${diagnostic.code}] ${diagnostic.message}`,
         source: 'gnosis-gnarly',
         code: diagnostic.code,

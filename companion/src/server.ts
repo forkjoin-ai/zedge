@@ -18,6 +18,7 @@ import {
   inferFim,
   buildFimPrompt,
   getModels,
+  getLiveMoonshineModels,
   embed,
   createSSEProxyStream,
   getRecentLogs,
@@ -90,6 +91,99 @@ import {
   handlePrefillWindowRequest,
   requestWithPrefillWindow,
 } from './prefill-window.ts';
+
+const READY_REQUIRED_TOOL_NAMES = [
+  'zedge_workspace',
+  'zedge_preview_range_replace',
+  'zedge_apply_edit_preview',
+  'zedge_tts_speak',
+  'zedge_babelfish_code',
+  'zedge_daydream',
+] as const;
+
+async function getReadinessProbePayload(): Promise<{
+  status: 'ready' | 'degraded';
+  ready: boolean;
+  checks: {
+    controlPlane: {
+      ready: boolean;
+      toolCount: number;
+      missingTools: string[];
+      cached: boolean;
+      durationMs: number;
+      error?: string;
+    };
+    moonshine: {
+      ready: boolean;
+      models: string[];
+      error?: string;
+    };
+  };
+}> {
+  let controlPlane = {
+    ready: false,
+    toolCount: 0,
+    missingTools: [...READY_REQUIRED_TOOL_NAMES],
+    cached: false,
+    durationMs: 0,
+  } as {
+    ready: boolean;
+    toolCount: number;
+    missingTools: string[];
+    cached: boolean;
+    durationMs: number;
+    error?: string;
+  };
+
+  try {
+    const { preflightLocalTools } = await import('./local-mcp.ts');
+    const preflight = await preflightLocalTools();
+    const toolNames = new Set(preflight.tools.map((tool) => tool.name));
+    const missingTools = READY_REQUIRED_TOOL_NAMES.filter(
+      (toolName) => !toolNames.has(toolName)
+    );
+    controlPlane = {
+      ready: missingTools.length === 0,
+      toolCount: preflight.tools.length,
+      missingTools,
+      cached: preflight.cached,
+      durationMs: preflight.durationMs,
+    };
+  } catch (error) {
+    controlPlane = {
+      ...controlPlane,
+      error: error instanceof Error ? error.message : String(error),
+    };
+  }
+
+  let moonshine = {
+    ready: false,
+    models: [] as string[],
+  } as { ready: boolean; models: string[]; error?: string };
+
+  try {
+    const models = await getLiveMoonshineModels(1_000);
+    moonshine = {
+      ready: models.length > 0,
+      models: models.map((model) => model.id),
+    };
+  } catch (error) {
+    moonshine = {
+      ...moonshine,
+      error: error instanceof Error ? error.message : String(error),
+    };
+  }
+
+  const ready = controlPlane.ready && moonshine.ready;
+  return {
+    status: ready ? 'ready' : 'degraded',
+    ready,
+    checks: {
+      controlPlane,
+      moonshine,
+    },
+  };
+}
 // Gnosis modules -- lazy-loaded to avoid blocking the event loop at startup.
 // The file watcher, incremental checker, and betty compiler are CPU-heavy, and
 // scanning the entire workspace directory on import would delay the companion
@@ -2558,6 +2652,11 @@ export async function handleWebRequest(req: Request): Promise<Response> {
 
   if (path === '/probe/health' && req.method === 'GET') {
     return jsonResponse(getTierHealth());
+  }
+
+  if (path === '/probe/ready' && req.method === 'GET') {
+    const readiness = await getReadinessProbePayload();
+    return jsonResponse(readiness, readiness.ready ? 200 : 503);
   }
 
   if (path === '/probe/results' && req.method === 'GET') {

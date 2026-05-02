@@ -44,6 +44,34 @@ resolve_node_runtime() {
   exit 127
 }
 
+resolve_tsx_loader() {
+  if [ -n "${ZEDGE_TSX_LOADER:-}" ] && [ -f "${ZEDGE_TSX_LOADER}" ]; then
+    printf '%s\n' "${ZEDGE_TSX_LOADER}"
+    return 0
+  fi
+
+  for candidate in \
+    "${WORKSPACE_ROOT}/node_modules/.pnpm/tsx@4.21.0/node_modules/tsx/dist/loader.mjs" \
+    "${WORKSPACE_ROOT}/node_modules/tsx/dist/loader.mjs"; do
+    if [ -f "${candidate}" ]; then
+      printf '%s\n' "${candidate}"
+      return 0
+    fi
+  done
+
+  echo "zedge: could not find tsx loader. Install dependencies or set ZEDGE_TSX_LOADER." >&2
+  exit 127
+}
+
+exec_gnode_bridge() {
+  NODE_RUNTIME="$(resolve_node_runtime)"
+  TSX_LOADER="$(resolve_tsx_loader)"
+  exec "${NODE_RUNTIME}" \
+    --import "${TSX_LOADER}" \
+    "${WORKSPACE_ROOT}/open-source/gnosis/gnode/bridge-driver.ts" \
+    run "${ENTRY_PATH}" --export main "$@"
+}
+
 if [ "${ENTRY_PATH#/}" = "${ENTRY_PATH}" ]; then
   ABS_ENTRY_PATH="${WORKSPACE_ROOT}/${ENTRY_PATH}"
 else
@@ -55,17 +83,14 @@ export GNODE_FORCE_TSX
 
 case "${ABS_ENTRY_PATH}" in
   "${WORKSPACE_ROOT}/open-source/zedge/companion/src/index.ts")
-    NODE_RUNTIME="$(resolve_node_runtime)"
-    exec "${NODE_RUNTIME}" "${WORKSPACE_ROOT}/open-source/gnosis/bin/gnode.js" run "${ENTRY_PATH}" --export main "$@"
+    exec_gnode_bridge "$@"
     ;;
   "${WORKSPACE_ROOT}/open-source/zedge/companion/src/mcp-stdio.ts")
-    NODE_RUNTIME="$(resolve_node_runtime)"
-    exec "${NODE_RUNTIME}" "${WORKSPACE_ROOT}/open-source/gnosis/bin/gnode.js" run "${ENTRY_PATH}" --export main "$@"
+    exec_gnode_bridge "$@"
     ;;
   "${WORKSPACE_ROOT}/open-source/zedge/companion/src/companion-supervisor.ts"|\
   "${WORKSPACE_ROOT}/open-source/zedge/companion/src/gnosis-lsp.ts")
-    NODE_RUNTIME="$(resolve_node_runtime)"
-    exec "${NODE_RUNTIME}" "${WORKSPACE_ROOT}/open-source/gnosis/bin/gnode.js" run "${ENTRY_PATH}" --export main "$@"
+    exec_gnode_bridge "$@"
     ;;
 esac
 

@@ -274,19 +274,21 @@ export async function handleGnotCommand(
         throw new Error('app is required for next');
       }
 
+      const nextAction = await core.nextAction({
+        sessionId,
+        app: request.app,
+        ...(normalizeEnvironment(request.environment)
+          ? {
+              environment: normalizeEnvironment(request.environment),
+            }
+          : {}),
+        ...(request.env ? { env: request.env } : {}),
+        workspaceRoot: getWorkspaceRoot(),
+      });
+
       return {
+        ...nextAction,
         action: 'next',
-        ...(await core.nextAction({
-          sessionId,
-          app: request.app,
-          ...(normalizeEnvironment(request.environment)
-            ? {
-                environment: normalizeEnvironment(request.environment),
-              }
-            : {}),
-          ...(request.env ? { env: request.env } : {}),
-          workspaceRoot: getWorkspaceRoot(),
-        })),
       };
     }
     case 'status': {

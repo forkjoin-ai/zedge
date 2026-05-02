@@ -390,6 +390,14 @@ mock.module('../inference-bridge.ts', () => ({
       owned_by: 'mock',
     },
   ],
+  getLiveMoonshineModels: async () => [
+    {
+      id: 'tinyllama-1.1b',
+      object: 'model',
+      created: 0,
+      owned_by: 'mock',
+    },
+  ],
   embed: async (_input: string | string[], model?: string) =>
     jsonResponse({
       object: 'list',
@@ -490,7 +498,15 @@ mock.module('../local-mcp.ts', () => ({
     result: { ok: true },
   }),
   preflightLocalTools: async () => ({
-    tools: [{ name: 'zedge_status', inputSchema: { type: 'object' } }],
+    tools: [
+      { name: 'zedge_status', inputSchema: { type: 'object' } },
+      { name: 'zedge_workspace', inputSchema: { type: 'object' } },
+      { name: 'zedge_preview_range_replace', inputSchema: { type: 'object' } },
+      { name: 'zedge_apply_edit_preview', inputSchema: { type: 'object' } },
+      { name: 'zedge_tts_speak', inputSchema: { type: 'object' } },
+      { name: 'zedge_babelfish_code', inputSchema: { type: 'object' } },
+      { name: 'zedge_daydream', inputSchema: { type: 'object' } },
+    ],
     cached: false,
     durationMs: 1,
     cachedAt: 123,
@@ -1040,6 +1056,15 @@ function expectSse(response: Response): void {
   expect(response.headers.get('content-type')).toContain('text/event-stream');
 }
 
+async function cancelUnusedBody(response: Response): Promise<void> {
+  if (!response.body || response.bodyUsed) return;
+  try {
+    await response.body.cancel();
+  } catch {
+    // Best-effort cleanup for route smoke responses.
+  }
+}
+
 function parseRouteInventory(): Set<string> {
   const source = readFileSync(new URL('../server.ts', import.meta.url), 'utf8');
   const exact = [
@@ -1060,6 +1085,18 @@ const routeCases: RouteCase[] = [
     const payload = (await response.clone().json()) as Record<string, unknown>;
     expect(payload.status).toBe('ok');
     expect(payload.preferredModel).toBe('tinyllama-1.1b');
+  }),
+  getCase('/probe/ready', 200, async (response) => {
+    const payload = (await response.clone().json()) as {
+      ready?: boolean;
+      checks?: {
+        controlPlane?: { missingTools?: string[] };
+        moonshine?: { models?: string[] };
+      };
+    };
+    expect(payload.ready).toBe(true);
+    expect(payload.checks?.controlPlane?.missingTools).toEqual([]);
+    expect(payload.checks?.moonshine?.models).toContain('tinyllama-1.1b');
   }),
   ...[
     '/logs',
@@ -1402,7 +1439,7 @@ describe('server route audit', () => {
 
     expect(missing).toEqual([]);
     expect(extra).toEqual([]);
-    expect(inventory.size).toBe(200);
+    expect(inventory.size).toBe(201);
   });
 
   test('responds to CORS preflight before route dispatch', async () => {
@@ -1491,13 +1528,17 @@ describe('server route audit', () => {
   for (const routeCase of routeCases) {
     test(routeCase.key, async () => {
       const response = await handleWebRequest(routeCase.request());
-      const expectedStatuses = Array.isArray(routeCase.expectedStatus)
-        ? routeCase.expectedStatus
-        : [routeCase.expectedStatus];
+      try {
+        const expectedStatuses = Array.isArray(routeCase.expectedStatus)
+          ? routeCase.expectedStatus
+          : [routeCase.expectedStatus];
 
-      expect(expectedStatuses).toContain(response.status);
-      if (routeCase.verify) {
-        await routeCase.verify(response);
+        expect(expectedStatuses).toContain(response.status);
+        if (routeCase.verify) {
+          await routeCase.verify(response);
+        }
+      } finally {
+        await cancelUnusedBody(response);
       }
     });
   }

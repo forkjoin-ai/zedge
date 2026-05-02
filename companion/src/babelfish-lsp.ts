@@ -40,11 +40,12 @@ export async function provideBabelfishHover(
       outputMode: 'preview',
     });
 
-    if (preview && preview.previewText) {
+    const previewText = preview.generatedFiles[0]?.content;
+    if (previewText) {
       return {
         contents: {
           kind: 'markdown',
-          value: `**Babelfish Translation (${sourceLang} ➔ ${targetLang})**\n\n\`\`\`${targetLang}\n${preview.previewText}\n\`\`\``
+          value: `**Babelfish Translation (${sourceLang} ➔ ${targetLang})**\n\n\`\`\`${targetLang}\n${previewText}\n\`\`\``,
         },
       };
     }

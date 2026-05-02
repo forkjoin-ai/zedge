@@ -7,7 +7,7 @@ import {
 
 describe('MCP companion babysitter policy', () => {
   test('does not restart during the startup grace window', () => {
-    const now = 100_000;
+    const now = 200_000;
     const decision = decideCompanionRestart({
       now,
       companionSpawnedAt: now - (STARTUP_GRACE_MS - 1_000),

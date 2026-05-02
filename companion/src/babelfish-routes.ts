@@ -74,6 +74,50 @@ interface BabelfishGnarlyRequestBody {
   name?: string;
 }
 
+type BabelfishGnarlyScope = NonNullable<BabelfishGnarlyRequestBody['scope']>;
+
+function buildGnarlyRequest(body: BabelfishGnarlyRequestBody): {
+  scope: BabelfishGnarlyScope;
+  candidateLanguages?: string[];
+  maxRecommendations?: number;
+} {
+  if (!body.scope) {
+    throw new Error('scope is required');
+  }
+  const request: {
+    scope: BabelfishGnarlyScope;
+    candidateLanguages?: string[];
+    maxRecommendations?: number;
+  } = { scope: body.scope };
+  if (body.candidateLanguages !== undefined) {
+    request.candidateLanguages = body.candidateLanguages;
+  }
+  if (body.maxRecommendations !== undefined) {
+    request.maxRecommendations = body.maxRecommendations;
+  }
+  return request;
+}
+
+function buildGnarlyFromRequest(body: BabelfishGnarlyRequestBody): {
+  scope: BabelfishGnarlyScope;
+  name?: string;
+  candidateLanguages?: string[];
+} {
+  const request = buildGnarlyRequest(body);
+  const fromRequest: {
+    scope: BabelfishGnarlyScope;
+    name?: string;
+    candidateLanguages?: string[];
+  } = { scope: request.scope };
+  if (body.name !== undefined) {
+    fromRequest.name = body.name;
+  }
+  if (request.candidateLanguages !== undefined) {
+    fromRequest.candidateLanguages = request.candidateLanguages;
+  }
+  return fromRequest;
+}
+
 interface BabelfishSyncWatchRequestBody {
   sourceFile: string;
   targetFile: string;
@@ -215,12 +259,7 @@ export async function handleBabelfishRequest(
   if (path === '/babelfish/gnarly/compile' && req.method === 'POST') {
     try {
       const body = (await req.json()) as BabelfishGnarlyRequestBody;
-      if (!body.scope) return jsonResponse({ error: 'scope is required' }, 400);
-      const result = await compileBabelfishGnarly({
-        scope: body.scope,
-        candidateLanguages: body.candidateLanguages,
-        maxRecommendations: body.maxRecommendations,
-      });
+      const result = await compileBabelfishGnarly(buildGnarlyRequest(body));
       return jsonResponse(result);
     } catch (err) {
       return jsonResponse(
@@ -236,12 +275,9 @@ export async function handleBabelfishRequest(
   if (path === '/babelfish/gnarly/fastest' && req.method === 'POST') {
     try {
       const body = (await req.json()) as BabelfishGnarlyRequestBody;
-      if (!body.scope) return jsonResponse({ error: 'scope is required' }, 400);
-      const result = await previewBabelfishGnarlyFastest({
-        scope: body.scope,
-        candidateLanguages: body.candidateLanguages,
-        maxRecommendations: body.maxRecommendations,
-      });
+      const result = await previewBabelfishGnarlyFastest(
+        buildGnarlyRequest(body)
+      );
       return jsonResponse(result);
     } catch (err) {
       return jsonResponse(
@@ -257,12 +293,9 @@ export async function handleBabelfishRequest(
   if (path === '/babelfish/gnarly/from' && req.method === 'POST') {
     try {
       const body = (await req.json()) as BabelfishGnarlyRequestBody;
-      if (!body.scope) return jsonResponse({ error: 'scope is required' }, 400);
-      const result = await createGnarlyFromBabelfishScope({
-        scope: body.scope,
-        name: body.name,
-        candidateLanguages: body.candidateLanguages,
-      });
+      const result = await createGnarlyFromBabelfishScope(
+        buildGnarlyFromRequest(body)
+      );
       return jsonResponse(result);
     } catch (err) {
       return jsonResponse(

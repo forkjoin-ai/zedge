@@ -89,6 +89,47 @@ mock.module('../babelfish-gnosis', () => ({
       edgeTypes: ['PROCESS'],
     },
   ],
+  compileGnarly: async (sourceText: string, options: { filePath?: string }) => ({
+    document: {
+      filePath: options.filePath ?? 'input.gnarly',
+      metadata: { name: 'mock', languages: ['typescript', 'rust'], properties: {} },
+      ggSource: sourceText,
+      implementations: [],
+      diagnostics: [],
+    },
+    ggSource: '(greet: PolyglotBridgeCall { fastest: true })',
+    ast: { nodes: new Map(), edges: [] },
+    output: 'mock gnarly compile',
+    diagnostics: [],
+    speedDiagnostics: [
+      {
+        line: 1,
+        column: 1,
+        code: 'GNARLY_FASTER_LANGUAGE_AVAILABLE',
+        message: 'Gnarly predicts rust is the fastest fit for greet.',
+        severity: 'hint',
+        nodeId: 'greet',
+        recommendedLanguage: 'rust',
+        evidence: 'predicted',
+        score: 0.9,
+        rationale: 'rust: high performance',
+        recommendations: [],
+      },
+    ],
+    executionManifest: {
+      language: 'typescript',
+      file_path: options.filePath ?? 'input.gnarly',
+      entry_function: 'greet',
+      node_execution_plans: [],
+    },
+    multiLanguageManifest: {
+      defaultLanguage: 'typescript',
+      defaultFilePath: options.filePath ?? 'input.gnarly',
+      nodeOverrides: new Map(),
+    },
+    generatedFiles: [],
+    topoRaceGg: '// Topo-race',
+  }),
 }));
 
 const { handleBabelfishRequest } = await import('../babelfish-routes');
@@ -264,5 +305,22 @@ describe('Babelfish HTTP routes', () => {
     const payload = await response?.json();
     expect(payload.audienceLanguage).toBe('fr');
     expect(payload.ggSource).toContain('(greet:PROCESS)');
+  });
+
+  test('gnarly fastest route returns speed hints', async () => {
+    const response = await handleBabelfishRequest(
+      jsonRequest('/babelfish/gnarly/fastest', {
+        scope: {
+          kind: 'inline',
+          filePath: 'input.gnarly',
+          sourceText: '(greet: PolyglotBridgeCall { fastest: true })',
+        },
+      })
+    );
+
+    expect(response?.status).toBe(200);
+    const payload = await response?.json();
+    expect(payload.summary).toContain('fastest preview');
+    expect(payload.speedDiagnostics[0]?.severity).toBe('hint');
   });
 });

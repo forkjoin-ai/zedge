@@ -2384,6 +2384,12 @@ async function fetchRemoteModels(timeoutMs = 5_000): Promise<ModelInfo[]> {
   return [];
 }
 
+export async function getLiveMoonshineModels(
+  timeoutMs = 5_000
+): Promise<ModelInfo[]> {
+  return await fetchRemoteModels(timeoutMs);
+}
+
 /** Refreshes the cached Moonshine model catalog immediately. */
 async function refreshRemoteModelCatalog(timeoutMs = 5_000): Promise<void> {
   const models = await fetchRemoteModels(timeoutMs);

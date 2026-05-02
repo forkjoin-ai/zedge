@@ -23,7 +23,7 @@ let restartInFlight: Promise<boolean> | null = null;
 let suppressExitRestart = false;
 let shuttingDown = false;
 let healthCheckInFlight = false;
-const COMPANION_STARTUP_ATTEMPTS = 120;
+const COMPANION_STARTUP_ATTEMPTS = 240;
 
 function getCompanionEntry(): string {
   // pnpm start runs from companion/ dir. Resolve relative to cwd.
@@ -47,7 +47,7 @@ function sleep(ms: number): Promise<void> {
 
 async function isCompanionAlive(): Promise<boolean> {
   try {
-    const response = await fetch(`${getCompanionBase()}/health`, {
+    const response = await fetch(`${getCompanionBase()}/probe/ready`, {
       signal: AbortSignal.timeout(HEALTH_CHECK_TIMEOUT_MS),
     });
     return response.ok;

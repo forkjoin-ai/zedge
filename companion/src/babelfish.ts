@@ -178,6 +178,11 @@ interface BabelfishStoredPreview {
   allowedApplyModes: BabelfishApplyMode[];
 }
 
+interface GnarlyCompileRequestOptions {
+  filePath: string;
+  maxRecommendations?: number;
+}
+
 const workspaceRoot = process.env.AEON_ROOT || process.cwd();
 
 const previewStore = new Map<string, BabelfishStoredPreview>();
@@ -864,15 +869,29 @@ function toGnarlyResponse(
   return response;
 }
 
+function createGnarlyCompileOptions(
+  filePath: string,
+  maxRecommendations: number | undefined
+): GnarlyCompileRequestOptions {
+  const options: GnarlyCompileRequestOptions = { filePath };
+  if (maxRecommendations !== undefined) {
+    options.maxRecommendations = maxRecommendations;
+  }
+  return options;
+}
+
 export async function compileBabelfishGnarly(
   request: BabelfishGnarlyRequest
 ): Promise<BabelfishGnarlyResponse> {
   ensureBabelfishEnabled();
   const resolvedScope = await resolveScope(request.scope);
-  const result = await compileGnarly(resolvedScope.sourceText, {
-    filePath: resolvedScope.filePath,
-    maxRecommendations: request.maxRecommendations,
-  });
+  const result = await compileGnarly(
+    resolvedScope.sourceText,
+    createGnarlyCompileOptions(
+      resolvedScope.filePath,
+      request.maxRecommendations
+    )
+  );
   return toGnarlyResponse(result, 'compile');
 }
 
@@ -888,10 +907,13 @@ export async function previewBabelfishGnarlyFastest(
           request.candidateLanguages
         )
       : resolvedScope.sourceText;
-  const result = await compileGnarly(sourceText, {
-    filePath: resolvedScope.filePath,
-    maxRecommendations: request.maxRecommendations,
-  });
+  const result = await compileGnarly(
+    sourceText,
+    createGnarlyCompileOptions(
+      resolvedScope.filePath,
+      request.maxRecommendations
+    )
+  );
   return toGnarlyResponse(result, 'fastest');
 }
 
@@ -908,7 +930,10 @@ function injectDefaultGnarlyCandidates(
   const candidates = `[${candidateLanguages
     .map((language) => `"${language}"`)
     .join(', ')}]`;
-  return sourceText.replace(/fastest:\s*true/g, `fastest: true, candidates: ${candidates}`);
+  return sourceText.replace(
+    /fastest:\s*true/g,
+    `fastest: true, candidates: ${candidates}`
+  );
 }
 
 export async function createGnarlyFromBabelfishScope(

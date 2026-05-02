@@ -59,9 +59,15 @@ The companion now owns the Babelfish contract used by the extension, MCP, and LS
 - `POST /babelfish/code/apply`
 - `POST /babelfish/text/translate`
 - `POST /babelfish/explain`
+- `POST /babelfish/gnarly/compile`
+- `POST /babelfish/gnarly/fastest`
+- `POST /babelfish/gnarly/from`
 
 The companion returns capability tiers from the Gnosis registry, not a hand-maintained language list in the extension. Preview responses carry the token required for any later apply step.
 Those preview tokens are single-use and mode-bound: only `rewrite_in_place_requested` previews can later apply an in-place rewrite, while `generate_files` writes immediately and does not leave a reusable mutation token behind.
+Gnarly speed findings are preview-first as well: the companion returns GG,
+manifest, generated-file, and topo-race preview payloads without modifying the
+source `.gnarly` file.
 
 ## Agentic And Tool Endpoints
 

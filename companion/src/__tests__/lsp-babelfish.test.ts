@@ -49,6 +49,9 @@ describe('LSP Babelfish helpers', () => {
     expect(detectBabelfishLanguageForUri('file:///tmp/example.py')).toBe(
       'python'
     );
+    expect(detectBabelfishLanguageForUri('file:///tmp/example.gnarly')).toBe(
+      'gnarly'
+    );
     expect(detectBabelfishLanguageForUri('file:///tmp/example.txt')).toBeNull();
   });
 
@@ -66,6 +69,19 @@ describe('LSP Babelfish helpers', () => {
       'Babelfish: Explain File',
       'Babelfish: Translate Code',
       'Babelfish: Generate Target Scaffold',
+    ]);
+  });
+
+  test('builds Gnarly code actions for .gnarly files', () => {
+    const actions = buildBabelfishCodeActions(
+      'file:///tmp/example.gnarly',
+      'en'
+    );
+    expect(actions.map((action) => action.title)).toEqual([
+      'Gnarly: Compile',
+      'Gnarly: Preview Fastest Topology',
+      'Gnarly: Generate Missing Implementations',
+      'Gnarly: Explain Cross-Language Path',
     ]);
   });
 
@@ -124,6 +140,45 @@ describe('LSP Babelfish helpers', () => {
         (diagnostic) => diagnostic.source === 'zedge-babelfish'
       )
     ).toBe(false);
+  });
+
+  test('publishes Gnarly speed hints as LSP hint diagnostics', async () => {
+    const sentMessages: unknown[] = [];
+    setGnosisLspSendForTest((message) => {
+      sentMessages.push(message);
+    });
+    setGnosisLspConfigGetterForTest(() => testConfig({ enabled: true }));
+
+    await dispatchRequest({
+      jsonrpc: '2.0',
+      method: 'textDocument/didOpen',
+      params: {
+        textDocument: {
+          uri: 'file:///tmp/example.gnarly',
+          text: `
+gnarly "speed" {
+  languages = ["typescript", "rust"]
+  entry = transform
+}
+
+(transform: PolyglotBridgeCall { language: "typescript", fastest: true, candidates: ["rust", "go"], callee: "transform" })
+`,
+        },
+      },
+    });
+
+    const publish = sentMessages[0] as {
+      method: string;
+      params: { diagnostics: Array<{ source: string; severity: number }> };
+    };
+    expect(publish.method).toBe('textDocument/publishDiagnostics');
+    expect(
+      publish.params.diagnostics.some(
+        (diagnostic) =>
+          diagnostic.source === 'gnosis-gnarly-speed' &&
+          diagnostic.severity === 4
+      )
+    ).toBe(true);
   });
 
   test('returns Babelfish code actions for supported files and none for unsupported or disabled files', async () => {

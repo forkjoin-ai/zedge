@@ -18,6 +18,7 @@ describe('Babelfish MCP stdio bridge', () => {
     expect(tools.map((tool) => tool.name)).toContain('zedge_babelfish_apply');
     expect(tools.map((tool) => tool.name)).toContain('zedge_babelfish_text');
     expect(tools.map((tool) => tool.name)).toContain('zedge_babelfish_explain');
+    expect(tools.map((tool) => tool.name)).toContain('zedge_babelfish_gnarly');
   });
 
   test('proxies Babelfish tool calls through the MCP tools/call method', async () => {

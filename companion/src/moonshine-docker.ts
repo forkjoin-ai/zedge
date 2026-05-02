@@ -495,7 +495,9 @@ async function startLocalMoonshine(
       PORT: '8080',
       MODEL_NAME: modelName,
       AGENTIC: '0',
-      AUX_KNOT_PATH: knotPath,
+      ...(process.env.ZEDGE_MOONSHINE_AUX_KNOT
+        ? { AUX_KNOT_PATH: process.env.ZEDGE_MOONSHINE_AUX_KNOT }
+        : {}),
       ...(tokenizerGgufPath ? { TOKENIZER_GGUF_PATH: tokenizerGgufPath } : {}),
     },
     stdoutPath: '/tmp/moonshine-openai-compat-launchd.out.log',
@@ -505,7 +507,7 @@ async function startLocalMoonshine(
   return await waitReadyForModel(modelName);
 }
 
-async function startDockerMoonshine(): Promise<boolean> {
+async function startDockerMoonshine(modelName: string): Promise<boolean> {
   if (!existsSync(COMPOSE_FILE)) {
     console.warn(`[moonshine] compose file not found: ${COMPOSE_FILE} — set ZEDGE_MOONSHINE_COMPOSE_FILE to override`);
     return false;
@@ -531,7 +533,7 @@ async function startDockerMoonshine(): Promise<boolean> {
   }
 
   console.log('[moonshine] Waiting for /health...');
-  return await waitReady();
+  return await waitReadyForModel(modelName);
 }
 
 export async function ensureMoonshineRunning(): Promise<void> {
@@ -560,7 +562,8 @@ export async function ensureMoonshineRunning(): Promise<void> {
   }
 
   const ready =
-    (await startLocalMoonshine(startupConfig)) || (await startDockerMoonshine());
+    (await startLocalMoonshine(startupConfig)) ||
+    (await startDockerMoonshine(startupConfig.modelName));
   if (ready) {
     console.log('[moonshine] Ready');
   } else {

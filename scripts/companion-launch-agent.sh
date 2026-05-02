@@ -35,6 +35,7 @@ fi
 SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 WORKSPACE_ROOT=$(CDPATH= cd -- "${SCRIPT_DIR}/../../.." && pwd)
 GNODE_JS="${WORKSPACE_ROOT}/open-source/gnosis/bin/gnode.js"
+GNODE_BRIDGE="${WORKSPACE_ROOT}/open-source/gnosis/gnode/bridge-driver.ts"
 SUPERVISOR_REL="open-source/zedge/companion/src/companion-supervisor.ts"
 
 LABEL="ai.forkjoin.zedge.sidecar"
@@ -67,6 +68,23 @@ resolve_node_for_plist() {
     fi
   done
   echo "zedge: could not find Node. Install Node or set ZEDGE_NODE_RUNTIME." >&2
+  return 1
+}
+
+resolve_tsx_loader_for_plist() {
+  if [ -n "${ZEDGE_TSX_LOADER:-}" ] && [ -f "${ZEDGE_TSX_LOADER}" ]; then
+    printf '%s' "${ZEDGE_TSX_LOADER}"
+    return 0
+  fi
+  for candidate in \
+    "${WORKSPACE_ROOT}/node_modules/.pnpm/tsx@4.21.0/node_modules/tsx/dist/loader.mjs" \
+    "${WORKSPACE_ROOT}/node_modules/tsx/dist/loader.mjs"; do
+    if [ -f "${candidate}" ]; then
+      printf '%s' "${candidate}"
+      return 0
+    fi
+  done
+  echo "zedge: could not find tsx loader. Install dependencies or set ZEDGE_TSX_LOADER." >&2
   return 1
 }
 
@@ -121,6 +139,7 @@ unset_zed_openai_compatible_env_if_placeholder() {
 # SERVICE_TARGET and DOMAIN — set after resolve_service_target
 DOMAIN=""
 SERVICE_TARGET=""
+JUST_BOOTSTRAPPED=0
 
 resolve_service_target() {
   if DOMAIN="$(read_stored_domain)"; then
@@ -142,10 +161,15 @@ write_plist() {
     echo "zedge: missing gnode at ${GNODE_JS} (wrong repo root?)" >&2
     exit 1
   fi
+  if [ ! -f "${GNODE_BRIDGE}" ]; then
+    echo "zedge: missing gnode bridge at ${GNODE_BRIDGE} (wrong repo root?)" >&2
+    exit 1
+  fi
 
   WD_XML="$(escape_xml "${WORKSPACE_ROOT}")"
   NODE_XML="$(escape_xml "${NODE_BIN}")"
-  GNODE_XML="$(escape_xml "${GNODE_JS}")"
+  TSX_LOADER_XML="$(escape_xml "$(resolve_tsx_loader_for_plist)")"
+  GNODE_BRIDGE_XML="$(escape_xml "${GNODE_BRIDGE}")"
 
   mkdir -p "${LAUNCH_AGENT_DIR}"
   cat >"${PLIST_PATH}" <<EOF
@@ -159,7 +183,9 @@ write_plist() {
   <key>ProgramArguments</key>
   <array>
     <string>${NODE_XML}</string>
-    <string>${GNODE_XML}</string>
+    <string>--import</string>
+    <string>${TSX_LOADER_XML}</string>
+    <string>${GNODE_BRIDGE_XML}</string>
     <string>run</string>
     <string>${SUPERVISOR_REL}</string>
     <string>--export</string>
@@ -218,8 +244,8 @@ bootstrap_service_legacy_load() {
     SERVICE_TARGET="${DOMAIN}/${LABEL}"
     persist_domain "${DOMAIN}"
     launchctl enable "${SERVICE_TARGET}" >/dev/null 2>&1 || true
-    launchctl kickstart -k "${SERVICE_TARGET}" >/dev/null 2>&1 || true
     echo "zedge: loaded ${SERVICE_TARGET} via launchctl load" >&2
+    JUST_BOOTSTRAPPED=1
     return 0
   fi
   return 1
@@ -244,9 +270,9 @@ bootstrap_service() {
         SERVICE_TARGET="${DOMAIN}/${LABEL}"
         persist_domain "${DOMAIN}"
         launchctl enable "${SERVICE_TARGET}" >/dev/null 2>&1 || true
-        launchctl kickstart -k "${SERVICE_TARGET}" >/dev/null 2>&1 || true
         rm -f "${ERR_FILE}"
         echo "zedge: loaded ${SERVICE_TARGET}" >&2
+        JUST_BOOTSTRAPPED=1
         return 0
       fi
       # Already loaded?
@@ -255,7 +281,6 @@ bootstrap_service() {
         SERVICE_TARGET="${DOMAIN}/${LABEL}"
         persist_domain "${DOMAIN}"
         launchctl enable "${SERVICE_TARGET}" >/dev/null 2>&1 || true
-        launchctl kickstart -k "${SERVICE_TARGET}" >/dev/null 2>&1 || true
         rm -f "${ERR_FILE}"
         echo "zedge: already loaded ${SERVICE_TARGET}" >&2
         return 0
@@ -329,19 +354,22 @@ print_status() {
   echo "health:"
   curl -sS -m 5 "http://127.0.0.1:7331/health" || true
   echo
+  echo "ready:"
+  curl -sS -m 5 "http://127.0.0.1:7331/probe/ready" || true
+  echo
 }
 
 wait_for_health() {
-  attempts="${1:-60}"
+  attempts="${1:-120}"
   attempt=1
   while [ "${attempt}" -le "${attempts}" ]; do
-    if curl -fsS -m 2 "http://127.0.0.1:7331/health" >/dev/null 2>&1; then
+    if curl -fsS -m 5 "http://127.0.0.1:7331/probe/ready" >/dev/null 2>&1; then
       return 0
     fi
     attempt=$((attempt + 1))
     sleep 1
   done
-  echo "zedge: companion did not become healthy after ${attempts}s" >&2
+  echo "zedge: companion did not become route-ready after ${attempts}s" >&2
   return 1
 }
 
@@ -365,7 +393,9 @@ case "${ACTION}" in
     set_zed_openai_compatible_env
     ensure_loaded
     resolve_service_target || true
-    launchctl kickstart -k "${SERVICE_TARGET}"
+    if [ "${JUST_BOOTSTRAPPED}" != "1" ]; then
+      launchctl kickstart -k "${SERVICE_TARGET}"
+    fi
     wait_for_health || true
     print_status
     ;;

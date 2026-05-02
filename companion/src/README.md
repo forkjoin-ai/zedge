@@ -29,6 +29,7 @@ Runtime entrypoints, HTTP server surfaces, Babelfish routes, and the sidecar-onl
 - `runtime-command.ts` centralizes how the companion turns a TypeScript entrypoint into an actual process command, routing the companion, MCP bridge, supervisor, and LSP entrypoints through the checked-in `run-ts-entry.sh` wrapper so they all launch through `gnode`.
 - `forge-bridge.ts` owns local project discovery and deploy/process control for the companion HTTP surface.
 - `gnot-bridge.ts` gives the companion a first-class `open-source/gnot` surface for workspace file discovery, `.gnot` lint/format authoring checks, and deploy-shell `doctor` / `next` / `status` diagnostics through both HTTP and MCP.
+- `babelfish.ts`, `babelfish-routes.ts`, and `babelfish-mcp.ts` expose `.gnarly` compile, fastest-preview, and source-to-Gnarly generation flows on the same preview-first Babelfish path as code translation.
 - `aether-local-runtime.ts` centralizes the verified local TinyLlama chat and MiniLM embedding fallback that `inference-bridge.ts` uses when mesh, edge, and Cloud Run paths miss, and exposes the local chat load state for health reporting.
 - `inference-bridge.ts` owns the Moonshine request path, refreshes the live `/v1/models` catalog on demand, and keeps echo as the final belt-and-suspenders fallback when the container is unavailable.
 - `prefill-window.ts` owns the explicit speculative prefill window proxy surface, maps `X-Zedge-Prefill-Window` to Moonshine's attach header, and remaps `X-Moonshine-Prefill-*` telemetry back to `X-Zedge-Prefill-*`.

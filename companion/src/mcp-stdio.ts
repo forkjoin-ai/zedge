@@ -83,10 +83,10 @@ function configureStdioLogging(): void {
     process.stderr.write(`[zedge:mcp:debug] ${args.join(' ')}\n`);
 }
 
-/** Check if companion is reachable */
+/** Check if the current companion control plane is reachable and route-ready. */
 async function isCompanionAlive(): Promise<boolean> {
   try {
-    const resp = await fetch(`${getCompanionBase()}/health`, {
+    const resp = await fetch(`${getCompanionBase()}/probe/ready`, {
       signal: AbortSignal.timeout(HEALTH_CHECK_TIMEOUT_MS),
     });
     return resp.ok;
@@ -342,11 +342,11 @@ interface McpPromptDefinition {
 
 // ---------- Companion health check ----------
 
-async function waitForCompanion(maxAttempts = 20): Promise<boolean> {
+async function waitForCompanion(maxAttempts = 240): Promise<boolean> {
   for (let i = 0; i < maxAttempts; i++) {
     try {
-      const resp = await fetch(`${getCompanionBase()}/health`, {
-        signal: AbortSignal.timeout(2000),
+      const resp = await fetch(`${getCompanionBase()}/probe/ready`, {
+        signal: AbortSignal.timeout(HEALTH_CHECK_TIMEOUT_MS),
       });
       if (resp.ok) return true;
     } catch {
@@ -1007,11 +1007,18 @@ async function handleBabelfishSlashCommand(
         ?.split(',')
         .map((language) => language.trim())
         .filter((language) => language.length > 0);
-      return callBabelfishMcpTool(getCompanionBase(), 'zedge_babelfish_gnarly', {
+      const args: Record<string, unknown> = {
         action: subcommand === 'fastest' ? 'fastest' : 'compile',
         scope: createBabelfishScope(filePath),
-        candidateLanguages,
-      });
+      };
+      if (candidateLanguages !== undefined) {
+        args.candidateLanguages = candidateLanguages;
+      }
+      return callBabelfishMcpTool(
+        getCompanionBase(),
+        'zedge_babelfish_gnarly',
+        args
+      );
     }
     case 'gnarly-from': {
       const filePath = optionalString(parts[1]);
@@ -1024,11 +1031,18 @@ async function handleBabelfishSlashCommand(
         ?.split(',')
         .map((language) => language.trim())
         .filter((language) => language.length > 0);
-      return callBabelfishMcpTool(getCompanionBase(), 'zedge_babelfish_gnarly', {
+      const args: Record<string, unknown> = {
         action: 'from',
         scope: createBabelfishScope(filePath),
-        candidateLanguages,
-      });
+      };
+      if (candidateLanguages !== undefined) {
+        args.candidateLanguages = candidateLanguages;
+      }
+      return callBabelfishMcpTool(
+        getCompanionBase(),
+        'zedge_babelfish_gnarly',
+        args
+      );
     }
     case 'translate-code':
     case 'generate':

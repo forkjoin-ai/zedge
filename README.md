@@ -94,6 +94,7 @@ The latest Phase 4 integration shifts the heavy lifting from the companion JS pr
 - `analyze` and `explain` are exposed for every Gnosis-supported programming language
 - `translate` and `scaffold` are exposed anywhere the GG scaffolder can emit target files
 - `rewrite-preview` is deliberately tiered and remains experimental
+- `.gnarly` files are first-class multilingual GG-family sources: Zedge can compile them, preview fastest-language topology candidates, and surface speed findings as read-only LSP hints
 - human-language translation is local-first and preserves code fences instead of translating code tokens blindly
 
 ### Slash Command
@@ -102,6 +103,9 @@ Use the umbrella slash command:
 
 ```text
 /zedge-babelfish capabilities
+/zedge-babelfish fastest <file.gnarly> [candidate-language,...]
+/zedge-babelfish compile-gnarly <file.gnarly>
+/zedge-babelfish gnarly-from <file-path> [candidate-language,...]
 /zedge-babelfish explain <file-path> [audience-language]
 /zedge-babelfish translate-code <target-language> <file-path>
 /zedge-babelfish translate-text <target-language> <file-path>
@@ -109,6 +113,32 @@ Use the umbrella slash command:
 /zedge-babelfish rewrite-preview <target-language> <file-path>
 /zedge-babelfish apply <preview-id> [rewrite_in_place|generate_files]
 ```
+
+### Gnarly
+
+`.gnarly` keeps GG node and edge syntax, then adds optional metadata and
+embedded implementation blocks for cross-language programs:
+
+```gnosis
+gnarly "image-pipeline" {
+  languages = ["typescript", "rust", "go"]
+  entry = ingest
+}
+
+(transform: PolyglotBridgeCall {
+  fastest: true,
+  candidates: ["rust", "go", "zig"],
+  callee: "transform"
+})
+
+impl transform in rust {
+  // optional embedded source
+}
+```
+
+The companion emits speed diagnostics as LSP hints from `gnosis-gnarly-speed`.
+Quick fixes and slash commands open Babelfish previews first; they do not mutate
+files until an explicit apply step is used.
 
 ## Gnot
 

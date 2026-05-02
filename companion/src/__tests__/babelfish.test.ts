@@ -69,6 +69,47 @@ mock.module('../babelfish-gnosis', () => ({
       edgeTypes: ['PROCESS'],
     },
   ],
+  compileGnarly: async (sourceText: string, options: { filePath?: string }) => ({
+    document: {
+      filePath: options.filePath ?? 'input.gnarly',
+      metadata: { name: 'mock', languages: ['typescript', 'rust'], properties: {} },
+      ggSource: sourceText,
+      implementations: [],
+      diagnostics: [],
+    },
+    ggSource: '(greet: PolyglotBridgeCall { fastest: true })',
+    ast: { nodes: new Map(), edges: [] },
+    output: 'mock gnarly compile',
+    diagnostics: [],
+    speedDiagnostics: [
+      {
+        line: 1,
+        column: 1,
+        code: 'GNARLY_FASTER_LANGUAGE_AVAILABLE',
+        message: 'Gnarly predicts rust is the fastest fit for greet.',
+        severity: 'hint',
+        nodeId: 'greet',
+        recommendedLanguage: 'rust',
+        evidence: 'predicted',
+        score: 0.9,
+        rationale: 'rust: high performance',
+        recommendations: [],
+      },
+    ],
+    executionManifest: {
+      language: 'typescript',
+      file_path: options.filePath ?? 'input.gnarly',
+      entry_function: 'greet',
+      node_execution_plans: [],
+    },
+    multiLanguageManifest: {
+      defaultLanguage: 'typescript',
+      defaultFilePath: options.filePath ?? 'input.gnarly',
+      nodeOverrides: new Map(),
+    },
+    generatedFiles: [],
+    topoRaceGg: '// Topo-race',
+  }),
 }));
 
 const {
@@ -78,6 +119,7 @@ const {
   resetBabelfishStateForTest,
   translateBabelfishText,
   explainBabelfishScope,
+  previewBabelfishGnarlyFastest,
 } = await import('../babelfish');
 
 describe('Babelfish Service', () => {
@@ -179,5 +221,19 @@ describe('Babelfish Service', () => {
     expect(explanation.summary).toContain('input.ts');
     expect(explanation.explanation).toContain('Detected language');
     expect(explanation.ggSource).toContain('(greet:PROCESS)');
+  });
+
+  test('gnarly fastest preview returns speed hints without writing files', async () => {
+    const response = await previewBabelfishGnarlyFastest({
+      scope: {
+        kind: 'inline',
+        filePath: 'input.gnarly',
+        sourceText: '(greet: PolyglotBridgeCall { fastest: true })',
+      },
+    });
+
+    expect(response.summary).toContain('fastest preview');
+    expect(response.speedDiagnostics[0]?.severity).toBe('hint');
+    expect(response.topoRaceGg).toContain('Topo-race');
   });
 });
