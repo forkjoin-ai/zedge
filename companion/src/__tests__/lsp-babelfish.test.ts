@@ -86,6 +86,9 @@ describe('LSP Babelfish helpers', () => {
   });
 
   test('executes Gnarly LSP commands against open .gnarly documents', async () => {
+    setGnosisLspSendForTest(() => {
+      // The command assertions do not need published diagnostics.
+    });
     setGnosisLspConfigGetterForTest(() => testConfig({ enabled: true }));
 
     await dispatchRequest({

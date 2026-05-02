@@ -1,0 +1,12 @@
+{
+  "name": "tree-sitter-gnosis",
+  "version": "0.1.0",
+  "type": "commonjs",
+  "main": "grammar.js",
+  "tree-sitter": [
+    {
+      "scope": "source.gnosis",
+      "file-types": ["gg", "ggl", "gnarly"]
+    }
+  ]
+}

@@ -102,6 +102,9 @@ const READY_REQUIRED_TOOL_NAMES = [
   'zedge_babelfish_code',
   'zedge_daydream',
 ] as const;
+const READINESS_RUNTIME_TIMEOUT_MS = Number(
+  process.env.ZEDGE_READINESS_RUNTIME_TIMEOUT_MS ?? 5_000
+);
 
 const LOCAL_TREE_IGNORED_NAMES = new Set([
   '.git',
@@ -226,10 +229,22 @@ async function getReadinessProbePayload(): Promise<{
     moonshine: {
       ready: boolean;
       models: string[];
+      openAi: {
+        ready: boolean;
+        status?: string;
+        model?: string;
+        hiddenDim?: number;
+        vocabSize?: number;
+        layers?: string;
+        runtimeMatches?: boolean;
+        error?: string;
+      };
       fatStation: {
         ready: boolean;
         status?: string;
         layers?: string;
+        hiddenDim?: number;
+        vocabSize?: number;
         error?: string;
       };
       error?: string;
@@ -275,24 +290,47 @@ async function getReadinessProbePayload(): Promise<{
   let moonshine = {
     ready: false,
     models: [] as string[],
+    openAi: { ready: false },
     fatStation: { ready: false },
   } as {
     ready: boolean;
     models: string[];
+    openAi: {
+      ready: boolean;
+      status?: string;
+      model?: string;
+      hiddenDim?: number;
+      vocabSize?: number;
+      layers?: string;
+      runtimeMatches?: boolean;
+      error?: string;
+    };
     fatStation: {
       ready: boolean;
       status?: string;
       layers?: string;
+      hiddenDim?: number;
+      vocabSize?: number;
       error?: string;
     };
     error?: string;
   };
 
   try {
-    const runtime = await getLiveMoonshineRuntimeHealth(1_000);
+    const runtime = await getLiveMoonshineRuntimeHealth(
+      Number.isFinite(READINESS_RUNTIME_TIMEOUT_MS) &&
+        READINESS_RUNTIME_TIMEOUT_MS > 0
+        ? READINESS_RUNTIME_TIMEOUT_MS
+        : 5_000
+    );
     moonshine = {
-      ready: runtime.models.length > 0 && runtime.fatStation.ready,
+      ready:
+        runtime.models.length > 0 &&
+        runtime.openAi.ready &&
+        runtime.openAi.runtimeMatches === true &&
+        runtime.fatStation.ready,
       models: runtime.models.map((model) => model.id),
+      openAi: runtime.openAi,
       fatStation: runtime.fatStation,
     };
   } catch (error) {

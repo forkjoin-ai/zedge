@@ -101,8 +101,10 @@ async function syncZedSettingsFromModelCatalog(): Promise<void> {
 /** Starts Moonshine when possible, then syncs Zed settings from whatever catalog is live. */
 async function startMoonshineAndSyncZedSettings(): Promise<void> {
   try {
-    const { ensureMoonshineRunning } = await import('./moonshine-docker.ts');
+    const { ensureMoonshineRunning, startMoonshineRuntimeWatchdog } =
+      await import('./moonshine-docker.ts');
     await ensureMoonshineRunning();
+    startMoonshineRuntimeWatchdog();
   } catch (err) {
     console.warn(`[moonshine] Startup failed: ${getErrorMessage(err)}`);
   }

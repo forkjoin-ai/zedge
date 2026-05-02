@@ -2406,15 +2406,70 @@ export async function getLiveMoonshineRuntimeHealth(
   timeoutMs = 5_000
 ): Promise<{
   models: ModelInfo[];
+  openAi: {
+    ready: boolean;
+    status?: string;
+    model?: string;
+    hiddenDim?: number;
+    vocabSize?: number;
+    layers?: string;
+    runtimeMatches?: boolean;
+    error?: string;
+  };
   fatStation: {
     ready: boolean;
     status?: string;
     layers?: string;
+    hiddenDim?: number;
+    vocabSize?: number;
     error?: string;
   };
 }> {
-  const [models, fatStation] = await Promise.all([
+  const numberField = (
+    body: Record<string, unknown>,
+    key: string
+  ): number | undefined => {
+    const value = body[key];
+    if (typeof value === 'number' && Number.isFinite(value)) return value;
+    if (typeof value === 'string') {
+      const parsed = Number.parseInt(value, 10);
+      return Number.isFinite(parsed) ? parsed : undefined;
+    }
+    return undefined;
+  };
+  const normalizeLayers = (layers: unknown): string | undefined =>
+    typeof layers === 'string' ? layers.trim().replace('..', '-') : undefined;
+
+  const [models, openAi, fatStation] = await Promise.all([
     fetchRemoteModels(timeoutMs),
+    (async () => {
+      try {
+        const resp = await fetch(`${MOONSHINE_BASE_URL}/health`, {
+          headers: { Accept: 'application/json' },
+          signal: AbortSignal.timeout(timeoutMs),
+        });
+        if (!resp.ok) {
+          return {
+            ready: false,
+            error: `Moonshine HTTP ${resp.status}`,
+          };
+        }
+        const body = (await resp.json()) as Record<string, unknown>;
+        return {
+          ready: body['status'] === 'ok',
+          status: typeof body['status'] === 'string' ? body['status'] : undefined,
+          model: typeof body['model'] === 'string' ? body['model'] : undefined,
+          hiddenDim: numberField(body, 'hidden_dim'),
+          vocabSize: numberField(body, 'vocab_size'),
+          layers: normalizeLayers(body['layers']),
+        };
+      } catch (error) {
+        return {
+          ready: false,
+          error: error instanceof Error ? error.message : String(error),
+        };
+      }
+    })(),
     (async () => {
       try {
         const resp = await fetch(`${FAT_STATION_BASE_URL}/health`, {
@@ -2427,14 +2482,13 @@ export async function getLiveMoonshineRuntimeHealth(
             error: `fat-station HTTP ${resp.status}`,
           };
         }
-        const body = (await resp.json()) as {
-          status?: string;
-          layers?: string;
-        };
+        const body = (await resp.json()) as Record<string, unknown>;
         return {
           ready: body.status === 'ok',
-          status: body.status,
-          layers: body.layers,
+          status: typeof body['status'] === 'string' ? body['status'] : undefined,
+          layers: normalizeLayers(body['layers']),
+          hiddenDim: numberField(body, 'hidden_dim'),
+          vocabSize: numberField(body, 'vocab_size'),
         };
       } catch (error) {
         return {
@@ -2445,7 +2499,17 @@ export async function getLiveMoonshineRuntimeHealth(
     })(),
   ]);
 
-  return { models, fatStation };
+  const runtimeMatches =
+    openAi.ready &&
+    fatStation.ready &&
+    openAi.hiddenDim !== undefined &&
+    openAi.hiddenDim === fatStation.hiddenDim &&
+    openAi.vocabSize !== undefined &&
+    openAi.vocabSize === fatStation.vocabSize &&
+    openAi.layers !== undefined &&
+    openAi.layers === fatStation.layers;
+
+  return { models, openAi: { ...openAi, runtimeMatches }, fatStation };
 }
 
 /** Refreshes the cached Moonshine model catalog immediately. */

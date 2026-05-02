@@ -399,7 +399,22 @@ mock.module('../inference-bridge.ts', () => ({
         owned_by: 'mock',
       },
     ],
-    fatStation: { ready: true, status: 'ok', layers: '0-24' },
+    openAi: {
+      ready: true,
+      status: 'ok',
+      model: 'tinyllama-1.1b',
+      hiddenDim: 64,
+      vocabSize: 32000,
+      layers: '0-24',
+      runtimeMatches: true,
+    },
+    fatStation: {
+      ready: true,
+      status: 'ok',
+      layers: '0-24',
+      hiddenDim: 64,
+      vocabSize: 32000,
+    },
   }),
   embed: async (_input: string | string[], model?: string) =>
     jsonResponse({
@@ -1096,6 +1111,7 @@ const routeCases: RouteCase[] = [
         controlPlane?: { missingTools?: string[] };
         moonshine?: {
           models?: string[];
+          openAi?: { ready?: boolean; runtimeMatches?: boolean };
           fatStation?: { ready?: boolean; layers?: string };
         };
       };
@@ -1103,6 +1119,8 @@ const routeCases: RouteCase[] = [
     expect(payload.ready).toBe(true);
     expect(payload.checks?.controlPlane?.missingTools).toEqual([]);
     expect(payload.checks?.moonshine?.models).toContain('tinyllama-1.1b');
+    expect(payload.checks?.moonshine?.openAi?.ready).toBe(true);
+    expect(payload.checks?.moonshine?.openAi?.runtimeMatches).toBe(true);
     expect(payload.checks?.moonshine?.fatStation?.ready).toBe(true);
   }),
   ...[

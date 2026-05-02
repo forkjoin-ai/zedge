@@ -2,7 +2,13 @@ import { describe, test, expect } from '@a0n/gnosis/test';
 import { mkdtempSync, readFileSync, writeFileSync } from 'fs';
 import { join } from 'path';
 import { tmpdir } from 'os';
-import { clearLogs, getModels, embed, infer } from '../inference-bridge';
+import {
+  clearLogs,
+  getLiveMoonshineRuntimeHealth,
+  getModels,
+  embed,
+  infer,
+} from '../inference-bridge';
 import type {
   InferenceTier,
   ChatCompletionResponse,
@@ -79,6 +85,58 @@ describe('Inference Bridge', () => {
     try {
       const models = await getModels({ refresh: true });
       expect(models.map((model) => model.id)).toEqual(['gnosis-local']);
+    } finally {
+      global.fetch = originalFetch;
+    }
+  });
+
+  test('runtime health detects stale OpenAI shim fingerprints', async () => {
+    const originalFetch = global.fetch;
+    global.fetch = (async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith('/v1/models')) {
+        return new Response(
+          JSON.stringify({
+            object: 'list',
+            data: [{ id: 'qwen2.5-0.5b-instruct', object: 'model' }],
+          }),
+          { headers: { 'Content-Type': 'application/json' } }
+        );
+      }
+      if (url === 'http://127.0.0.1:8080/health') {
+        return new Response(
+          JSON.stringify({
+            status: 'ok',
+            model: 'qwen2.5-0.5b-instruct',
+            hidden_dim: 2048,
+            vocab_size: 32000,
+            layers: '0-22',
+          }),
+          { headers: { 'Content-Type': 'application/json' } }
+        );
+      }
+      if (url === 'http://127.0.0.1:8000/health') {
+        return new Response(
+          JSON.stringify({
+            status: 'ok',
+            hidden_dim: 896,
+            vocab_size: 151936,
+            layers: '0-24',
+          }),
+          { headers: { 'Content-Type': 'application/json' } }
+        );
+      }
+      return await originalFetch(input);
+    }) as typeof fetch;
+
+    try {
+      const health = await getLiveMoonshineRuntimeHealth();
+      expect(health.models.map((model) => model.id)).toEqual([
+        'qwen2.5-0.5b-instruct',
+      ]);
+      expect(health.openAi.ready).toBe(true);
+      expect(health.fatStation.ready).toBe(true);
+      expect(health.openAi.runtimeMatches).toBe(false);
     } finally {
       global.fetch = originalFetch;
     }

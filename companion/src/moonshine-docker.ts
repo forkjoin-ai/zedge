@@ -71,9 +71,16 @@ const GNOSIS_NUM_THREADS =
   '4';
 const HEALTH_POLL_MS = 2_000;
 const HEALTH_TIMEOUT_MS = 90_000;
+const WATCHDOG_INTERVAL_MS = Number(
+  process.env.ZEDGE_MOONSHINE_WATCHDOG_INTERVAL_MS ?? 15_000
+);
 const DEFAULT_KNOT_LAYER_COUNT = 22;
 
 type KnotMetadata = Record<string, unknown>;
+
+let watchdogInterval: ReturnType<typeof setInterval> | null = null;
+let watchdogRepair: Promise<void> | null = null;
+let watchdogConsecutiveFailures = 0;
 
 interface MoonshineStartupConfig {
   knotPath: string;
@@ -104,7 +111,24 @@ const LOCAL_MOONSHINE_MODELS: Record<string, LocalMoonshineModelSpec> = {
 interface MoonshineProbeResult {
   healthy: boolean;
   matches: boolean;
+  modelMatches: boolean;
+  runtimeMatches: boolean;
   models: string[];
+  health?: RuntimeFingerprint;
+  mismatchReason?: string;
+}
+
+interface RuntimeFingerprint {
+  hiddenDim?: number;
+  vocabSize?: number;
+  layers?: string;
+}
+
+interface FatStationProbeResult extends RuntimeFingerprint {
+  healthy: boolean;
+  matches: boolean;
+  status?: string;
+  error?: string;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -267,13 +291,78 @@ async function probe(): Promise<boolean> {
   }
 }
 
-async function probeExpectedModel(modelName: string): Promise<MoonshineProbeResult> {
+function numericField(body: Record<string, unknown>, key: string): number | undefined {
+  const value = body[key];
+  if (typeof value === 'number' && Number.isFinite(value)) return value;
+  if (typeof value === 'string') {
+    const parsed = Number.parseInt(value, 10);
+    if (Number.isFinite(parsed)) return parsed;
+  }
+  return undefined;
+}
+
+function runtimeMismatchReason(
+  actual: RuntimeFingerprint | undefined,
+  expected: RuntimeFingerprint
+): string | undefined {
+  if (!actual) return 'OpenAI shim health did not return a runtime fingerprint';
+  if (actual.hiddenDim !== expected.hiddenDim) {
+    return `hidden_dim ${actual.hiddenDim ?? 'missing'} != ${expected.hiddenDim}`;
+  }
+  if (actual.vocabSize !== expected.vocabSize) {
+    return `vocab_size ${actual.vocabSize ?? 'missing'} != ${expected.vocabSize}`;
+  }
+  if (
+    normalizeLayerRange(String(actual.layers ?? '')) !==
+    normalizeLayerRange(String(expected.layers ?? ''))
+  ) {
+    return `layers ${actual.layers ?? 'missing'} != ${expected.layers}`;
+  }
+  return undefined;
+}
+
+async function probeOpenAiHealth(): Promise<RuntimeFingerprint | undefined> {
   try {
-    const resp = await fetch(`${MOONSHINE_URL}/v1/models`, {
+    const resp = await fetch(`${MOONSHINE_URL}/health`, {
       signal: AbortSignal.timeout(2_000),
     });
+    if (!resp.ok) return undefined;
+
+    const body = (await resp.json()) as unknown;
+    if (!isRecord(body)) return undefined;
+    return {
+      hiddenDim: numericField(body, 'hidden_dim'),
+      vocabSize: numericField(body, 'vocab_size'),
+      layers:
+        typeof body['layers'] === 'string'
+          ? normalizeLayerRange(body['layers'])
+          : undefined,
+    };
+  } catch {
+    return undefined;
+  }
+}
+
+async function probeExpectedModel(
+  modelName: string,
+  expectedRuntime?: RuntimeFingerprint
+): Promise<MoonshineProbeResult> {
+  try {
+    const [resp, health] = await Promise.all([
+      fetch(`${MOONSHINE_URL}/v1/models`, {
+        signal: AbortSignal.timeout(2_000),
+      }),
+      probeOpenAiHealth(),
+    ]);
     if (!resp.ok) {
-      return { healthy: false, matches: false, models: [] };
+      return {
+        healthy: false,
+        matches: false,
+        modelMatches: false,
+        runtimeMatches: false,
+        models: [],
+        health,
+      };
     }
 
     const body = (await resp.json()) as unknown;
@@ -286,24 +375,40 @@ async function probeExpectedModel(modelName: string): Promise<MoonshineProbeResu
           )
           .filter((entry): entry is string => entry !== null)
       : [];
+    const modelMatches = models.includes(modelName);
+    const mismatchReason = expectedRuntime
+      ? runtimeMismatchReason(health, expectedRuntime)
+      : undefined;
+    const runtimeMatches = !mismatchReason;
 
     return {
       healthy: true,
-      matches: models.includes(modelName),
+      matches: modelMatches && runtimeMatches,
+      modelMatches,
+      runtimeMatches,
       models,
+      health,
+      ...(mismatchReason ? { mismatchReason } : {}),
     };
   } catch {
-    return { healthy: false, matches: false, models: [] };
+    return {
+      healthy: false,
+      matches: false,
+      modelMatches: false,
+      runtimeMatches: false,
+      models: [],
+    };
   }
 }
 
 async function waitReadyForModel(
   modelName: string,
+  expectedRuntime?: RuntimeFingerprint,
   timeoutMs = HEALTH_TIMEOUT_MS
 ): Promise<boolean> {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
-    const result = await probeExpectedModel(modelName);
+    const result = await probeExpectedModel(modelName, expectedRuntime);
     if (result.healthy && result.matches) return true;
     await new Promise((r) => setTimeout(r, HEALTH_POLL_MS));
   }
@@ -321,21 +426,48 @@ async function probeUrl(url: string): Promise<boolean> {
   }
 }
 
-async function probeFatStationLayerRange(layerRange: string): Promise<boolean> {
+async function probeFatStationRuntime(
+  layerRange: string
+): Promise<FatStationProbeResult> {
   try {
     const resp = await fetch(`${FAT_STATION_URL}/health`, {
       signal: AbortSignal.timeout(2_000),
     });
-    if (!resp.ok) return false;
+    if (!resp.ok) {
+      return {
+        healthy: false,
+        matches: false,
+        error: `fat-station HTTP ${resp.status}`,
+      };
+    }
 
     const body = (await resp.json()) as unknown;
-    return (
-      isRecord(body) &&
-      normalizeLayerRange(String(body['layers'] ?? '')) ===
-        normalizeLayerRange(layerRange)
-    );
-  } catch {
-    return false;
+    if (!isRecord(body)) {
+      return {
+        healthy: false,
+        matches: false,
+        error: 'fat-station health returned a non-object payload',
+      };
+    }
+
+    const layers =
+      typeof body['layers'] === 'string'
+        ? normalizeLayerRange(body['layers'])
+        : undefined;
+    return {
+      healthy: body['status'] === 'ok',
+      matches: normalizeLayerRange(String(layers ?? '')) === normalizeLayerRange(layerRange),
+      status: typeof body['status'] === 'string' ? body['status'] : undefined,
+      layers,
+      hiddenDim: numericField(body, 'hidden_dim'),
+      vocabSize: numericField(body, 'vocab_size'),
+    };
+  } catch (error) {
+    return {
+      healthy: false,
+      matches: false,
+      error: error instanceof Error ? error.message : String(error),
+    };
   }
 }
 
@@ -456,11 +588,12 @@ async function startLocalMoonshine(
 
   const { knotPath, modelName, layerRange, tokenizerGgufPath } = config;
 
-  const fatStationHealthy = await probeUrl(FAT_STATION_URL);
-  if (fatStationHealthy && !(await probeFatStationLayerRange(layerRange))) {
+  let fatStationRuntime = await probeFatStationRuntime(layerRange);
+  if (!fatStationRuntime.healthy || !fatStationRuntime.matches) {
     console.warn(
-      `[moonshine] existing fat-station does not match requested layer range ` +
-        `${layerRange}; restarting local listener`
+      `[moonshine] existing fat-station is not ready for ${layerRange}: ` +
+        `${fatStationRuntime.error ?? fatStationRuntime.layers ?? 'unknown'}; ` +
+        `restarting local listener`
     );
     if (stopLocalListener(FAT_STATION_URL, 'fat-station')) {
       await allowStoppedPortsToClose();
@@ -495,9 +628,28 @@ async function startLocalMoonshine(
     }
   }
 
-  const existingOpenAiShim = await probeExpectedModel(modelName);
+  fatStationRuntime = await probeFatStationRuntime(layerRange);
+  if (!fatStationRuntime.healthy || !fatStationRuntime.matches) {
+    console.warn(
+      `[moonshine] local fat-station is not ready for ${layerRange}: ` +
+        `${fatStationRuntime.error ?? fatStationRuntime.layers ?? 'unknown'}`
+    );
+    return false;
+  }
+
+  const existingOpenAiShim = await probeExpectedModel(
+    modelName,
+    fatStationRuntime
+  );
   if (existingOpenAiShim.healthy && existingOpenAiShim.matches) {
     return true;
+  }
+
+  if (existingOpenAiShim.healthy && existingOpenAiShim.mismatchReason) {
+    console.warn(
+      `[moonshine] existing OpenAI-compatible shim runtime mismatch: ` +
+        `${existingOpenAiShim.mismatchReason}; restarting local listener`
+    );
   }
 
   if (stopLocalListener(MOONSHINE_URL, 'OpenAI-compatible')) {
@@ -549,7 +701,7 @@ async function startLocalMoonshine(
     stderrPath: '/tmp/moonshine-openai-compat-launchd.err.log',
   });
 
-  return await waitReadyForModel(modelName);
+  return await waitReadyForModel(modelName, fatStationRuntime);
 }
 
 async function startDockerMoonshine(modelName: string): Promise<boolean> {
@@ -583,19 +735,31 @@ async function startDockerMoonshine(modelName: string): Promise<boolean> {
 
 export async function ensureMoonshineRunning(): Promise<void> {
   const startupConfig = resolveStartupConfig();
-  const probeResult = await probeExpectedModel(startupConfig.modelName);
-  const fatStationMatches = await probeFatStationLayerRange(
+  const fatStationRuntime = await probeFatStationRuntime(
     startupConfig.layerRange
   );
-  if (probeResult.healthy && probeResult.matches && fatStationMatches) {
+  const probeResult = await probeExpectedModel(
+    startupConfig.modelName,
+    fatStationRuntime.healthy && fatStationRuntime.matches
+      ? fatStationRuntime
+      : undefined
+  );
+  if (
+    probeResult.healthy &&
+    probeResult.matches &&
+    fatStationRuntime.healthy &&
+    fatStationRuntime.matches
+  ) {
     console.log('[moonshine] OpenAI-compatible endpoint already running');
     return;
   }
 
   if (probeResult.healthy) {
-    const reason = probeResult.matches
-      ? `fat-station is not ready for ${startupConfig.layerRange}`
-      : `expected ${startupConfig.modelName}`;
+    const reason = !probeResult.modelMatches
+      ? `expected ${startupConfig.modelName}`
+      : probeResult.mismatchReason
+        ? `runtime mismatch (${probeResult.mismatchReason})`
+        : `fat-station is not ready for ${startupConfig.layerRange}`;
     console.warn(
       `[moonshine] existing OpenAI-compatible endpoint exposes ` +
         `${probeResult.models.join(', ') || 'no models'}, ${reason}; ` +
@@ -614,4 +778,53 @@ export async function ensureMoonshineRunning(): Promise<void> {
   } else {
     console.warn('[moonshine] Did not become healthy within timeout — inference will fail until container is up');
   }
+}
+
+async function isMoonshineRuntimeReady(
+  startupConfig = resolveStartupConfig()
+): Promise<boolean> {
+  const fatStationRuntime = await probeFatStationRuntime(
+    startupConfig.layerRange
+  );
+  if (!fatStationRuntime.healthy || !fatStationRuntime.matches) return false;
+
+  const probeResult = await probeExpectedModel(
+    startupConfig.modelName,
+    fatStationRuntime
+  );
+  return probeResult.healthy && probeResult.matches;
+}
+
+export function startMoonshineRuntimeWatchdog(): void {
+  if (process.env.ZEDGE_MOONSHINE_WATCHDOG === '0') return;
+  if (watchdogInterval !== null) return;
+  if (!Number.isFinite(WATCHDOG_INTERVAL_MS) || WATCHDOG_INTERVAL_MS <= 0) {
+    return;
+  }
+
+  watchdogInterval = setInterval(() => {
+    if (watchdogRepair !== null) return;
+    watchdogRepair = (async () => {
+      try {
+        if (await isMoonshineRuntimeReady()) {
+          watchdogConsecutiveFailures = 0;
+          return;
+        }
+        watchdogConsecutiveFailures += 1;
+        if (watchdogConsecutiveFailures < 2) return;
+        watchdogConsecutiveFailures = 0;
+        console.warn('[moonshine] runtime degraded; repairing local listeners');
+        await ensureMoonshineRunning();
+      } catch (error) {
+        console.warn(
+          `[moonshine] runtime watchdog failed: ${
+            error instanceof Error ? error.message : String(error)
+          }`
+        );
+      } finally {
+        watchdogRepair = null;
+      }
+    })();
+  }, WATCHDOG_INTERVAL_MS);
+  watchdogInterval.unref?.();
 }
