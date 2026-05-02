@@ -87,6 +87,10 @@ fi
 
 : "${GNODE_FORCE_TSX:=1}"
 export GNODE_FORCE_TSX
+if [ -z "${TSX_TSCONFIG_PATH:-}" ] && [ -f "${WORKSPACE_ROOT}/open-source/zedge/companion/tsconfig.json" ]; then
+  TSX_TSCONFIG_PATH="${WORKSPACE_ROOT}/open-source/zedge/companion/tsconfig.json"
+  export TSX_TSCONFIG_PATH
+fi
 
 case "${ABS_ENTRY_PATH}" in
   "${WORKSPACE_ROOT}/open-source/zedge/companion/src/index.ts")

@@ -1515,7 +1515,7 @@ pub fn run_babelfish_native(
 ) -> Result<SlashCommandOutput, String> {
     if args.is_empty() {
         return Ok(output_with_section(
-            "Usage: /zedge-babelfish-native translate-code <target_language> <file_path>"
+            "Usage: /edge-babelfish-native translate-code <target_language> <file_path>"
                 .to_string(),
             "Babelfish Native",
         ));
@@ -1616,7 +1616,7 @@ pub fn run_babelfish(
         match subcommand {
             "fastest" | "compile-gnarly" => {
                 let file_path = args.get(1).ok_or(
-                    "Usage: `/zedge-babelfish <fastest|compile-gnarly> <file.gnarly> [candidate-language,...]`",
+                    "Usage: `/edge-babelfish <fastest|compile-gnarly> <file.gnarly> [candidate-language,...]`",
                 )?;
                 let wt = worktree.ok_or("No active workspace")?;
                 let source_text = wt
@@ -1654,7 +1654,7 @@ pub fn run_babelfish(
             "gnarly-from" => {
                 let file_path = args
                     .get(1)
-                    .ok_or("Usage: `/zedge-babelfish gnarly-from <file-path> [candidate-language,...]`")?;
+                    .ok_or("Usage: `/edge-babelfish gnarly-from <file-path> [candidate-language,...]`")?;
                 let wt = worktree.ok_or("No active workspace")?;
                 let source_text = wt
                     .read_text_file(file_path)
@@ -1684,7 +1684,7 @@ pub fn run_babelfish(
                 ));
             }
             "apply" => {
-                let preview_id = args.get(1).ok_or("Usage: `/zedge-babelfish apply <preview-id> [rewrite_in_place|generate_files]`")?;
+                let preview_id = args.get(1).ok_or("Usage: `/edge-babelfish apply <preview-id> [rewrite_in_place|generate_files]`")?;
                 let apply_mode = args.get(2).map(|s| s.as_str()).unwrap_or("rewrite_in_place");
                 let body = serde_json::json!({
                     "previewId": preview_id,
@@ -1698,10 +1698,10 @@ pub fn run_babelfish(
             }
             "translate-code" | "generate" | "rewrite-preview" => {
                 let target_language = args.get(1).ok_or(
-                    "Usage: `/zedge-babelfish <translate-code|generate|rewrite-preview> <target-language> <file-path>`",
+                    "Usage: `/edge-babelfish <translate-code|generate|rewrite-preview> <target-language> <file-path>`",
                 )?;
                 let file_path = args.get(2).ok_or(
-                    "Usage: `/zedge-babelfish <translate-code|generate|rewrite-preview> <target-language> <file-path>`",
+                    "Usage: `/edge-babelfish <translate-code|generate|rewrite-preview> <target-language> <file-path>`",
                 )?;
                 let wt = worktree.ok_or("No active workspace")?;
                 let source_text = wt
@@ -1733,10 +1733,10 @@ pub fn run_babelfish(
             "translate-text" => {
                 let target_language = args
                     .get(1)
-                    .ok_or("Usage: `/zedge-babelfish translate-text <target-language> <file-path>`")?;
+                    .ok_or("Usage: `/edge-babelfish translate-text <target-language> <file-path>`")?;
                 let file_path = args
                     .get(2)
-                    .ok_or("Usage: `/zedge-babelfish translate-text <target-language> <file-path>`")?;
+                    .ok_or("Usage: `/edge-babelfish translate-text <target-language> <file-path>`")?;
                 let wt = worktree.ok_or("No active workspace")?;
                 let source_text = wt
                     .read_text_file(file_path)
@@ -1761,7 +1761,7 @@ pub fn run_babelfish(
             "explain" => {
                 let file_path = args
                     .get(1)
-                    .ok_or("Usage: `/zedge-babelfish explain <file-path> [audience-language]`")?;
+                    .ok_or("Usage: `/edge-babelfish explain <file-path> [audience-language]`")?;
                 let audience_language = args.get(2).map(|s| s.as_str()).unwrap_or("en");
                 let wt = worktree.ok_or("No active workspace")?;
                 let source_text = wt
@@ -1783,7 +1783,7 @@ pub fn run_babelfish(
                 ));
             }
             _ => Ok(output_with_section(
-                "Usage:\n- `/zedge-babelfish capabilities`\n- `/zedge-babelfish fastest <file.gnarly> [candidate-language,...]`\n- `/zedge-babelfish compile-gnarly <file.gnarly>`\n- `/zedge-babelfish gnarly-from <file-path> [candidate-language,...]`\n- `/zedge-babelfish explain <file-path> [audience-language]`\n- `/zedge-babelfish translate-code <target-language> <file-path>`\n- `/zedge-babelfish translate-text <target-language> <file-path>`\n- `/zedge-babelfish generate <target-language> <file-path>`\n- `/zedge-babelfish rewrite-preview <target-language> <file-path>`\n- `/zedge-babelfish apply <preview-id> [rewrite_in_place|generate_files]`"
+                "Usage:\n- `/edge-babelfish capabilities`\n- `/edge-babelfish fastest <file.gnarly> [candidate-language,...]`\n- `/edge-babelfish compile-gnarly <file.gnarly>`\n- `/edge-babelfish gnarly-from <file-path> [candidate-language,...]`\n- `/edge-babelfish explain <file-path> [audience-language]`\n- `/edge-babelfish translate-code <target-language> <file-path>`\n- `/edge-babelfish translate-text <target-language> <file-path>`\n- `/edge-babelfish generate <target-language> <file-path>`\n- `/edge-babelfish rewrite-preview <target-language> <file-path>`\n- `/edge-babelfish apply <preview-id> [rewrite_in_place|generate_files]`"
                     .to_string(),
                 "Babelfish",
             )),

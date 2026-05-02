@@ -4,6 +4,8 @@ Parent: [Open Source](../README.md)
 
 Children:
 - [Companion Sidecar](./companion/README.md)
+- [Grammars](./grammars/README.md)
+- [Languages](./languages/README.md)
 - [Scripts](./scripts/README.md)
 - [Snippets](./snippets/README.md)
 
@@ -89,7 +91,7 @@ Babelfish is the universal code-translation layer built on top of the Gnosis top
 The latest Phase 4 integration shifts the heavy lifting from the companion JS process directly into the WASM native context using `gnosis-betti-wasm`.
 - **Performance:** Multi-language execution operates near **O(1)** matrix time, successfully multiplexing across all 21 supported languages simultaneously. Worst-case jitter remains under 10ms for topological parallel branching.
 - **Topological Parity:** Lossless translation guarantees identical AST and topological node counts across multiple target languages simultaneously. No syntactic decay or ghost mass is lost across permutations.
-- **Native Slash Commands:** Using `/zedge-babelfish-native` hits the zero-copy WASM target without IPC latency.
+- **Native Slash Commands:** Using `/edge-babelfish-native` hits the zero-copy WASM target without IPC latency.
 
 - `analyze` and `explain` are exposed for every Gnosis-supported programming language
 - `translate` and `scaffold` are exposed anywhere the GG scaffolder can emit target files
@@ -99,20 +101,23 @@ The latest Phase 4 integration shifts the heavy lifting from the companion JS pr
 
 ### Slash Command
 
-Use the umbrella slash command:
+Use the umbrella Zed slash command:
 
 ```text
-/zedge-babelfish capabilities
-/zedge-babelfish fastest <file.gnarly> [candidate-language,...]
-/zedge-babelfish compile-gnarly <file.gnarly>
-/zedge-babelfish gnarly-from <file-path> [candidate-language,...]
-/zedge-babelfish explain <file-path> [audience-language]
-/zedge-babelfish translate-code <target-language> <file-path>
-/zedge-babelfish translate-text <target-language> <file-path>
-/zedge-babelfish generate <target-language> <file-path>
-/zedge-babelfish rewrite-preview <target-language> <file-path>
-/zedge-babelfish apply <preview-id> [rewrite_in_place|generate_files]
+/edge-babelfish capabilities
+/edge-babelfish fastest <file.gnarly> [candidate-language,...]
+/edge-babelfish compile-gnarly <file.gnarly>
+/edge-babelfish gnarly-from <file-path> [candidate-language,...]
+/edge-babelfish explain <file-path> [audience-language]
+/edge-babelfish translate-code <target-language> <file-path>
+/edge-babelfish translate-text <target-language> <file-path>
+/edge-babelfish generate <target-language> <file-path>
+/edge-babelfish rewrite-preview <target-language> <file-path>
+/edge-babelfish apply <preview-id> [rewrite_in_place|generate_files]
 ```
+
+The Zed Agent MCP prompt mirror uses `zedge-babelfish` for the same
+Babelfish operations.
 
 ### Gnarly
 
@@ -139,6 +144,11 @@ impl transform in rust {
 The companion emits speed diagnostics as LSP hints from `gnosis-gnarly-speed`.
 Quick fixes and slash commands open Babelfish previews first; they do not mutate
 files until an explicit apply step is used.
+
+Zedge registers `.gnarly` as its own Zed language backed by the Gnosis grammar
+and `gnosis-lsp`, so Gnarly files get syntax highlighting, nested `impl ... in
+... { ... }` block parsing, compile/fastest code actions, and non-blocking
+speed hints in editor.
 
 ## Gnot
 

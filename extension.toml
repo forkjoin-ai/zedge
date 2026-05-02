@@ -96,7 +96,7 @@ description = "Inspect or submit local RLHF feedback on response quality"
 requires_argument = false
 
 [slash_commands.edge-babelfish]
-description = "Babelfish over Gnosis: capabilities, explain, translate, generate, and preview/apply rewrites"
+description = "Babelfish over Gnosis: capabilities, Gnarly compile/fastest previews, explain, translate, generate, and preview/apply rewrites"
 requires_argument = true
 
 [slash_commands.edge-babelfish-native]
@@ -127,12 +127,11 @@ requires_argument = false
 description = "GG agent management — list, trigger, monitor topology-driven agents deployed through Forge"
 requires_argument = true
 
-# Commented out grammar and language server to ensure basic extension functionality first
-# [grammars.gnosis]
-# repository = "https://github.com/forkjoin-ai/tree-sitter-gnosis"
-# rev = "main"
-# path = "grammars/gnosis"
+[grammars.gnosis]
+repository = "https://github.com/forkjoin-ai/zedge"
+rev = "main"
+path = "grammars/gnosis"
 
-# [language_servers.gnosis-lsp]
-# name = "Gnosis Language Server"
-# languages = ["Gnosis"]
+[language_servers.gnosis-lsp]
+name = "Gnosis Language Server"
+languages = ["Gnosis", "Gnarly"]

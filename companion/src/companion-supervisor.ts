@@ -45,7 +45,18 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-async function isCompanionAlive(): Promise<boolean> {
+async function isCompanionProcessHealthy(): Promise<boolean> {
+  try {
+    const response = await fetch(`${getCompanionBase()}/health`, {
+      signal: AbortSignal.timeout(HEALTH_CHECK_TIMEOUT_MS),
+    });
+    return response.ok;
+  } catch {
+    return false;
+  }
+}
+
+async function isCompanionRouteReady(): Promise<boolean> {
   try {
     const response = await fetch(`${getCompanionBase()}/probe/ready`, {
       signal: AbortSignal.timeout(HEALTH_CHECK_TIMEOUT_MS),
@@ -60,7 +71,7 @@ async function waitForCompanion(
   maxAttempts = COMPANION_STARTUP_ATTEMPTS
 ): Promise<boolean> {
   for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
-    if (await isCompanionAlive()) {
+    if (await isCompanionRouteReady()) {
       return true;
     }
     await sleep(500);
@@ -114,7 +125,17 @@ function spawnCompanion(): void {
       childProc = null;
     }
     if (!shuttingDown && !suppressExitRestart) {
-      void restartCompanion('owned child exited unexpectedly', { force: true });
+      void (async () => {
+        if (code === 0 && (await isCompanionProcessHealthy())) {
+          console.log(
+            '[zedge:supervisor] Companion process is healthy after child exit; adopting existing listener'
+          );
+          return;
+        }
+        await restartCompanion('owned child exited unexpectedly', {
+          force: true,
+        });
+      })();
     }
   });
 }
@@ -239,7 +260,7 @@ function startSupervisor(): void {
 
     healthCheckInFlight = true;
     try {
-      const alive = await isCompanionAlive();
+      const alive = await isCompanionProcessHealthy();
       if (alive) {
         consecutiveHealthFailures = 0;
         return;
@@ -266,10 +287,15 @@ function startSupervisor(): void {
 }
 
 async function runSupervisor(): Promise<void> {
-  if (await isCompanionAlive()) {
+  if (await isCompanionProcessHealthy()) {
     console.log(
-      `[zedge:supervisor] Companion already healthy at ${getCompanionBase()}; adopting as unowned (will restart on failure)`
+      `[zedge:supervisor] Companion already process-healthy at ${getCompanionBase()}; adopting as unowned (will restart on process failure)`
     );
+    if (!(await isCompanionRouteReady())) {
+      console.warn(
+        '[zedge:supervisor] Companion process is healthy but route readiness is degraded'
+      );
+    }
   } else {
     spawnCompanion();
     const alive = await waitForCompanion();

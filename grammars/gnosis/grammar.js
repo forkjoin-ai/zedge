@@ -43,10 +43,11 @@ module.exports = grammar({
         $.identifier,
         'in',
         $.identifier,
-        '{',
-        repeat(choice($.implementation_text, $.comment)),
-        '}'
+        $.implementation_body
       ),
+
+    implementation_body: ($) =>
+      seq('{', repeat(choice($.implementation_body, $.implementation_text)), '}'),
 
     implementation_text: ($) => /[^{}]+/,
 

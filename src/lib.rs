@@ -480,6 +480,9 @@ impl zed::Extension for EdgeAiExtension {
                         "translate-code" | "generate" => {
                             Ok(babelfish_language_completions("translate"))
                         }
+                        "fastest" | "gnarly-from" if args.len() >= 2 => {
+                            Ok(babelfish_language_completions("translate"))
+                        }
                         "rewrite-preview" => Ok(babelfish_language_completions("rewritePreview")),
                         "translate-text" => Ok(babelfish_human_language_completions()),
                         _ => Ok(Vec::new()),

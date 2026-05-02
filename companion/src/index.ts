@@ -7,6 +7,12 @@
  * `startServer()`, which binds through x-gnosis on either Bun or Node.
  */
 
+import { existsSync } from 'fs';
+import { join } from 'path';
+import { homedir } from 'os';
+
+const LAUNCH_AGENT_LABEL = 'ai.forkjoin.zedge.sidecar';
+
 async function verifyKeyTier(
   getBaseUrl: () => string,
   getHeaders: () => Record<string, string>
@@ -28,9 +34,49 @@ async function verifyKeyTier(
   }
 }
 
+async function companionAlreadyRunning(): Promise<boolean> {
+  const port = process.env.ZEDGE_COMPANION_PORT ?? '7331';
+  try {
+    const resp = await fetch(`http://127.0.0.1:${port}/health`, {
+      signal: AbortSignal.timeout(1_000),
+    });
+    return resp.ok;
+  } catch {
+    return false;
+  }
+}
+
+function shouldYieldToLaunchAgent(): boolean {
+  if (process.platform !== 'darwin') return false;
+  if (process.env.ZEDGE_ALLOW_DIRECT_SIDECAR === '1') return false;
+  if (process.env.XPC_SERVICE_NAME === LAUNCH_AGENT_LABEL) return false;
+  return existsSync(
+    join(homedir(), 'Library/LaunchAgents', `${LAUNCH_AGENT_LABEL}.plist`)
+  );
+}
+
+async function waitForExistingCompanion(timeoutMs = 15_000): Promise<boolean> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    if (await companionAlreadyRunning()) {
+      return true;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 500));
+  }
+  return false;
+}
+
 /** Normalizes unknown thrown values for log messages. */
 function getErrorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
+}
+
+function isAddressInUseError(error: unknown): boolean {
+  return (
+    error instanceof Error &&
+    'code' in error &&
+    (error as Error & { code?: string }).code === 'EADDRINUSE'
+  );
 }
 
 /** Refreshes the live model catalog and writes it into Zed's static picker config. */
@@ -79,6 +125,17 @@ export async function main(): Promise<void> {
 
 async function runCompanionBootstrap(): Promise<void> {
   try {
+    if (await companionAlreadyRunning()) {
+      console.log('[zedge] Companion already running; direct launch exiting.');
+      return;
+    }
+    if (shouldYieldToLaunchAgent() && (await waitForExistingCompanion())) {
+      console.log(
+        '[zedge] Launch agent companion became healthy; direct launch exiting.'
+      );
+      return;
+    }
+
     const serverMod = await import('./server.ts');
     await serverMod.startServer();
 
@@ -235,6 +292,13 @@ async function runCompanionBootstrap(): Promise<void> {
 
     console.log(`[zedge] Ready. Mesh peers: ${getMeshStatus().peers.length}`);
   } catch (err) {
+    if (isAddressInUseError(err)) {
+      console.log(
+        '[zedge] Companion bind raced an existing listener; direct launch exiting.'
+      );
+      return;
+    }
+
     console.error('[zedge] Init error:', err);
     throw err instanceof Error ? err : new Error(String(err));
   }

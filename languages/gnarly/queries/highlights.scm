@@ -1,7 +1,6 @@
-; Gnosis topology highlighting
-; Fork/Race/Fold get distinct colors as the core trinity
+; Gnarly topology highlighting
 
-; Edge types -- the heart of the language
+; Edge types -- the heart of the GG family
 (edge_type) @keyword.control
 
 ; Specific edge type coloring via injections
@@ -55,9 +54,13 @@
 ; Edge connector punctuation
 (edge_connector) @punctuation.special
 
-; Property block braces
+; Block braces
 (property_block "{" @punctuation.bracket)
 (property_block "}" @punctuation.bracket)
+(gnarly_metadata "{" @punctuation.bracket)
+(gnarly_metadata "}" @punctuation.bracket)
+(implementation_body "{" @punctuation.bracket)
+(implementation_body "}" @punctuation.bracket)
 
 ; Node group parens
 (node_ref_group "(" @punctuation.bracket)

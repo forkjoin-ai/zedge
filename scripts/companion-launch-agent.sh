@@ -37,6 +37,7 @@ WORKSPACE_ROOT=$(CDPATH= cd -- "${SCRIPT_DIR}/../../.." && pwd)
 SUPERVISOR_REL="open-source/zedge/companion/src/companion-supervisor.ts"
 
 LABEL="ai.forkjoin.zedge.sidecar"
+DIRECT_LABEL="${LABEL}.direct"
 UID_VALUE="$(id -u)"
 LAUNCH_AGENT_DIR="${HOME}/Library/LaunchAgents"
 PLIST_PATH="${LAUNCH_AGENT_DIR}/${LABEL}.plist"
@@ -222,6 +223,8 @@ EOF
 bootout_all() {
   launchctl bootout "gui/${UID_VALUE}/${LABEL}" >/dev/null 2>&1 || true
   launchctl bootout "user/${UID_VALUE}/${LABEL}" >/dev/null 2>&1 || true
+  launchctl bootout "gui/${UID_VALUE}/${DIRECT_LABEL}" >/dev/null 2>&1 || true
+  launchctl bootout "user/${UID_VALUE}/${DIRECT_LABEL}" >/dev/null 2>&1 || true
 }
 
 # Deprecated but still works when bootstrap returns "Input/output error" (e.g. some
@@ -327,6 +330,37 @@ kill_tcp_listener_port() {
   fi
 }
 
+kill_stale_companion_entrypoints() {
+  pids=$(ps -axo pid=,command= | awk -v self="$$" '
+    $1 != self &&
+    /open-source\/zedge\/companion\/src\/(index|companion-supervisor)\.ts/ {
+      print $1
+    }
+  ' || true)
+  if [ -z "${pids}" ]; then
+    return 0
+  fi
+
+  echo "zedge: stopping stale companion process PIDs: ${pids}"
+  for pid in ${pids}; do
+    kill "${pid}" 2>/dev/null || true
+  done
+  sleep 2
+
+  pids=$(ps -axo pid=,command= | awk -v self="$$" '
+    $1 != self &&
+    /open-source\/zedge\/companion\/src\/(index|companion-supervisor)\.ts/ {
+      print $1
+    }
+  ' || true)
+  if [ -n "${pids}" ]; then
+    echo "zedge: SIGKILL stale companion process PIDs: ${pids}"
+    for pid in ${pids}; do
+      kill -9 "${pid}" 2>/dev/null || true
+    done
+  fi
+}
+
 print_status() {
   resolve_service_target || true
   STATUS_FILE="$(mktemp)"
@@ -398,12 +432,14 @@ case "${ACTION}" in
   kill)
     bootout_all
     rm -f "${DOMAIN_STATE}"
+    kill_stale_companion_entrypoints
     kill_tcp_listener_port 7331
     echo "zedge: companion listener on :7331 stopped."
     ;;
   restart)
     bootout_all
     rm -f "${DOMAIN_STATE}"
+    kill_stale_companion_entrypoints
     kill_tcp_listener_port 7331
     sleep 2
     if [ -f "${PLIST_PATH}" ]; then

@@ -58,4 +58,45 @@ describe('Babelfish MCP stdio bridge', () => {
       globalThis.fetch = originalFetch;
     }
   });
+
+  test('proxies Gnarly MCP tool calls to the Babelfish Gnarly route', async () => {
+    const fetchMock = mock(async (url: string | URL, init?: RequestInit) => {
+      expect(String(url)).toBe('http://127.0.0.1:7331/babelfish/gnarly/fastest');
+      expect(init?.method).toBe('POST');
+      expect(String(init?.body)).toContain('"candidateLanguages":["rust"]');
+      return new Response(JSON.stringify({ topoRaceGg: '(race)' }), {
+        headers: { 'Content-Type': 'application/json' },
+      });
+    });
+
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = fetchMock as typeof fetch;
+    try {
+      const response = await dispatch({
+        jsonrpc: '2.0',
+        id: 3,
+        method: 'tools/call',
+        params: {
+          name: 'zedge_babelfish_gnarly',
+          arguments: {
+            action: 'fastest',
+            scope: {
+              kind: 'inline',
+              filePath: 'input.gnarly',
+              sourceText: '(say: PolyglotBridgeCall { fastest: true })',
+            },
+            candidateLanguages: ['rust'],
+          },
+        },
+      });
+
+      const content = (
+        response?.result as { content: Array<{ type: string; text: string }> }
+      ).content[0];
+      expect(content?.type).toBe('text');
+      expect(content?.text).toContain('topoRaceGg');
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
 });

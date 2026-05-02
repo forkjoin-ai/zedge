@@ -2,7 +2,11 @@ import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'fs';
 import { dirname, join } from 'path';
 import { fileURLToPath } from 'url';
 
-export type CompanionActivityKind = 'wasm-chat' | 'wasm-fim' | 'wasm-prewarm';
+export type CompanionActivityKind =
+  | 'moonshine-chat'
+  | 'wasm-chat'
+  | 'wasm-fim'
+  | 'wasm-prewarm';
 
 export interface CompanionActivityRecord {
   activityId: string;

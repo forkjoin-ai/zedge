@@ -223,9 +223,14 @@ export interface TierResult {
 // Moonshine container (docker-compose.moonshine.yml openai-compat service)
 const MOONSHINE_BASE_URL =
   process.env.ZEDGE_MOONSHINE_URL ?? 'http://127.0.0.1:8080';
+const FAT_STATION_BASE_URL =
+  process.env.ZEDGE_FAT_STATION_URL ??
+  process.env.FAT_STATION_URL ??
+  'http://127.0.0.1:8000';
 const MOONSHINE_TIMEOUT_MS = Number(
   process.env.ZEDGE_MOONSHINE_TIMEOUT_MS ?? 90_000
 );
+const MOONSHINE_BUSY_BUFFER_MS = 30_000;
 const MOONSHINE_DEFAULT_MAX_TOKENS = parsePositiveInteger(
   process.env.ZEDGE_MOONSHINE_DEFAULT_MAX_TOKENS,
   512
@@ -940,48 +945,55 @@ async function tryMoonshineInference(
   request: ChatCompletionRequest,
   signal?: AbortSignal
 ): Promise<Response> {
-  const url = `${MOONSHINE_BASE_URL}/v1/chat/completions`;
-  const maxTokens = resolveMoonshineMaxTokens(request);
-  const stream = request.stream ?? false;
-  const messages = prepareMoonshineMessages(request.messages);
-  if (messages.length !== request.messages.length) {
-    logInference(
-      `[moonshine] compacted history ${request.messages.length}→${messages.length} message(s)`
-    );
-  }
-  logInference(
-    `[moonshine] → ${url} model=${request.model} stream=${stream} max_tokens=${maxTokens}`
+  return await runWithCompanionActivity(
+    'moonshine-chat',
+    MOONSHINE_TIMEOUT_MS + MOONSHINE_BUSY_BUFFER_MS,
+    async () => {
+      const url = `${MOONSHINE_BASE_URL}/v1/chat/completions`;
+      const maxTokens = resolveMoonshineMaxTokens(request);
+      const stream = request.stream ?? false;
+      const messages = prepareMoonshineMessages(request.messages);
+      if (messages.length !== request.messages.length) {
+        logInference(
+          `[moonshine] compacted history ${request.messages.length}→${messages.length} message(s)`
+        );
+      }
+      logInference(
+        `[moonshine] → ${url} model=${request.model} stream=${stream} max_tokens=${maxTokens}`
+      );
+
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), MOONSHINE_TIMEOUT_MS);
+      const abortFromUpstream = () => controller.abort();
+      signal?.addEventListener('abort', abortFromUpstream, { once: true });
+
+      try {
+        const resp = await fetch(url, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-Zedge-Agentic': 'off',
+            ...moonshinePrefillHeaders(request.prefillWindowId),
+          },
+          body: JSON.stringify({
+            model: request.model,
+            messages,
+            stream,
+            temperature: request.temperature ?? 0.7,
+            max_tokens: maxTokens,
+            top_p: request.top_p,
+          }),
+          signal: controller.signal,
+        });
+        logInference(`[moonshine] ← ${resp.status} ${resp.statusText}`);
+        return resp;
+      } finally {
+        clearTimeout(timer);
+        signal?.removeEventListener('abort', abortFromUpstream);
+      }
+    },
+    `${request.model} chat`
   );
-
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), MOONSHINE_TIMEOUT_MS);
-  const abortFromUpstream = () => controller.abort();
-  signal?.addEventListener('abort', abortFromUpstream, { once: true });
-
-  try {
-    const resp = await fetch(url, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-Zedge-Agentic': 'off',
-        ...moonshinePrefillHeaders(request.prefillWindowId),
-      },
-      body: JSON.stringify({
-        model: request.model,
-        messages,
-        stream,
-        temperature: request.temperature ?? 0.7,
-        max_tokens: maxTokens,
-        top_p: request.top_p,
-      }),
-      signal: controller.signal,
-    });
-    logInference(`[moonshine] ← ${resp.status} ${resp.statusText}`);
-    return resp;
-  } finally {
-    clearTimeout(timer);
-    signal?.removeEventListener('abort', abortFromUpstream);
-  }
 }
 
 /**
@@ -2388,6 +2400,52 @@ export async function getLiveMoonshineModels(
   timeoutMs = 5_000
 ): Promise<ModelInfo[]> {
   return await fetchRemoteModels(timeoutMs);
+}
+
+export async function getLiveMoonshineRuntimeHealth(
+  timeoutMs = 5_000
+): Promise<{
+  models: ModelInfo[];
+  fatStation: {
+    ready: boolean;
+    status?: string;
+    layers?: string;
+    error?: string;
+  };
+}> {
+  const [models, fatStation] = await Promise.all([
+    fetchRemoteModels(timeoutMs),
+    (async () => {
+      try {
+        const resp = await fetch(`${FAT_STATION_BASE_URL}/health`, {
+          headers: { Accept: 'application/json' },
+          signal: AbortSignal.timeout(timeoutMs),
+        });
+        if (!resp.ok) {
+          return {
+            ready: false,
+            error: `fat-station HTTP ${resp.status}`,
+          };
+        }
+        const body = (await resp.json()) as {
+          status?: string;
+          layers?: string;
+        };
+        return {
+          ready: body.status === 'ok',
+          status: body.status,
+          layers: body.layers,
+        };
+      } catch (error) {
+        return {
+          ready: false,
+          error: error instanceof Error ? error.message : String(error),
+        };
+      }
+    })(),
+  ]);
+
+  return { models, fatStation };
 }
 
 /** Refreshes the cached Moonshine model catalog immediately. */

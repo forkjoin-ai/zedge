@@ -1,6 +1,6 @@
-name = "Gnosis"
+name = "Gnarly"
 type = "language"
-path_suffixes = ["gg", "ggl"]
+path_suffixes = ["gnarly"]
 line_comments = ["//"]
 grammar = "gnosis"
 

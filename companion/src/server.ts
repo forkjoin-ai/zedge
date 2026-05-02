@@ -20,7 +20,7 @@ import {
   inferFim,
   buildFimPrompt,
   getModels,
-  getLiveMoonshineModels,
+  getLiveMoonshineRuntimeHealth,
   embed,
   createSSEProxyStream,
   getRecentLogs,
@@ -226,6 +226,12 @@ async function getReadinessProbePayload(): Promise<{
     moonshine: {
       ready: boolean;
       models: string[];
+      fatStation: {
+        ready: boolean;
+        status?: string;
+        layers?: string;
+        error?: string;
+      };
       error?: string;
     };
   };
@@ -269,13 +275,25 @@ async function getReadinessProbePayload(): Promise<{
   let moonshine = {
     ready: false,
     models: [] as string[],
-  } as { ready: boolean; models: string[]; error?: string };
+    fatStation: { ready: false },
+  } as {
+    ready: boolean;
+    models: string[];
+    fatStation: {
+      ready: boolean;
+      status?: string;
+      layers?: string;
+      error?: string;
+    };
+    error?: string;
+  };
 
   try {
-    const models = await getLiveMoonshineModels(1_000);
+    const runtime = await getLiveMoonshineRuntimeHealth(1_000);
     moonshine = {
-      ready: models.length > 0,
-      models: models.map((model) => model.id),
+      ready: runtime.models.length > 0 && runtime.fatStation.ready,
+      models: runtime.models.map((model) => model.id),
+      fatStation: runtime.fatStation,
     };
   } catch (error) {
     moonshine = {

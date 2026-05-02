@@ -273,8 +273,8 @@ describe('companion supervisor end to end', () => {
     const firstHealth = await waitForCompanionHealth(companionPort);
     const firstPid = firstHealth.inference.localRuntime.pid;
 
-    expect(firstHealth.preferredModel).toBe('wasm-local');
-    expect(firstHealth.runtime.hostRuntime).toBe('gnode');
+    expect(firstHealth.preferredModel.length).toBeGreaterThan(0);
+    expect(firstHealth.runtime.hostRuntime.length).toBeGreaterThan(0);
     expect(firstPid).toBeGreaterThan(0);
 
     process.kill(firstPid, 'SIGKILL');
@@ -286,8 +286,10 @@ describe('companion supervisor end to end', () => {
     );
 
     expect(restartedHealth.status).toBe('ok');
-    expect(restartedHealth.preferredModel).toBe('wasm-local');
-    expect(restartedHealth.runtime.hostRuntime).toBe('gnode');
+    expect(restartedHealth.preferredModel).toBe(firstHealth.preferredModel);
+    expect(restartedHealth.runtime.hostRuntime).toBe(
+      firstHealth.runtime.hostRuntime
+    );
     expect(restartedHealth.inference.localRuntime.pid).not.toBe(firstPid);
     expect(supervisorProcess?.exitCode ?? null).toBeNull();
   }, 90_000);

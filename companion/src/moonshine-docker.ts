@@ -329,10 +329,18 @@ async function probeFatStationLayerRange(layerRange: string): Promise<boolean> {
     if (!resp.ok) return false;
 
     const body = (await resp.json()) as unknown;
-    return isRecord(body) && body['layers'] === layerRange;
+    return (
+      isRecord(body) &&
+      normalizeLayerRange(String(body['layers'] ?? '')) ===
+        normalizeLayerRange(layerRange)
+    );
   } catch {
     return false;
   }
+}
+
+function normalizeLayerRange(layerRange: string): string {
+  return layerRange.trim().replace('..', '-');
 }
 
 async function waitUrlReady(
@@ -457,6 +465,43 @@ async function startLocalMoonshine(
     if (stopLocalListener(FAT_STATION_URL, 'fat-station')) {
       await allowStoppedPortsToClose();
     }
+  }
+
+  if (!(await probeUrl(FAT_STATION_URL))) {
+    console.log(
+      `[moonshine] Starting local fat-station: ${FAT_STATION_BIN} ` +
+        `(model=${modelName}, layers=${layerRange}, threads=${GNOSIS_NUM_THREADS})`
+    );
+    spawnDetached(FAT_STATION_BIN, [
+      '--knot',
+      knotPath,
+      '--port',
+      '8000',
+      '--role',
+      'both',
+      '--layers',
+      layerRange,
+    ], {
+      env: {
+        GNOSIS_NUM_THREADS,
+        RUST_BACKTRACE: '1',
+      },
+      stdoutPath: '/tmp/moonshine-fat-station-launchd.out.log',
+      stderrPath: '/tmp/moonshine-fat-station-launchd.err.log',
+    });
+    if (!(await waitUrlReady(FAT_STATION_URL))) {
+      console.warn('[moonshine] local fat-station did not become healthy');
+      return false;
+    }
+  }
+
+  const existingOpenAiShim = await probeExpectedModel(modelName);
+  if (existingOpenAiShim.healthy && existingOpenAiShim.matches) {
+    return true;
+  }
+
+  if (stopLocalListener(MOONSHINE_URL, 'OpenAI-compatible')) {
+    await allowStoppedPortsToClose();
   }
 
   if (!(await probeUrl(FAT_STATION_URL))) {

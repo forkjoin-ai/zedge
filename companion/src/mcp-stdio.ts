@@ -83,10 +83,10 @@ function configureStdioLogging(): void {
     process.stderr.write(`[zedge:mcp:debug] ${args.join(' ')}\n`);
 }
 
-/** Check if the current companion control plane is reachable and route-ready. */
+/** Check if the current companion process is reachable. */
 async function isCompanionAlive(): Promise<boolean> {
   try {
-    const resp = await fetch(`${getCompanionBase()}/probe/ready`, {
+    const resp = await fetch(`${getCompanionBase()}/health`, {
       signal: AbortSignal.timeout(HEALTH_CHECK_TIMEOUT_MS),
     });
     return resp.ok;

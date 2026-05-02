@@ -85,6 +85,58 @@ describe('LSP Babelfish helpers', () => {
     ]);
   });
 
+  test('executes Gnarly LSP commands against open .gnarly documents', async () => {
+    setGnosisLspConfigGetterForTest(() => testConfig({ enabled: true }));
+
+    await dispatchRequest({
+      jsonrpc: '2.0',
+      method: 'textDocument/didOpen',
+      params: {
+        textDocument: {
+          uri: 'file:///tmp/example.gnarly',
+          text: `
+gnarly "hello" {
+  languages = ["typescript", "rust"]
+  entry = say
+}
+
+(say: PolyglotBridgeCall { language: "typescript", fastest: true, candidates: ["rust"], callee: "say" })
+`,
+        },
+      },
+    });
+
+    const scope = {
+      kind: 'file',
+      filePath: '/tmp/example.gnarly',
+    };
+    const compileResult = (await dispatchRequest({
+      jsonrpc: '2.0',
+      id: 1,
+      method: 'workspace/executeCommand',
+      params: {
+        command: 'zedge.gnarly.compile',
+        arguments: [{ scope }],
+      },
+    })) as { summary?: string; ggSource?: string };
+
+    expect(compileResult.summary).toContain('Compiled Gnarly topology');
+    expect(compileResult.ggSource).toContain('PolyglotBridgeCall');
+
+    const fastestResult = (await dispatchRequest({
+      jsonrpc: '2.0',
+      id: 2,
+      method: 'workspace/executeCommand',
+      params: {
+        command: 'zedge.gnarly.fastest',
+        arguments: [{ scope }],
+      },
+    })) as { summary?: string; speedDiagnostics?: unknown[] };
+
+    expect(fastestResult.summary).toContain('fastest preview');
+    expect(Array.isArray(fastestResult.speedDiagnostics)).toBe(true);
+  });
+
   test('publishes Babelfish hint diagnostics only when ambient suggestions are enabled', async () => {
     const sentMessages: unknown[] = [];
     setGnosisLspSendForTest((message) => {

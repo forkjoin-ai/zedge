@@ -390,14 +390,17 @@ mock.module('../inference-bridge.ts', () => ({
       owned_by: 'mock',
     },
   ],
-  getLiveMoonshineModels: async () => [
-    {
-      id: 'tinyllama-1.1b',
-      object: 'model',
-      created: 0,
-      owned_by: 'mock',
-    },
-  ],
+  getLiveMoonshineRuntimeHealth: async () => ({
+    models: [
+      {
+        id: 'tinyllama-1.1b',
+        object: 'model',
+        created: 0,
+        owned_by: 'mock',
+      },
+    ],
+    fatStation: { ready: true, status: 'ok', layers: '0-24' },
+  }),
   embed: async (_input: string | string[], model?: string) =>
     jsonResponse({
       object: 'list',
@@ -1091,12 +1094,16 @@ const routeCases: RouteCase[] = [
       ready?: boolean;
       checks?: {
         controlPlane?: { missingTools?: string[] };
-        moonshine?: { models?: string[] };
+        moonshine?: {
+          models?: string[];
+          fatStation?: { ready?: boolean; layers?: string };
+        };
       };
     };
     expect(payload.ready).toBe(true);
     expect(payload.checks?.controlPlane?.missingTools).toEqual([]);
     expect(payload.checks?.moonshine?.models).toContain('tinyllama-1.1b');
+    expect(payload.checks?.moonshine?.fatStation?.ready).toBe(true);
   }),
   ...[
     '/logs',
