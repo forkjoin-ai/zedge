@@ -40,42 +40,42 @@
     "github:push": {
       "executor": "a0:run-commands",
       "options": {
-        "command": "node scripts/open-source-repo-target.mjs github-push open-source/zedge",
+        "command": "pnpm run monster -- scripts/open-source-repo-target.mjs github-push open-source/zedge",
         "cwd": "."
       }
     },
     "forge:push": {
       "executor": "a0:run-commands",
       "options": {
-        "command": "node scripts/open-source-repo-target.mjs forge-push open-source/zedge",
+        "command": "pnpm run monster -- scripts/open-source-repo-target.mjs forge-push open-source/zedge",
         "cwd": "."
       }
     },
     "push": {
       "executor": "a0:run-commands",
       "options": {
-        "command": "node scripts/open-source-repo-target.mjs push open-source/zedge",
+        "command": "pnpm run monster -- scripts/open-source-repo-target.mjs push open-source/zedge",
         "cwd": "."
       }
     },
     "submodule:update-reference": {
       "executor": "a0:run-commands",
       "options": {
-        "command": "node scripts/open-source-repo-target.mjs submodule-update-reference open-source/zedge",
+        "command": "pnpm run monster -- scripts/open-source-repo-target.mjs submodule-update-reference open-source/zedge",
         "cwd": "."
       }
     },
     "pr:list": {
       "executor": "a0:run-commands",
       "options": {
-        "command": "node scripts/open-source-repo-target.mjs pr-list open-source/zedge",
+        "command": "pnpm run monster -- scripts/open-source-repo-target.mjs pr-list open-source/zedge",
         "cwd": "."
       }
     },
     "pr:merge-all": {
       "executor": "a0:run-commands",
       "options": {
-        "command": "node scripts/open-source-repo-target.mjs pr-merge-all open-source/zedge",
+        "command": "pnpm run monster -- scripts/open-source-repo-target.mjs pr-merge-all open-source/zedge",
         "cwd": "."
       }
     }
