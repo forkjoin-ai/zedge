@@ -32,6 +32,12 @@ const KNOWN_ZEDGE_MODELS: KnownZedgeModel[] = [
     maxTokens: 4096,
     ownedBy: 'gnosis',
   },
+  {
+    id: 'gemma4-31b-it',
+    displayName: 'Gemma4 31B Instruct (Moonshine RKNOT)',
+    maxTokens: 8192,
+    ownedBy: 'gnosis',
+  },
 ];
 
 const KNOWN_ZEDGE_MODELS_BY_ID = new Map(

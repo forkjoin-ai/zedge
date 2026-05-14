@@ -26,6 +26,13 @@ describe('Zedge model catalog', () => {
     expect(model?.maxTokens).toBe(4096);
   });
 
+  test('includes Gemma4 RKNOT metadata for the Moonshine hotpath', () => {
+    const model = getKnownZedgeModel('gemma4-31b-it');
+    expect(model).toBeDefined();
+    expect(model?.displayName).toBe('Gemma4 31B Instruct (Moonshine RKNOT)');
+    expect(model?.maxTokens).toBe(8192);
+  });
+
   test('buildZedAvailableModels does not reintroduce the retired wasm model', () => {
     const models = buildZedAvailableModels(['gnosis-local'], {
       includeLocalWasm: true,

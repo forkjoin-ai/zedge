@@ -93,7 +93,7 @@ const DEFAULT_ZEDGE_CONFIG: ZedgeConfig = {
     enabled: false,
     maxCpuPercent: 50,
     maxMemoryMb: 2048,
-    allowedModels: ['gnosis-local', 'tinyllama-1.1b'],
+    allowedModels: ['gnosis-local', 'tinyllama-1.1b', 'gemma4-31b-it'],
   },
   preferredModel: DEFAULT_ZEDGE_MODEL_ID,
   cloudRunDirect: false,

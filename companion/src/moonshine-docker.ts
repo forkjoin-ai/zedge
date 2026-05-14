@@ -21,6 +21,9 @@ const REPO_ROOT = join(__here, '..', '..', '..', '..');
 const COMPOSE_FILE =
   process.env.ZEDGE_MOONSHINE_COMPOSE_FILE ??
   join(REPO_ROOT, 'docker-compose.moonshine.yml');
+const RKNOT_COMPOSE_FILE =
+  process.env.ZEDGE_MOONSHINE_RKNOT_COMPOSE_FILE ??
+  join(REPO_ROOT, 'docker-compose.moonshine-rknot.yml');
 const DEFAULT_KNOT_PATH = join(
   REPO_ROOT,
   'open-source/bitwise/datasets/llama1b_fixed.knot'
@@ -33,8 +36,18 @@ const QWEN_TOKENIZER_GGUF_PATH = join(
   REPO_ROOT,
   'open-source/bitwise/datasets/gguf/qwen2.5-0.5b-instruct-q4_k_m.gguf'
 );
+const GEMMA4_DENSE_KNOT_PATH = join(
+  REPO_ROOT,
+  'open-source/bitwise/datasets/gemma4-31b-it.knot'
+);
+const GEMMA4_RKNOT_PATH = join(
+  REPO_ROOT,
+  'open-source/bitwise/datasets/gemma4-31b-it.rknot'
+);
+const GEMMA4_VALIDATED_RKNOT_PATH = '/private/tmp/gemma4-row-k10-b8.rknot';
 const DEFAULT_MOONSHINE_MODEL = 'gnosis-local';
 const QWEN_MOONSHINE_MODEL = 'qwen2.5-0.5b-instruct';
+const GEMMA4_MOONSHINE_MODEL = 'gemma4-31b-it';
 const FAT_STATION_URL =
   process.env.ZEDGE_FAT_STATION_URL ?? 'http://127.0.0.1:8000';
 const FAT_STATION_BIN =
@@ -107,6 +120,7 @@ let watchdogConsecutiveFailures = 0;
 
 interface MoonshineStartupConfig {
   knotPath: string;
+  rknotPath?: string;
   knotMetadata: KnotMetadata | null;
   modelName: string;
   layerRange: string;
@@ -116,7 +130,10 @@ interface MoonshineStartupConfig {
 interface LocalMoonshineModelSpec {
   modelName: string;
   knotPath: string;
+  rknotPath?: string;
+  rknotCandidates?: string[];
   tokenizerGgufPath?: string;
+  defaultLayers?: string;
 }
 
 const LOCAL_MOONSHINE_MODELS: Record<string, LocalMoonshineModelSpec> = {
@@ -128,6 +145,12 @@ const LOCAL_MOONSHINE_MODELS: Record<string, LocalMoonshineModelSpec> = {
     modelName: QWEN_MOONSHINE_MODEL,
     knotPath: QWEN_KNOT_PATH,
     tokenizerGgufPath: QWEN_TOKENIZER_GGUF_PATH,
+  },
+  [GEMMA4_MOONSHINE_MODEL]: {
+    modelName: GEMMA4_MOONSHINE_MODEL,
+    knotPath: GEMMA4_DENSE_KNOT_PATH,
+    rknotCandidates: [GEMMA4_VALIDATED_RKNOT_PATH, GEMMA4_RKNOT_PATH],
+    defaultLayers: '0..60',
   },
 };
 
@@ -249,7 +272,10 @@ function resolveMoonshineModelName(
   return DEFAULT_MOONSHINE_MODEL;
 }
 
-function resolveMoonshineLayerRange(metadata: KnotMetadata | null): string {
+function resolveMoonshineLayerRange(
+  metadata: KnotMetadata | null,
+  defaultRange?: string
+): string {
   const configuredRange = process.env.ZEDGE_MOONSHINE_LAYER_RANGE?.trim();
   if (configuredRange) return configuredRange;
 
@@ -268,7 +294,19 @@ function resolveMoonshineLayerRange(metadata: KnotMetadata | null): string {
     ? positiveInteger(config['num_layers'])
     : null;
 
-  return `0..${metadataLayerCount ?? DEFAULT_KNOT_LAYER_COUNT}`;
+  return defaultRange ?? `0..${metadataLayerCount ?? DEFAULT_KNOT_LAYER_COUNT}`;
+}
+
+function resolveMoonshineRknotPath(spec?: LocalMoonshineModelSpec): string | undefined {
+  const configuredPath = process.env.ZEDGE_MOONSHINE_RKNOT?.trim();
+  if (configuredPath) return configuredPath;
+  if (spec?.rknotPath && existsSync(spec.rknotPath)) {
+    return spec.rknotPath;
+  }
+  for (const candidate of spec?.rknotCandidates ?? []) {
+    if (existsSync(candidate)) return candidate;
+  }
+  return undefined;
 }
 
 function resolveTokenizerGgufPath(
@@ -290,12 +328,17 @@ function resolveStartupConfig(): MoonshineStartupConfig {
   const configuredKnotPath = process.env.ZEDGE_MOONSHINE_KNOT?.trim();
   const spec = configuredKnotPath ? undefined : resolveZedLocalModelSpec() ?? undefined;
   const knotPath = configuredKnotPath || spec?.knotPath || DEFAULT_KNOT_PATH;
+  const rknotPath = resolveMoonshineRknotPath(spec);
   const knotMetadata = readKnotMetadata(knotPath);
   const modelName = resolveMoonshineModelName(knotMetadata, knotPath, spec);
-  const layerRange = resolveMoonshineLayerRange(knotMetadata);
+  const layerRange = resolveMoonshineLayerRange(
+    knotMetadata,
+    spec?.defaultLayers
+  );
   const tokenizerGgufPath = resolveTokenizerGgufPath(knotPath, spec);
   return {
     knotPath,
+    ...(rknotPath ? { rknotPath } : {}),
     knotMetadata,
     modelName,
     layerRange,
@@ -539,6 +582,18 @@ function spawnDetached(
   proc.unref();
 }
 
+function buildFatStationSourceArgs(config: MoonshineStartupConfig): string[] {
+  return config.rknotPath
+    ? ['--rknot', config.rknotPath, '--dense', config.knotPath]
+    : ['--knot', config.knotPath];
+}
+
+function moonshineSourceLabel(config: MoonshineStartupConfig): string {
+  return config.rknotPath
+    ? `rknot=${config.rknotPath}, dense=${config.knotPath}`
+    : `knot=${config.knotPath}`;
+}
+
 function isLoopbackUrl(url: string): boolean {
   try {
     const parsed = new URL(url);
@@ -605,11 +660,15 @@ async function startLocalMoonshine(
     return false;
   }
   if (!existsSync(config.knotPath)) {
-    console.warn(`[moonshine] knot file not found: ${config.knotPath}`);
+    console.warn(`[moonshine] dense knot file not found: ${config.knotPath}`);
+    return false;
+  }
+  if (config.rknotPath && !existsSync(config.rknotPath)) {
+    console.warn(`[moonshine] rknot file not found: ${config.rknotPath}`);
     return false;
   }
 
-  const { knotPath, modelName, layerRange, tokenizerGgufPath } = config;
+  const { modelName, layerRange, tokenizerGgufPath } = config;
 
   let fatStationRuntime = await probeFatStationRuntime(layerRange);
   if (!fatStationRuntime.healthy || !fatStationRuntime.matches) {
@@ -626,11 +685,11 @@ async function startLocalMoonshine(
   if (!(await probeUrl(FAT_STATION_URL))) {
     console.log(
       `[moonshine] Starting local fat-station: ${FAT_STATION_BIN} ` +
-        `(model=${modelName}, layers=${layerRange}, threads=${GNOSIS_NUM_THREADS})`
+        `(model=${modelName}, ${moonshineSourceLabel(config)}, ` +
+        `layers=${layerRange}, threads=${GNOSIS_NUM_THREADS})`
     );
     spawnDetached(FAT_STATION_BIN, [
-      '--knot',
-      knotPath,
+      ...buildFatStationSourceArgs(config),
       '--port',
       '8000',
       '--role',
@@ -695,11 +754,11 @@ async function startLocalMoonshine(
   if (!(await probeUrl(FAT_STATION_URL))) {
     console.log(
       `[moonshine] Starting local fat-station: ${FAT_STATION_BIN} ` +
-        `(model=${modelName}, layers=${layerRange}, threads=${GNOSIS_NUM_THREADS})`
+        `(model=${modelName}, ${moonshineSourceLabel(config)}, ` +
+        `layers=${layerRange}, threads=${GNOSIS_NUM_THREADS})`
     );
     spawnDetached(FAT_STATION_BIN, [
-      '--knot',
-      knotPath,
+      ...buildFatStationSourceArgs(config),
       '--port',
       '8000',
       '--role',
@@ -763,20 +822,42 @@ async function startLocalMoonshine(
   return await waitReadyForModel(modelName, fatStationRuntime);
 }
 
-async function startDockerMoonshine(modelName: string): Promise<boolean> {
+async function startDockerMoonshine(
+  config = resolveStartupConfig()
+): Promise<boolean> {
   if (!existsSync(COMPOSE_FILE)) {
     console.warn(`[moonshine] compose file not found: ${COMPOSE_FILE} — set ZEDGE_MOONSHINE_COMPOSE_FILE to override`);
     return false;
   }
+  if (config.rknotPath && !existsSync(RKNOT_COMPOSE_FILE)) {
+    console.warn(
+      `[moonshine] RKNOT compose file not found: ${RKNOT_COMPOSE_FILE} — ` +
+        `set ZEDGE_MOONSHINE_RKNOT_COMPOSE_FILE to override`
+    );
+    return false;
+  }
 
-  console.log('[moonshine] Starting fat-station + openai-compat via docker compose...');
+  const composeArgs = ['compose', '-f', COMPOSE_FILE];
+  const composeEnv: NodeJS.ProcessEnv = { ...process.env };
+  if (config.rknotPath) {
+    composeArgs.push('-f', RKNOT_COMPOSE_FILE);
+    composeEnv.MOONSHINE_MESH_RKNOT_HOST_PATH = config.rknotPath;
+    composeEnv.MOONSHINE_MESH_DENSE_HOST_PATH = config.knotPath;
+    composeEnv.MOONSHINE_MESH_LAYERS = config.layerRange;
+    composeEnv.MODEL_NAME = config.modelName;
+  }
+  composeArgs.push('up', '-d', 'fat-station', 'openai-compat');
+
+  console.log(
+    '[moonshine] Starting fat-station + openai-compat via docker compose ' +
+      `(${config.modelName}, ${moonshineSourceLabel(config)})...`
+  );
   try {
     await new Promise<void>((resolve, reject) => {
-      const proc = spawn(
-        'docker',
-        ['compose', '-f', COMPOSE_FILE, 'up', '-d', 'fat-station', 'openai-compat'],
-        { stdio: 'inherit' }
-      );
+      const proc = spawn('docker', composeArgs, {
+        stdio: 'inherit',
+        env: composeEnv,
+      });
       proc.on('close', (code) => {
         if (code === 0) resolve();
         else reject(new Error(`docker compose up exited with code ${code}`));
@@ -789,7 +870,7 @@ async function startDockerMoonshine(modelName: string): Promise<boolean> {
   }
 
   console.log('[moonshine] Waiting for /health...');
-  return await waitReadyForModel(modelName);
+  return await waitReadyForModel(config.modelName);
 }
 
 export async function ensureMoonshineRunning(): Promise<void> {
@@ -831,7 +912,7 @@ export async function ensureMoonshineRunning(): Promise<void> {
 
   const ready =
     (await startLocalMoonshine(startupConfig)) ||
-    (await startDockerMoonshine(startupConfig.modelName));
+    (await startDockerMoonshine(startupConfig));
   if (ready) {
     console.log('[moonshine] Ready');
   } else {
