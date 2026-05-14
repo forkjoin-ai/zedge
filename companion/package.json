@@ -7,7 +7,7 @@
   "scripts": {
     "start": "../scripts/run-ts-entry.sh src/companion-supervisor.ts",
     "direct": "../scripts/run-ts-entry.sh src/index.ts",
-    "dev": "node --watch ../../gnosis/bin/gnode.js run src/index.ts --export main",
+    "dev": "node --watch ../../gnosis/bin/monster run src/index.ts --export main",
     "mcp": "../scripts/run-ts-entry.sh src/mcp-stdio.ts",
     "launch-agent:install": "../scripts/companion-launch-agent.sh install",
     "launch-agent:uninstall": "../scripts/companion-launch-agent.sh uninstall",

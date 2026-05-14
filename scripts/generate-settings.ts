@@ -184,6 +184,7 @@ export async function main(): Promise<void> {
       openai_compatible: {
         Zedge: {
           api_url: 'http://127.0.0.1:7331/v1',
+          api_key: 'zedge-local',
           available_models: companionAvailableModels,
         },
       },

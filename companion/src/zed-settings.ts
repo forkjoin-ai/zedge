@@ -9,6 +9,8 @@ interface ZedModelProviderConfig {
   available_models?: unknown;
 }
 
+const LOCAL_ZED_PLACEHOLDER_API_KEY = 'zedge-local';
+
 export interface ZedModelSelection {
   defaultModel: string | null;
   availableModels: string[];
@@ -220,7 +222,7 @@ export function updateZedSettingsModelCatalog(
 
   const availableModels = buildZedAvailableModels(modelIds);
   if (isLocalZedgeApiUrl(zedge.api_url)) {
-    delete zedge.api_key;
+    zedge.api_key = LOCAL_ZED_PLACEHOLDER_API_KEY;
   }
   zedge.available_models = availableModels;
   updateZedgeAgentDefaultModel(settings, availableModels);

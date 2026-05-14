@@ -51,7 +51,7 @@ describe('Zed settings model sync', () => {
     expect(zedge.available_models.map((model) => model.name)).toEqual([
       'gnosis-local',
     ]);
-    expect('api_key' in zedge).toBe(false);
+    expect(zedge.api_key).toBe('zedge-local');
     expect(defaultModel.model).toBe('gnosis-local');
   });
 
