@@ -72,6 +72,11 @@ function logInference(line: string): void {
   }
 }
 
+/** Append a sidecar diagnostic line to the same log surface as inference. */
+export function appendInferenceDiagnostic(line: string): void {
+  logInference(line);
+}
+
 /** Get recent inference logs (most recent last) */
 export function getRecentLogs(count?: number): string[] {
   const n = count ?? LOG_RING_MAX;
@@ -1567,8 +1572,10 @@ export function createSSEProxyStream(
   tier: InferenceTier,
   upstreamHeaders: Record<string, string> = {},
   attempts?: TierAttempt[],
-  modelName?: string
+  modelName?: string,
+  options: { forwardNamedEvents?: boolean } = {}
 ): ReadableStream<Uint8Array> {
+  const forwardNamedEvents = options.forwardNamedEvents === true;
   const encoder = new TextEncoder();
   const decoder = new TextDecoder('utf-8', { fatal: true });
 
@@ -1654,6 +1661,7 @@ export function createSSEProxyStream(
       let prefillStartMs = 0;
       let lastPrefillMs = 0;
       let lastPrefillPos = 0;
+      let currentEventName: string | null = null;
       const progressBarBlocks = 20;
       const progressId = `chatcmpl-progress-${Date.now()}`;
       const progressCreated = Math.floor(Date.now() / 1000);
@@ -1741,6 +1749,71 @@ export function createSSEProxyStream(
                 line + (options.terminateEvent === true ? '\n\n' : '\n')
               )
             );
+          } else if (currentEventName === 'prefill') {
+            if (forwardNamedEvents) {
+              logInference(
+                `[sse-proxy] tier=${tier} forwarding event:${currentEventName} ${payload.slice(
+                  0,
+                  100
+                )}`
+              );
+              enqueue(
+                encoder.encode(
+                  `event: ${currentEventName}\ndata: ${payload}\n\n`
+                )
+              );
+            } else {
+              logInference(
+                `[sse-proxy] tier=${tier} observed event:${currentEventName} ${payload.slice(
+                  0,
+                  100
+                )}`
+              );
+            }
+            if (currentEventName === 'prefill' && !firstDataLogged) {
+              try {
+                const parsed = JSON.parse(payload) as {
+                  completed_tokens?: number;
+                  total_tokens?: number;
+                };
+                const completed = parsed.completed_tokens;
+                const total = parsed.total_tokens;
+                if (
+                  typeof completed === 'number' &&
+                  typeof total === 'number'
+                ) {
+                  emitPrefillProgress(completed, total);
+                }
+              } catch {
+                logInference(
+                  `[sse-proxy] tier=${tier} invalid prefill event payload: ${payload.slice(
+                    0,
+                    100
+                  )}`
+                );
+              }
+            }
+          } else if (currentEventName === 'heartbeat') {
+            if (forwardNamedEvents) {
+              logInference(
+                `[sse-proxy] tier=${tier} forwarding event:${currentEventName} ${payload.slice(
+                  0,
+                  100
+                )}`
+              );
+              enqueue(
+                encoder.encode(
+                  `event: ${currentEventName}\ndata: ${payload}\n\n`
+                )
+              );
+            } else {
+              logInference(
+                `[sse-proxy] tier=${tier} observed event:${currentEventName} ${payload.slice(
+                  0,
+                  100
+                )}`
+              );
+            }
           } else {
             // Edge stream compatibility:
             // Some upstream tiers emit token SSE payloads in a compact shape
@@ -1836,7 +1909,10 @@ export function createSSEProxyStream(
             }
           }
         } else if (line === '') {
+          currentEventName = null;
           enqueue(encoder.encode('\n'));
+        } else if (line.startsWith('event: ')) {
+          currentEventName = line.slice('event: '.length).trim();
         } else if (line.startsWith(':')) {
           // Log upstream comments (heartbeat, prefill) but don't forward raw
           logInference(
@@ -1849,93 +1925,89 @@ export function createSSEProxyStream(
           if (prefillMatch && !firstDataLogged) {
             const pos = parseInt(prefillMatch[1], 10);
             const total = parseInt(prefillMatch[2], 10);
-            const isStart = !emittedProgress;
-            const now = Date.now();
-            if (!observedPrefill) {
-              observedPrefill = true;
-              prefillStartMs = now;
-              lastPrefillMs = now;
-              lastPrefillPos = pos;
-            }
-
-            const targetBlocks =
-              total > 0 && pos > 0
-                ? Math.max(
-                    1,
-                    Math.min(
-                      progressBarBlocks,
-                      Math.ceil((pos / total) * progressBarBlocks)
-                    )
-                  )
-                : 0;
-            const newBlocks = Math.max(0, targetBlocks - emittedProgressBlocks);
-            if (isStart && targetBlocks === 0) {
-              return;
-            }
-            emittedProgressBlocks = Math.max(
-              emittedProgressBlocks,
-              targetBlocks
-            );
-            const elapsedPrefillMs = Math.max(1, now - prefillStartMs);
-            const recentElapsedMs = Math.max(1, now - lastPrefillMs);
-            const recentProgress = Math.max(0, pos - lastPrefillPos);
-            const overallTokSec =
-              pos > 0 ? Math.round((pos / elapsedPrefillMs) * 1000) : 0;
-            const currentTokSec =
-              recentProgress > 0
-                ? Math.round((recentProgress / recentElapsedMs) * 1000)
-                : overallTokSec;
-            lastPrefillMs = now;
-            lastPrefillPos = pos;
-            const tickContent =
-              (isStart
-                ? `*${currentTokSec}t/s | ${progressChainInfo} \u28FF `
-                : '') + '\u2588'.repeat(newBlocks);
-            if (!tickContent) {
-              return;
-            }
-
-            emittedProgress = true;
-            const tickDelta = isStart
-              ? { role: 'assistant' as const, content: tickContent }
-              : { content: tickContent };
-
-            if (useReasoning) {
-              const progressChunk = {
-                id: progressId,
-                object: 'chat.completion.chunk',
-                created: progressCreated,
-                model: modelName ?? tier,
-                choices: [
-                  {
-                    index: 0,
-                    delta: { reasoning_content: tickContent },
-                    finish_reason: null,
-                  },
-                ],
-              };
-              enqueue(
-                encoder.encode(`data: ${JSON.stringify(progressChunk)}\n\n`)
-              );
-            } else {
-              const progressChunk = {
-                id: progressId,
-                object: 'chat.completion.chunk',
-                created: progressCreated,
-                model: modelName ?? tier,
-                choices: [
-                  {
-                    index: 0,
-                    delta: tickDelta,
-                    finish_reason: null,
-                  },
-                ],
-              };
-              enqueue(
-                encoder.encode(`data: ${JSON.stringify(progressChunk)}\n\n`)
-              );
-            }
+            emitPrefillProgress(pos, total);
           }
+        }
+      };
+
+      const emitPrefillProgress = (pos: number, total: number): void => {
+        const isStart = !emittedProgress;
+        const now = Date.now();
+        if (!observedPrefill) {
+          observedPrefill = true;
+          prefillStartMs = now;
+          lastPrefillMs = now;
+          lastPrefillPos = pos;
+        }
+
+        const targetBlocks =
+          total > 0 && pos > 0
+            ? Math.max(
+                1,
+                Math.min(
+                  progressBarBlocks,
+                  Math.ceil((pos / total) * progressBarBlocks)
+                )
+              )
+            : 0;
+        const newBlocks = Math.max(0, targetBlocks - emittedProgressBlocks);
+        if (isStart && targetBlocks === 0) {
+          return;
+        }
+        emittedProgressBlocks = Math.max(emittedProgressBlocks, targetBlocks);
+        const elapsedPrefillMs = Math.max(1, now - prefillStartMs);
+        const recentElapsedMs = Math.max(1, now - lastPrefillMs);
+        const recentProgress = Math.max(0, pos - lastPrefillPos);
+        const overallTokSec =
+          pos > 0 ? Math.round((pos / elapsedPrefillMs) * 1000) : 0;
+        const currentTokSec =
+          recentProgress > 0
+            ? Math.round((recentProgress / recentElapsedMs) * 1000)
+            : overallTokSec;
+        lastPrefillMs = now;
+        lastPrefillPos = pos;
+        const tickContent =
+          (isStart ? `*${currentTokSec}t/s | ${progressChainInfo} \u28FF ` : '') +
+          '\u2588'.repeat(newBlocks);
+        if (!tickContent) {
+          return;
+        }
+
+        emittedProgress = true;
+        const tickDelta = isStart
+          ? { role: 'assistant' as const, content: tickContent }
+          : { content: tickContent };
+
+        if (useReasoning) {
+          const progressChunk = {
+            id: progressId,
+            object: 'chat.completion.chunk',
+            created: progressCreated,
+            model: modelName ?? tier,
+            choices: [
+              {
+                index: 0,
+                delta: { reasoning_content: tickContent },
+                finish_reason: null,
+              },
+            ],
+          };
+          enqueue(encoder.encode(`data: ${JSON.stringify(progressChunk)}\n\n`));
+        } else {
+          const progressChunk = {
+            id: progressId,
+            object: 'chat.completion.chunk',
+            created: progressCreated,
+            model: modelName ?? tier,
+            choices: [
+              {
+                index: 0,
+                delta: tickDelta,
+                finish_reason: null,
+              },
+            ],
+          };
+          enqueue(encoder.encode(`data: ${JSON.stringify(progressChunk)}\n\n`));
         }
       };
 

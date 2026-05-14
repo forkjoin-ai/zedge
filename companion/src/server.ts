@@ -25,6 +25,7 @@ import {
   createSSEProxyStream,
   getRecentLogs,
   clearLogs,
+  appendInferenceDiagnostic,
 } from './inference-bridge.ts';
 import type { TierAttempt } from './inference-bridge.ts';
 import { aetherLocalRuntime } from './aether-local-runtime.ts';
@@ -549,6 +550,26 @@ function shouldUseCompanionAgentic(req: Request, body: ChatRequestBody): boolean
     return body.tool_choice !== 'none';
   }
   return false;
+}
+
+function summarizeChatRouting(
+  req: Request,
+  body: ChatRequestBody,
+  agentic: boolean
+): string {
+  const toolCount = Array.isArray(body.tools) ? body.tools.length : 0;
+  const toolChoice =
+    body.tool_choice === undefined ? 'unset' : JSON.stringify(body.tool_choice);
+  return [
+    `[chat-route] agentic=${agentic}`,
+    `stream=${body.stream === true}`,
+    `tools=${toolCount}`,
+    `tool_choice=${toolChoice}`,
+    `auto_tools=${body.auto_tools === true}`,
+    `execute_tools=${body.execute_tools === true}`,
+    `x_agentic=${req.headers.get('x-zedge-agentic') ?? ''}`,
+    `accept=${req.headers.get('accept') ?? ''}`,
+  ].join(' ');
 }
 
 function chatCompletionToSseStream(data: Record<string, unknown>): ReadableStream<Uint8Array> {
@@ -1902,7 +1923,10 @@ export async function handleWebRequest(req: Request): Promise<Response> {
       prefillWindowId
     );
 
-    if (shouldUseCompanionAgentic(req, body)) {
+    const useCompanionAgentic = shouldUseCompanionAgentic(req, body);
+    appendInferenceDiagnostic(summarizeChatRouting(req, body, useCompanionAgentic));
+
+    if (useCompanionAgentic) {
       try {
         const { runCompanionAgenticChatCompletion } = await import(
           './agentic-orchestrator.ts'
@@ -1958,7 +1982,12 @@ export async function handleWebRequest(req: Request): Promise<Response> {
           result.tier,
           result.upstreamHeaders,
           result.attempts,
-          request.model
+          request.model,
+          {
+            forwardNamedEvents:
+              req.headers.get('x-zedge-sse-events')?.toLowerCase() ===
+              'passthrough',
+          }
         );
 
         return new Response(sseStream, {

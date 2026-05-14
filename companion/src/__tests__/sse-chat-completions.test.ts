@@ -62,6 +62,27 @@ function parseSSEDataObjects(text: string): unknown[] {
     .map((payload) => JSON.parse(payload));
 }
 
+function parseNamedSSEEvents(text: string): Array<{
+  event: string;
+  data: string;
+}> {
+  return text
+    .split(/\n\n+/)
+    .map((frame) => {
+      const event = frame
+        .split('\n')
+        .find((line) => line.startsWith('event: '))
+        ?.slice('event: '.length);
+      const data = frame
+        .split('\n')
+        .filter((line) => line.startsWith('data: '))
+        .map((line) => line.slice('data: '.length))
+        .join('\n');
+      return event ? { event, data } : null;
+    })
+    .filter((event): event is { event: string; data: string } => event !== null);
+}
+
 // --- Tests ---
 
 describe('SSE Chat Completions (createSSEProxyStream)', () => {
@@ -197,6 +218,100 @@ describe('SSE Chat Completions (createSSEProxyStream)', () => {
     expect(renderedContent).toContain('moonshine:ok(5ms)');
     expect(renderedContent).not.toContain('▁');
     expect(renderedContent).toContain('Done');
+  });
+
+  test('converts named upstream prefill events without forwarding custom data by default', async () => {
+    const chunk = JSON.stringify({
+      id: 'chatcmpl-named-prefill',
+      object: 'chat.completion.chunk',
+      created: 1000,
+      model: 'test-model',
+      choices: [{ index: 0, delta: { content: 'Ready' }, finish_reason: null }],
+    });
+    const upstream = sseStream(
+      [
+        'event: prefill',
+        'data: {"type":"prefill","completed_tokens":0,"total_tokens":10}',
+        '',
+        'event: prefill',
+        'data: {"type":"prefill","completed_tokens":10,"total_tokens":10}',
+        '',
+        `data: ${chunk}`,
+        '',
+        'data: [DONE]',
+        '',
+      ].join('\n')
+    );
+
+    const proxy = createSSEProxyStream(
+      upstream,
+      'moonshine',
+      {},
+      [{ tier: 'moonshine', status: 'ok', ms: 5 }],
+      'gnosis-local'
+    );
+    const output = await consumeStream(proxy);
+    const namedEvents = parseNamedSSEEvents(output);
+
+    expect(namedEvents.filter((event) => event.event === 'prefill')).toEqual(
+      []
+    );
+
+    const renderedContent = (
+      parseSSEDataObjects(output) as Array<{
+        choices?: Array<{ delta?: { content?: string } }>;
+      }>
+    )
+      .map((data) => data.choices?.[0]?.delta?.content ?? '')
+      .join('');
+    expect(renderedContent).toContain('████████████████████');
+    expect(renderedContent).toContain('Ready');
+  });
+
+  test('passes through named upstream prefill events when explicitly enabled', async () => {
+    const chunk = JSON.stringify({
+      id: 'chatcmpl-named-prefill',
+      object: 'chat.completion.chunk',
+      created: 1000,
+      model: 'test-model',
+      choices: [{ index: 0, delta: { content: 'Ready' }, finish_reason: null }],
+    });
+    const upstream = sseStream(
+      [
+        'event: prefill',
+        'data: {"type":"prefill","completed_tokens":0,"total_tokens":10}',
+        '',
+        'event: prefill',
+        'data: {"type":"prefill","completed_tokens":10,"total_tokens":10}',
+        '',
+        `data: ${chunk}`,
+        '',
+        'data: [DONE]',
+        '',
+      ].join('\n')
+    );
+
+    const proxy = createSSEProxyStream(
+      upstream,
+      'moonshine',
+      {},
+      [{ tier: 'moonshine', status: 'ok', ms: 5 }],
+      'gnosis-local',
+      { forwardNamedEvents: true }
+    );
+    const output = await consumeStream(proxy);
+    const namedEvents = parseNamedSSEEvents(output);
+
+    expect(namedEvents.filter((event) => event.event === 'prefill')).toEqual([
+      {
+        event: 'prefill',
+        data: '{"type":"prefill","completed_tokens":0,"total_tokens":10}',
+      },
+      {
+        event: 'prefill',
+        data: '{"type":"prefill","completed_tokens":10,"total_tokens":10}',
+      },
+    ]);
   });
 
   test('handles CRLF-delimited SSE frames', async () => {

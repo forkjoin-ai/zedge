@@ -42,6 +42,14 @@ const FAT_STATION_BIN =
   [
     join(
       REPO_ROOT,
+      'open-source/gnosis/distributed-inference/target/release/fat-station-memo'
+    ),
+    join(
+      REPO_ROOT,
+      'open-source/gnosis/distributed-inference/target/debug/fat-station-memo'
+    ),
+    join(
+      REPO_ROOT,
       'open-source/gnosis/distributed-inference/target/release/fat-station'
     ),
     join(
@@ -733,6 +741,12 @@ async function startLocalMoonshine(
       PORT: '8080',
       MODEL_NAME: modelName,
       AGENTIC: '0',
+      MOONSHINE_MEMO_ENABLED:
+        process.env.ZEDGE_MOONSHINE_MEMO_ENABLED ?? '1',
+      MOONSHINE_MEMO_TAU_SQUARED:
+        process.env.ZEDGE_MOONSHINE_MEMO_TAU_SQUARED ?? '0',
+      MOONSHINE_MEMO_MAX_ENTRIES:
+        process.env.ZEDGE_MOONSHINE_MEMO_MAX_ENTRIES ?? '8192',
       ...(GNOSIS_FFN_LEAKAGE_MODE ? { GNOSIS_FFN_LEAKAGE_MODE } : {}),
       ...(GNOSIS_FFN_GUARD_RMS_DELTA3_THRESHOLD
         ? { GNOSIS_FFN_GUARD_RMS_DELTA3_THRESHOLD }

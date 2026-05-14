@@ -205,6 +205,12 @@ write_plist() {
     <string>${WD_XML}</string>
     <key>GNODE_FORCE_TSX</key>
     <string>1</string>
+    <key>ZEDGE_API_KEY</key>
+    <string>$(escape_xml "${LOCAL_ZED_API_KEY}")</string>
+    <key>OPENAI_API_KEY</key>
+    <string>$(escape_xml "${LOCAL_ZED_API_KEY}")</string>
+    <key>ZED_OPEN_AI_COMPATIBLE_API_KEY</key>
+    <string>$(escape_xml "${LOCAL_ZED_API_KEY}")</string>
     <key>PATH</key>
     <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
   </dict>

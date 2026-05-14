@@ -12,6 +12,7 @@ import {
   type ToolExecutionResult,
 } from '@a0n/distributed-inference-host/agentic-chat';
 import type { ChatCompletionRequest } from './inference-bridge.ts';
+import { appendInferenceDiagnostic } from './inference-bridge.ts';
 import {
   callLocalTool,
   preflightLocalTools,
@@ -330,5 +331,18 @@ export async function runCompanionAgenticChatCompletion(
       : {}),
   };
 
-  return runAgenticChatCompletion(agenticRequest, runtime);
+  const result = await runAgenticChatCompletion(agenticRequest, runtime);
+  const choice = result.choices[0];
+  const content = choice?.message.content ?? '';
+  const toolCallCount = choice?.message.tool_calls?.length ?? 0;
+  appendInferenceDiagnostic(
+    [
+      `[agentic-result] finish=${choice?.finish_reason ?? 'unknown'}`,
+      `tool_calls=${toolCallCount}`,
+      `tools_used=${result.tools_used?.join(',') ?? ''}`,
+      `rounds=${result.agentic.rounds}`,
+      `preview=${JSON.stringify(content.slice(0, 120))}`,
+    ].join(' ')
+  );
+  return result;
 }
