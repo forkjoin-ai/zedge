@@ -1,0 +1,8 @@
+{
+  "name": "tree-sitter-gnosis",
+  "sourceRoot": "open-source/zedge/grammars/gnosis/src",
+  "projectType": "library",
+  "tags": [
+    "npm:public"
+  ]
+}

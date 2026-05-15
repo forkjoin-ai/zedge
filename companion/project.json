@@ -1,0 +1,20 @@
+{
+  "name": "@affectively/zedge-companion",
+  "sourceRoot": "open-source/zedge/companion/src",
+  "projectType": "library",
+  "tags": [
+    "npm:public"
+  ],
+  "targets": {
+    "build": {
+      "executor": "a0:run-commands",
+      "dependsOn": [
+        "^build"
+      ],
+      "options": {
+        "cwd": "open-source/zedge/companion",
+        "command": "bun run build"
+      }
+    }
+  }
+}

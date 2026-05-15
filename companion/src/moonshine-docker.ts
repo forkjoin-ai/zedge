@@ -243,7 +243,10 @@ function positiveInteger(value: unknown): number | null {
 
 function resolveZedLocalModelSpec(): LocalMoonshineModelSpec | null {
   const selection = readZedModelSelection();
-  if (!selection) return null;
+  if (!selection) {
+    const defaultSpec = LOCAL_MOONSHINE_MODELS[GEMMA4_MOONSHINE_MODEL];
+    return defaultSpec && existsSync(defaultSpec.knotPath) ? defaultSpec : null;
+  }
 
   const candidates = [
     selection.defaultModel,
