@@ -18,9 +18,12 @@ import { resolveGnosisUringCommand } from '@a0n/x-gnosis/gnosis-uring-command';
 import {
   infer,
   inferFim,
+  prewarmMoonshinePrompt,
   buildFimPrompt,
   getModels,
   getLiveMoonshineRuntimeHealth,
+  getMoonshineCacheStatus,
+  clearMoonshineCaches,
   embed,
   createSSEProxyStream,
   getRecentLogs,
@@ -1830,6 +1833,93 @@ export async function handleWebRequest(req: Request): Promise<Response> {
 
   if (path.startsWith('/prefill/windows/') && req.method === 'DELETE') {
     return await handlePrefillWindowRequest(path, req);
+  }
+
+  if (path === '/moonshine/cache' && req.method === 'GET') {
+    return jsonResponse(await getMoonshineCacheStatus());
+  }
+
+  if (path === '/moonshine/cache/clear' && req.method === 'POST') {
+    const body = (await req.json().catch(() => ({}))) as {
+      kinds?: unknown;
+      scope?: unknown;
+    };
+    const rawKinds = Array.isArray(body.kinds)
+      ? body.kinds
+      : typeof body.scope === 'string'
+        ? body.scope.split(',')
+        : ['amplituhedron'];
+    const kinds = rawKinds
+      .map((kind) => String(kind).trim().toLowerCase())
+      .filter((kind): kind is 'amplituhedron' | 'memo' =>
+        kind === 'amplituhedron' || kind === 'memo'
+      );
+    if (kinds.length === 0) {
+      return jsonResponse(
+        {
+          error:
+            'No valid cache kinds requested. Use amplituhedron, memo, or both.',
+        },
+        400
+      );
+    }
+    return jsonResponse(await clearMoonshineCaches({ kinds }));
+  }
+
+  // Speculative Moonshine typeahead: prefill/capture the prompt without
+  // committing visible assistant output. Zed can cancel the HTTP request as
+  // the editor state changes; completed runs leave the amplituhedron cache hot.
+  if (path === '/v1/chat/completions/prewarm' && req.method === 'POST') {
+    const body = (await req.json()) as ChatRequestBody & { wait?: boolean };
+    const model = body.model ?? getZedgeConfig().preferredModel;
+    const rawMessages = (body.messages ?? []) as Array<{
+      role: string;
+      content: unknown;
+    }>;
+    const messages = rawMessages.map((msg) => {
+      if (Array.isArray(msg.content)) {
+        const text = msg.content
+          .filter((p: { type?: string }) => p.type === 'text')
+          .map((p: { text?: string }) => p.text ?? '')
+          .join('\n\n');
+        return { role: msg.role, content: text };
+      }
+      return { role: msg.role, content: String(msg.content ?? '') };
+    }) as ChatCompletionRequest['messages'];
+    const request: ChatCompletionRequest = {
+      model,
+      messages,
+      stream: false,
+      temperature: body.temperature,
+      max_tokens: 0,
+      top_p: body.top_p,
+    };
+
+    if (body.wait === true) {
+      const response = await prewarmMoonshinePrompt(request, req.signal);
+      return jsonResponse(
+        {
+          ok: response.ok,
+          status: response.status,
+          mode: 'moonshine-typeahead-prewarm',
+        },
+        response.ok ? 200 : 502
+      );
+    }
+
+    const controller = new AbortController();
+    req.signal.addEventListener('abort', () => controller.abort(), { once: true });
+    void prewarmMoonshinePrompt(request, controller.signal).catch((error) => {
+      appendInferenceDiagnostic(
+        `[moonshine:typeahead] prewarm failed: ${
+          error instanceof Error ? error.message : String(error)
+        }`
+      );
+    });
+    return jsonResponse(
+      { ok: true, status: 'queued', mode: 'moonshine-typeahead-prewarm' },
+      202
+    );
   }
 
   // Chat completions

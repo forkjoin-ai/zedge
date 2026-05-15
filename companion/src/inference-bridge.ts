@@ -244,6 +244,145 @@ const MOONSHINE_MAX_TOKENS = parsePositiveInteger(
   process.env.ZEDGE_MOONSHINE_MAX_TOKENS,
   4096
 );
+
+type MoonshineCacheKind = 'amplituhedron' | 'memo';
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === 'object' && !Array.isArray(value);
+}
+
+async function fetchJsonWithin(
+  url: string,
+  timeoutMs: number
+): Promise<{ ok: boolean; status?: number; body?: unknown; error?: string }> {
+  try {
+    const resp = await fetch(url, {
+      headers: { Accept: 'application/json' },
+      signal: AbortSignal.timeout(timeoutMs),
+    });
+    let body: unknown;
+    try {
+      body = await resp.json();
+    } catch {
+      body = undefined;
+    }
+    return { ok: resp.ok, status: resp.status, body };
+  } catch (error) {
+    return { ok: false, error: error instanceof Error ? error.message : String(error) };
+  }
+}
+
+async function postJsonWithin(
+  url: string,
+  timeoutMs: number
+): Promise<{ ok: boolean; status?: number; error?: string }> {
+  try {
+    const resp = await fetch(url, {
+      method: 'POST',
+      headers: { Accept: 'application/json' },
+      signal: AbortSignal.timeout(timeoutMs),
+    });
+    return { ok: resp.ok, status: resp.status };
+  } catch (error) {
+    return { ok: false, error: error instanceof Error ? error.message : String(error) };
+  }
+}
+
+export async function getMoonshineCacheStatus(timeoutMs = 5_000): Promise<{
+  moonshine: {
+    baseUrl: string;
+    ready: boolean;
+    model?: string;
+    status?: string;
+    error?: string;
+  };
+  fatStation: {
+    baseUrl: string;
+    ready: boolean;
+    status?: string;
+    amplituhedron?: Record<string, unknown>;
+    memo?: Record<string, unknown>;
+    error?: string;
+  };
+}> {
+  const [moonshine, fatStationHealth, memoStats] = await Promise.all([
+    fetchJsonWithin(`${MOONSHINE_BASE_URL}/health`, timeoutMs),
+    fetchJsonWithin(`${FAT_STATION_BASE_URL}/health`, timeoutMs),
+    fetchJsonWithin(`${FAT_STATION_BASE_URL}/memo/stats`, timeoutMs),
+  ]);
+  const moonshineBody = isRecord(moonshine.body) ? moonshine.body : {};
+  const stationBody = isRecord(fatStationHealth.body)
+    ? fatStationHealth.body
+    : {};
+  return {
+    moonshine: {
+      baseUrl: MOONSHINE_BASE_URL,
+      ready: moonshine.ok && moonshineBody['status'] === 'ok',
+      status:
+        typeof moonshineBody['status'] === 'string'
+          ? moonshineBody['status']
+          : undefined,
+      model:
+        typeof moonshineBody['model'] === 'string'
+          ? moonshineBody['model']
+          : undefined,
+      error: moonshine.error,
+    },
+    fatStation: {
+      baseUrl: FAT_STATION_BASE_URL,
+      ready: fatStationHealth.ok && stationBody['status'] === 'ok',
+      status:
+        typeof stationBody['status'] === 'string'
+          ? stationBody['status']
+          : undefined,
+      amplituhedron: isRecord(stationBody['amplituhedron'])
+        ? stationBody['amplituhedron']
+        : undefined,
+      memo: memoStats.ok && isRecord(memoStats.body) ? memoStats.body : undefined,
+      error: fatStationHealth.error ?? memoStats.error,
+    },
+  };
+}
+
+export async function clearMoonshineCaches(args: {
+  kinds: readonly MoonshineCacheKind[];
+  timeoutMs?: number;
+}): Promise<{
+  cleared: MoonshineCacheKind[];
+  skipped: MoonshineCacheKind[];
+  results: Record<string, { ok: boolean; status?: number; error?: string }>;
+}> {
+  const timeoutMs = args.timeoutMs ?? 5_000;
+  const selected = new Set(args.kinds);
+  const routeByKind: Record<MoonshineCacheKind, string> = {
+    amplituhedron: '/amplituhedron/clear',
+    memo: '/memo/clear',
+  };
+  const entries = await Promise.all(
+    (Object.keys(routeByKind) as MoonshineCacheKind[]).map(async (kind) => {
+      if (!selected.has(kind)) {
+        return [kind, { skipped: true, result: { ok: true } }] as const;
+      }
+      const result = await postJsonWithin(
+        `${FAT_STATION_BASE_URL}${routeByKind[kind]}`,
+        timeoutMs
+      );
+      return [kind, { skipped: false, result }] as const;
+    })
+  );
+  const cleared: MoonshineCacheKind[] = [];
+  const skipped: MoonshineCacheKind[] = [];
+  const results: Record<string, { ok: boolean; status?: number; error?: string }> = {};
+  for (const [kind, entry] of entries) {
+    if (entry.skipped) {
+      skipped.push(kind);
+    } else if (entry.result.ok) {
+      cleared.push(kind);
+    }
+    results[kind] = entry.result;
+  }
+  return { cleared, skipped, results };
+}
 const ZEDGE_FALLBACK_ASSISTANT_PATTERNS = [
   'Moonshine did not return a usable completion before Zedge',
   'Zedge could not start a usable inference tier',
@@ -999,6 +1138,18 @@ async function tryMoonshineInference(
     },
     `${request.model} chat`
   );
+}
+
+export async function prewarmMoonshinePrompt(
+  request: ChatCompletionRequest,
+  signal?: AbortSignal
+): Promise<Response> {
+  const warmRequest: ChatCompletionRequest = {
+    ...request,
+    stream: false,
+    max_tokens: 0,
+  };
+  return await tryMoonshineInference(warmRequest, signal);
 }
 
 /**

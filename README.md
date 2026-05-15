@@ -72,6 +72,36 @@ pnpm run zedge:launch-agent:uninstall
 pnpm run gnode -- run open-source/zedge/companion/src/companion-supervisor.ts --export main
 ```
 
+### Moonshine Typeahead Prewarm
+
+The companion exposes `POST /v1/chat/completions/prewarm` for speculative
+Moonshine typeahead. It accepts the same `model` and `messages` shape as chat
+completion, forwards the prompt to Moonshine with `max_tokens: 0`, and returns
+no assistant text. The purpose is to fill the amplituhedron replay cache for a
+prefix that the editor may need soon.
+
+The warmup only commits the prompt boundary. A later real completion can still
+choose any `max_tokens`, temperature, or stop policy; it starts from the cached
+tail residual and then decodes under the real request's generation settings.
+
+By default the route returns `202` after queueing the warmup. Send
+`{"wait":true,...}` when a test wants to wait for the prefill/capture to finish.
+If the editor cancels the HTTP request before completion, the companion cancels
+the warmup instead of committing output.
+
+For testing cache state through Zedge:
+
+```bash
+curl http://127.0.0.1:7331/moonshine/cache
+curl -X POST http://127.0.0.1:7331/moonshine/cache/clear \
+  -H 'Content-Type: application/json' \
+  -d '{"kinds":["amplituhedron"]}'
+```
+
+`amplituhedron` clears prompt replay/typeahead captures. `memo` clears the
+matvec memo. They are separate on purpose: most prompt-replay tests should only
+clear `amplituhedron`, leaving resident model state and matvec memo untouched.
+
 ## The Two Parts
 
 1. **Zed extension** in `src/`
