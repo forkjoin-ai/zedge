@@ -42,9 +42,12 @@ const GEMMA4_DENSE_KNOT_PATH = join(
 );
 const GEMMA4_RKNOT_PATH = join(
   REPO_ROOT,
-  'open-source/bitwise/datasets/gemma4-31b-it.rknot'
+  'open-source/bitwise/datasets/gemma4-31b-it.k10-b8.rknot'
 );
-const GEMMA4_VALIDATED_RKNOT_PATH = '/private/tmp/gemma4-row-k10-b8.rknot';
+const GEMMA4_TOKENIZER_JSON_PATH = join(
+  REPO_ROOT,
+  'open-source/bitwise/datasets/gemma4-tokenizer.json'
+);
 const DEFAULT_MOONSHINE_MODEL = 'gnosis-local';
 const QWEN_MOONSHINE_MODEL = 'qwen2.5-0.5b-instruct';
 const GEMMA4_MOONSHINE_MODEL = 'gemma4-31b-it';
@@ -86,6 +89,9 @@ const TSX_CLI =
   ].find((candidate) => existsSync(candidate));
 
 const MOONSHINE_URL = process.env.ZEDGE_MOONSHINE_URL ?? 'http://127.0.0.1:8080';
+const DOCKER_COMPOSE_BUILD_ENABLED =
+  process.env.ZEDGE_MOONSHINE_DOCKER_BUILD === '1' ||
+  process.env.ZEDGE_MOONSHINE_DOCKER_BUILD === 'true';
 const GNOSIS_NUM_THREADS =
   process.env.ZEDGE_GNOSIS_NUM_THREADS ??
   process.env.GNOSIS_NUM_THREADS ??
@@ -125,6 +131,7 @@ interface MoonshineStartupConfig {
   modelName: string;
   layerRange: string;
   tokenizerGgufPath?: string;
+  tokenizerJsonPath?: string;
 }
 
 interface LocalMoonshineModelSpec {
@@ -133,6 +140,7 @@ interface LocalMoonshineModelSpec {
   rknotPath?: string;
   rknotCandidates?: string[];
   tokenizerGgufPath?: string;
+  tokenizerJsonPath?: string;
   defaultLayers?: string;
 }
 
@@ -149,7 +157,8 @@ const LOCAL_MOONSHINE_MODELS: Record<string, LocalMoonshineModelSpec> = {
   [GEMMA4_MOONSHINE_MODEL]: {
     modelName: GEMMA4_MOONSHINE_MODEL,
     knotPath: GEMMA4_DENSE_KNOT_PATH,
-    rknotCandidates: [GEMMA4_VALIDATED_RKNOT_PATH, GEMMA4_RKNOT_PATH],
+    rknotPath: GEMMA4_RKNOT_PATH,
+    tokenizerJsonPath: GEMMA4_TOKENIZER_JSON_PATH,
     defaultLayers: '0..60',
   },
 };
@@ -324,6 +333,24 @@ function resolveTokenizerGgufPath(
   return existsSync(adjacentGgufPath) ? adjacentGgufPath : undefined;
 }
 
+function resolveTokenizerJsonPath(
+  modelName: string,
+  spec?: LocalMoonshineModelSpec
+): string | undefined {
+  const configuredPath = process.env.ZEDGE_MOONSHINE_TOKENIZER_JSON?.trim();
+  if (configuredPath) return configuredPath;
+  if (spec?.tokenizerJsonPath && existsSync(spec.tokenizerJsonPath)) {
+    return spec.tokenizerJsonPath;
+  }
+  if (
+    modelName === GEMMA4_MOONSHINE_MODEL &&
+    existsSync(GEMMA4_TOKENIZER_JSON_PATH)
+  ) {
+    return GEMMA4_TOKENIZER_JSON_PATH;
+  }
+  return undefined;
+}
+
 function resolveStartupConfig(): MoonshineStartupConfig {
   const configuredKnotPath = process.env.ZEDGE_MOONSHINE_KNOT?.trim();
   const spec = configuredKnotPath ? undefined : resolveZedLocalModelSpec() ?? undefined;
@@ -336,6 +363,7 @@ function resolveStartupConfig(): MoonshineStartupConfig {
     spec?.defaultLayers
   );
   const tokenizerGgufPath = resolveTokenizerGgufPath(knotPath, spec);
+  const tokenizerJsonPath = resolveTokenizerJsonPath(modelName, spec);
   return {
     knotPath,
     ...(rknotPath ? { rknotPath } : {}),
@@ -343,6 +371,7 @@ function resolveStartupConfig(): MoonshineStartupConfig {
     modelName,
     layerRange,
     ...(tokenizerGgufPath ? { tokenizerGgufPath } : {}),
+    ...(tokenizerJsonPath ? { tokenizerJsonPath } : {}),
   };
 }
 
@@ -668,7 +697,7 @@ async function startLocalMoonshine(
     return false;
   }
 
-  const { modelName, layerRange, tokenizerGgufPath } = config;
+  const { modelName, layerRange, tokenizerGgufPath, tokenizerJsonPath } = config;
 
   let fatStationRuntime = await probeFatStationRuntime(layerRange);
   if (!fatStationRuntime.healthy || !fatStationRuntime.matches) {
@@ -814,6 +843,7 @@ async function startLocalMoonshine(
         ? { AUX_KNOT_PATH: process.env.ZEDGE_MOONSHINE_AUX_KNOT }
         : {}),
       ...(tokenizerGgufPath ? { TOKENIZER_GGUF_PATH: tokenizerGgufPath } : {}),
+      ...(tokenizerJsonPath ? { GEMMA4_TOKENIZER_JSON: tokenizerJsonPath } : {}),
     },
     stdoutPath: '/tmp/moonshine-openai-compat-launchd.out.log',
     stderrPath: '/tmp/moonshine-openai-compat-launchd.err.log',
@@ -846,11 +876,16 @@ async function startDockerMoonshine(
     composeEnv.MOONSHINE_MESH_LAYERS = config.layerRange;
     composeEnv.MODEL_NAME = config.modelName;
   }
-  composeArgs.push('up', '-d', 'fat-station', 'openai-compat');
+  composeArgs.push('up', '-d');
+  if (!DOCKER_COMPOSE_BUILD_ENABLED) {
+    composeArgs.push('--no-build');
+  }
+  composeArgs.push('fat-station', 'openai-compat');
 
   console.log(
     '[moonshine] Starting fat-station + openai-compat via docker compose ' +
-      `(${config.modelName}, ${moonshineSourceLabel(config)})...`
+      `(${config.modelName}, ${moonshineSourceLabel(config)}, ` +
+      `build=${DOCKER_COMPOSE_BUILD_ENABLED ? 'enabled' : 'disabled'})...`
   );
   try {
     await new Promise<void>((resolve, reject) => {
