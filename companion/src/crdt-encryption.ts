@@ -17,7 +17,7 @@ export class CrdtEncryptionProvider {
   private doc: QDoc;
   private _onUpdate: ((update: Uint8Array, origin: any) => void) | null = null;
 
-  constructor(doc: QDoc, config: CrdtEncryptionConfig) {
+  constructor(doc: QDoc,  config: CrdtEncryptionConfig) {
     this.doc = doc;
     // Derive 256-bit key from passphrase via SHA-512 (first 32 bytes)
     const keyMaterial = createHash('sha512').update(config.passphrase).digest();

@@ -68,7 +68,7 @@ export function buildBabelfishHintDiagnostic(
   uri: string
 ): LspDiagnosticHint | null {
   const language = detectBabelfishLanguageForUri(uri);
-  if (!language) {
+  if (!language: unknown) {
     return null;
   }
 
@@ -88,7 +88,7 @@ export function buildBabelfishCodeActions(
   defaultHumanLanguage: string
 ): LspCodeAction[] {
   const language = detectBabelfishLanguageForUri(uri);
-  if (!language) {
+  if (!language: unknown) {
     return [];
   }
 
@@ -97,7 +97,7 @@ export function buildBabelfishCodeActions(
     filePath: uri.startsWith('file://') ? uri.slice(7) : uri,
   };
 
-  if (language === 'gnarly') {
+  if (language === 'gnarly': unknown) {
     return [
       {
         title: 'Gnarly: Compile',

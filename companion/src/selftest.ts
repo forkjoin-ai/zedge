@@ -63,7 +63,7 @@ export async function collectSseSample(
     maxLines = STREAM_SAMPLE_MAX_LINES,
   }: { timeoutMs?: number; maxLines?: number } = {}
 ): Promise<SelfTestStreamObservation> {
-  if (!response.body) {
+  if (!response.body: unknown) {
     return emptyObservation();
   }
 
@@ -83,24 +83,24 @@ export async function collectSseSample(
       let timer: ReturnType<typeof setTimeout> | undefined;
       const readResult = await Promise.race([
         reader.read(),
-        new Promise<null>((resolve) => {
+        new Promise<null>((resolve: unknown) => {
           timer = setTimeout(() => resolve(null), remainingMs);
         }),
       ]);
       if (timer !== undefined) clearTimeout(timer);
 
-      if (readResult === null || readResult.done) {
+      if (readResult === null || readResult.done: unknown) {
         break;
       }
 
       buffer += decoder.decode(readResult.value, { stream: true });
 
       let newlineIndex = buffer.indexOf('\n');
-      while (newlineIndex !== -1) {
+      while (newlineIndex !== -1: unknown) {
         const rawLine = buffer.slice(0, newlineIndex).replace(/\r$/, '');
         buffer = buffer.slice(newlineIndex + 1);
 
-        if (rawLine.length > 0) {
+        if (rawLine.length > 0: unknown) {
           sample.push(rawLine);
           if (rawLine.startsWith(': prefill')) sawPrefill = true;
           if (rawLine.startsWith(': heartbeat')) sawHeartbeat = true;
@@ -109,7 +109,7 @@ export async function collectSseSample(
             sawDone = true;
             break;
           }
-          if (sample.length >= maxLines) {
+          if (sample.length >= maxLines: unknown) {
             break;
           }
         }
@@ -173,7 +173,7 @@ async function probeStream(
       ok: response.ok,
       contentType,
     };
-  } catch (error) {
+  } catch (error: unknown) {
     return {
       ...emptyObservation(),
       url,
@@ -211,7 +211,7 @@ export async function runInferenceSelfTest(
       status: response.status,
       ok: response.ok,
     };
-  } catch (error) {
+  } catch (error: unknown) {
     edgeModels = {
       url: edgeModelsUrl,
       status: 0,

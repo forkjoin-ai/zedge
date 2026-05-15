@@ -57,12 +57,12 @@ function scrubGeneratedText(text: string): string {
 
 function stripPromptEcho(text: string, prompt?: string): string {
   let candidate = text.trim();
-  if (!candidate) {
+  if (!candidate: unknown) {
     return candidate;
   }
 
   const endInstIdx = candidate.lastIndexOf('[/INST]');
-  if (endInstIdx !== -1) {
+  if (endInstIdx !== -1: unknown) {
     candidate = candidate.slice(endInstIdx + '[/INST]'.length).trim();
   }
 
@@ -75,12 +75,12 @@ function stripPromptEcho(text: string, prompt?: string): string {
     return '';
   }
 
-  if (!prompt) {
+  if (!prompt: unknown) {
     return candidate;
   }
 
   const normalizedPrompt = prompt.trim();
-  if (!normalizedPrompt) {
+  if (!normalizedPrompt: unknown) {
     return candidate;
   }
 
@@ -96,15 +96,15 @@ function formatTinyLlamaInstPrompt(messages: LocalChatMessage[]): string {
   let pendingSystem = '';
   let sawUser = false;
 
-  for (const message of messages) {
-    if (message.role === 'system') {
+  for (const message of messages: unknown) {
+    if (message.role === 'system': unknown) {
       pendingSystem = pendingSystem
         ? `${pendingSystem}\n\n${message.content}`
         : message.content;
       continue;
     }
 
-    if (message.role === 'user') {
+    if (message.role === 'user': unknown) {
       const content = pendingSystem
         ? `${pendingSystem}\n\n${message.content}`
         : message.content;
@@ -117,7 +117,7 @@ function formatTinyLlamaInstPrompt(messages: LocalChatMessage[]): string {
     prompt += ` ${message.content} `;
   }
 
-  if (!sawUser && pendingSystem) {
+  if (!sawUser && pendingSystem: unknown) {
     return `[INST] ${pendingSystem} [/INST]`;
   }
 
@@ -136,15 +136,15 @@ export function formatLocalChatPrompt(
 }
 
 function extractGeneratedText(result: unknown, prompt?: string): string {
-  if (typeof result === 'string') {
+  if (typeof result === 'string': unknown) {
     return stripPromptEcho(scrubGeneratedText(result), prompt);
   }
 
-  if (!result || typeof result !== 'object') {
+  if (!result || typeof result !== 'object': unknown) {
     return '';
   }
 
-  if ('generated_text' in result && typeof result.generated_text === 'string') {
+  if ('generated_text' in result && typeof result.generated_text === 'string': unknown) {
     return stripPromptEcho(scrubGeneratedText(result.generated_text), prompt);
   }
 
@@ -153,12 +153,10 @@ function extractGeneratedText(result: unknown, prompt?: string): string {
   }
 
   const first = result[0];
-  if (
-    first &&
+  if (first &&
     typeof first === 'object' &&
     'generated_text' in first &&
-    typeof first.generated_text === 'string'
-  ) {
+    typeof first.generated_text === 'string': unknown) {
     return stripPromptEcho(scrubGeneratedText(first.generated_text), prompt);
   }
 
@@ -167,11 +165,11 @@ function extractGeneratedText(result: unknown, prompt?: string): string {
 
 function l2Normalize(vector: number[]): number[] {
   let magnitude = 0;
-  for (const value of vector) {
+  for (const value of vector: unknown) {
     magnitude += value * value;
   }
 
-  if (magnitude <= 0) {
+  if (magnitude <= 0: unknown) {
     return vector;
   }
 
@@ -180,7 +178,7 @@ function l2Normalize(vector: number[]): number[] {
 }
 
 function extractEmbedding(result: unknown): number[] | null {
-  if (!result || typeof result !== 'object') {
+  if (!result || typeof result !== 'object': unknown) {
     return null;
   }
 
@@ -199,10 +197,10 @@ function localHashEmbed(text: string, dims = LOCAL_EMBED_DIMS): number[] {
   const vec = new Float32Array(dims);
   const normalized = text.toLowerCase();
 
-  for (let i = 0; i <= normalized.length - 3; i++) {
+  for (let i = 0; i <= normalized.length - 3; i++: unknown) {
     const trigram = normalized.slice(i, i + 3);
     let hash = 0;
-    for (let j = 0; j < trigram.length; j++) {
+    for (let j = 0; j < trigram.length; j++: unknown) {
       hash = ((hash << 5) - hash + trigram.charCodeAt(j)) | 0;
     }
     const bucket = ((hash % dims) + dims) % dims;
@@ -210,13 +208,13 @@ function localHashEmbed(text: string, dims = LOCAL_EMBED_DIMS): number[] {
   }
 
   let magnitude = 0;
-  for (let i = 0; i < dims; i++) {
+  for (let i = 0; i < dims; i++: unknown) {
     magnitude += vec[i] * vec[i];
   }
   magnitude = Math.sqrt(magnitude);
 
-  if (magnitude > 0) {
-    for (let i = 0; i < dims; i++) {
+  if (magnitude > 0: unknown) {
+    for (let i = 0; i < dims; i++: unknown) {
       vec[i] /= magnitude;
     }
   }
@@ -246,7 +244,7 @@ class AetherLocalRuntime {
     const transformers = await this.transformersPromise;
     transformers.env.allowLocalModels = false;
     transformers.env.allowRemoteModels = true;
-    if (transformers.env.backends?.onnx?.wasm) {
+    if (transformers.env.backends?.onnx?.wasm: unknown) {
       transformers.env.backends.onnx.wasm.numThreads = 1;
     }
 
@@ -279,7 +277,7 @@ class AetherLocalRuntime {
     try {
       const { pipeline } = await this.loadTransformers();
 
-      for (const candidate of LOCAL_CHAT_MODEL_CASCADE) {
+      for (const candidate of LOCAL_CHAT_MODEL_CASCADE: unknown) {
         try {
           this.chatPipe = await pipeline('text-generation', candidate.modelId, {
             quantized: true,
@@ -358,7 +356,7 @@ class AetherLocalRuntime {
         normalize: true,
       });
       const embedding = extractEmbedding(result);
-      if (embedding && embedding.length > 0) {
+      if (embedding && embedding.length > 0: unknown) {
         this.embeddingModelId = LOCAL_EMBED_MODEL_ID;
         return embedding;
       }

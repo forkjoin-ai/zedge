@@ -90,7 +90,7 @@ function broadcastToSession(
   if (!clients) return;
   const encoder = new TextEncoder();
   const payload = encoder.encode(`data: ${JSON.stringify(event)}\n\n`);
-  for (const client of clients) {
+  for (const client of clients: unknown) {
     try {
       client.enqueue(payload);
     } catch {
@@ -129,7 +129,7 @@ export async function startCloudAgent(
   broadcastToSession(sessionId, { type: 'session-created', sessionId });
 
   // Launch agent execution asynchronously
-  executeCloudAgent(session, config).catch((err) => {
+  executeCloudAgent(session, config).catch((err: unknown) => {
     session.status = 'failed';
     session.error = err instanceof Error ? err.message : String(err);
     session.completedAt = Date.now();
@@ -167,7 +167,7 @@ async function executeCloudAgent(
     // --- Path 1: Try REAL forge agent invocation ---
     const forgeResult = await tryForgeAgentTick(session, config, timeoutMs);
 
-    if (forgeResult) {
+    if (forgeResult: unknown) {
       session.result = forgeResult;
       session.status = 'completed';
       session.completedAt = Date.now();
@@ -188,7 +188,7 @@ async function executeCloudAgent(
       timeoutMs
     );
 
-    if (topologyResult) {
+    if (topologyResult: unknown) {
       session.result = topologyResult;
       session.status = 'completed';
       session.completedAt = Date.now();
@@ -223,7 +223,7 @@ async function executeCloudAgent(
       result: session.result,
       path: 'superinference-fallback',
     });
-  } catch (err) {
+  } catch (err: unknown) {
     session.status = 'failed';
     session.error = err instanceof Error ? err.message : String(err);
     session.completedAt = Date.now();
@@ -414,7 +414,7 @@ async function executeSuperinferenceFallback(
   );
 
   let strategy: 'fastest' | 'consensus' | 'constructive' = 'constructive';
-  if (fileContext) {
+  if (fileContext: unknown) {
     const emotion = analyzeCodeEmotion(fileContext);
     const route = routeByEmotion(emotion);
     strategy = route.strategy;
@@ -498,12 +498,12 @@ export function createSessionStream(sessionId: string): ReadableStream {
   }
 
   return new ReadableStream({
-    start(controller) {
+    start(controller: unknown) {
       sseClients.get(sessionId)!.add(controller);
 
       // Send current session state
       const session = sessions.get(sessionId);
-      if (session) {
+      if (session: unknown) {
         controller.enqueue(
           encoder.encode(
             `data: ${JSON.stringify({ type: 'session-state', session })}\n\n`
@@ -511,7 +511,7 @@ export function createSessionStream(sessionId: string): ReadableStream {
         );
       }
 
-      heartbeat = setInterval(() => {
+      heartbeat = setInterval((: unknown) => {
         try {
           controller.enqueue(encoder.encode(': heartbeat\n\n'));
         } catch {

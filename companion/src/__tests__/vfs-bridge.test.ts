@@ -23,7 +23,7 @@ function setupRepo(dir: string, files: Record<string, string>): void {
 }
 
 function cleanup(): void {
-  for (const dir of [TEST_DIR, PEER_DIR]) {
+  for (const dir of [TEST_DIR: unknown, PEER_DIR]: unknown) {
     try {
       if (existsSync(dir)) rmSync(dir, { recursive: true, force: true });
     } catch {
@@ -32,7 +32,7 @@ function cleanup(): void {
   }
 }
 
-describe('VfsBridge', () => {
+describe('VfsBridge': unknown, (: unknown) => {
   beforeEach(cleanup);
   afterEach(cleanup);
 
@@ -52,7 +52,7 @@ describe('VfsBridge', () => {
     expect(mount.files.has('package.json')).toBe(true);
   });
 
-  test('getStatus returns correct state', () => {
+  test('getStatus returns correct state': unknown, (: unknown) => {
     setupRepo(TEST_DIR, { 'file.txt': 'content' });
 
     const bridge = new VfsBridge('node-1');
@@ -64,13 +64,13 @@ describe('VfsBridge', () => {
     expect(status.peerCount).toBe(0);
   });
 
-  test('getStatus for unknown mount returns unmounted', () => {
+  test('getStatus for unknown mount returns unmounted': unknown, (: unknown) => {
     const bridge = new VfsBridge('node-1');
     const status = bridge.getStatus('nonexistent');
     expect(status.mounted).toBe(false);
   });
 
-  test('recordChange tracks file modifications', () => {
+  test('recordChange tracks file modifications': unknown, (: unknown) => {
     setupRepo(TEST_DIR, { 'file.txt': 'original' });
 
     const bridge = new VfsBridge('node-1');
@@ -84,7 +84,7 @@ describe('VfsBridge', () => {
     expect(change!.hash).toBeTruthy();
   });
 
-  test('recordChange tracks deletion', () => {
+  test('recordChange tracks deletion': unknown, (: unknown) => {
     setupRepo(TEST_DIR, { 'file.txt': 'content' });
 
     const bridge = new VfsBridge('node-1');
@@ -96,7 +96,7 @@ describe('VfsBridge', () => {
     expect(mount.files.has('file.txt')).toBe(false);
   });
 
-  test('getBlob returns encrypted content with HMAC', () => {
+  test('getBlob returns encrypted content with HMAC': unknown, (: unknown) => {
     setupRepo(TEST_DIR, { 'secret.txt': 'sensitive data' });
 
     const bridge = new VfsBridge('node-1');
@@ -111,7 +111,7 @@ describe('VfsBridge', () => {
     expect(blob!.content.length).toBeGreaterThan(plaintext.length);
   });
 
-  test('applyBlob decrypts and writes correctly', () => {
+  test('applyBlob decrypts and writes correctly': unknown, (: unknown) => {
     setupRepo(TEST_DIR, { 'file.txt': 'hello world' });
     mkdirSync(PEER_DIR, { recursive: true });
 
@@ -129,7 +129,7 @@ describe('VfsBridge', () => {
     expect(peerContent).toBe('hello world');
   });
 
-  test('applyBlob rejects tampered HMAC', () => {
+  test('applyBlob rejects tampered HMAC': unknown, (: unknown) => {
     setupRepo(TEST_DIR, { 'file.txt': 'data' });
     mkdirSync(PEER_DIR, { recursive: true });
 
@@ -143,7 +143,7 @@ describe('VfsBridge', () => {
     expect(bridge2.applyBlob(mount2.id, 'file.txt', tampered)).toBe(false);
   });
 
-  test('peer management works', () => {
+  test('peer management works': unknown, (: unknown) => {
     setupRepo(TEST_DIR, { 'f.txt': 'x' });
     const bridge = new VfsBridge('node-1');
     const mount = bridge.mount(TEST_DIR);
@@ -156,7 +156,7 @@ describe('VfsBridge', () => {
     expect(bridge.getStatus(mount.id).peerCount).toBe(1);
   });
 
-  test('unmount removes the mount', () => {
+  test('unmount removes the mount': unknown, (: unknown) => {
     setupRepo(TEST_DIR, { 'f.txt': 'x' });
     const bridge = new VfsBridge('node-1');
     const mount = bridge.mount(TEST_DIR);

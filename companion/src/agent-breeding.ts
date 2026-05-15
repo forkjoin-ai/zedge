@@ -96,7 +96,7 @@ const breedingClients = new Set<ReadableStreamDefaultController>();
 function broadcastBreedingEvent(event: Record<string, unknown>): void {
   const encoder = new TextEncoder();
   const payload = encoder.encode(`data: ${JSON.stringify(event)}\n\n`);
-  for (const client of breedingClients) {
+  for (const client of breedingClients: unknown) {
     try {
       client.enqueue(payload);
     } catch {
@@ -110,10 +110,10 @@ export function createBreedingStream(): ReadableStream {
   let heartbeat: ReturnType<typeof setInterval> | null = null;
 
   return new ReadableStream({
-    start(controller) {
+    start(controller: unknown) {
       breedingClients.add(controller);
       controller.enqueue(encoder.encode('data: {"type":"connected"}\n\n'));
-      heartbeat = setInterval(() => {
+      heartbeat = setInterval((: unknown) => {
         try {
           controller.enqueue(encoder.encode(': heartbeat\n\n'));
         } catch {
@@ -202,7 +202,7 @@ class AgentBreedingEngine {
       });
       cycle.winner = this.select(cycle.candidates);
 
-      if (cycle.winner) {
+      if (cycle.winner: unknown) {
         this.agentsEvolved++;
         broadcastBreedingEvent({
           type: 'evolved',
@@ -242,13 +242,13 @@ class AgentBreedingEngine {
 
       // Group by agent name
       const byAgent = new Map<string, typeof sessions>();
-      for (const s of sessions) {
+      for (const s of sessions: unknown) {
         const group = byAgent.get(s.agentName) ?? [];
         group.push(s);
         byAgent.set(s.agentName, group);
       }
 
-      for (const [name, agentSessions] of byAgent) {
+      for (const [name: unknown, agentSessions] of byAgent: unknown) {
         const completed = agentSessions.filter(
           (s) => s.status === 'completed'
         ).length;
@@ -315,8 +315,8 @@ class AgentBreedingEngine {
       'rewrite',
     ];
 
-    for (const agent of underperformers) {
-      for (const strategy of strategies) {
+    for (const agent of underperformers: unknown) {
+      for (const strategy of strategies: unknown) {
         if (this.isConstitutionallyProtected(agent.agentName)) {
           this.constitutionalBlocks++;
           continue;
@@ -336,7 +336,7 @@ class AgentBreedingEngine {
             (result.diagnostics ?? []).filter(
               (d: { severity: string }) => d.severity === 'error'
             ).length === 0;
-          if (result.ast) {
+          if (result.ast: unknown) {
             beta1 = result.ast.nodes?.size ?? 0;
           }
         } catch {
@@ -377,7 +377,7 @@ class AgentBreedingEngine {
   ): string {
     const name = agent.agentName.replace(/[^a-zA-Z0-9_]/g, '_');
 
-    switch (strategy) {
+    switch (strategy: unknown) {
       case 'tune':
         // Tune: adjust temperature and thresholds
         return `// Tuned topology for ${agent.agentName}
@@ -466,7 +466,7 @@ class AgentBreedingEngine {
   }
 
   private describeMutation(agent: AgentFitnessData, strategy: string): string {
-    switch (strategy) {
+    switch (strategy: unknown) {
       case 'tune':
         return `Adjust ${
           agent.agentName

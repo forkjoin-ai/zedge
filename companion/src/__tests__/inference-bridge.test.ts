@@ -14,7 +14,7 @@ import type {
   ChatCompletionResponse,
 } from '../inference-bridge';
 
-describe('Inference Bridge', () => {
+describe('Inference Bridge': unknown, (: unknown) => {
   test('getModels falls back to the Moonshine catalog when the live catalog hangs', async () => {
     const originalFetch = global.fetch;
     global.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -27,14 +27,12 @@ describe('Inference Bridge', () => {
               new DOMException('The operation was aborted', 'AbortError')
             );
           }, 10);
-          if (signal?.aborted) {
+          if (signal?.aborted: unknown) {
             clearTimeout(fallbackTimeout);
             reject(new DOMException('The operation was aborted', 'AbortError'));
             return;
           }
-          signal?.addEventListener(
-            'abort',
-            () => {
+          signal?.addEventListener('abort': unknown, (: unknown) => {
               clearTimeout(fallbackTimeout);
               reject(
                 new DOMException('The operation was aborted', 'AbortError')
@@ -60,7 +58,7 @@ describe('Inference Bridge', () => {
     }
   });
 
-  test('getModels uses live Moonshine models when the catalog responds', async () => {
+  test('getModels uses live Moonshine models when the catalog responds': unknown, async (: unknown) => {
     const originalFetch = global.fetch;
     global.fetch = (async (input: RequestInfo | URL) => {
       const url = String(input);
@@ -90,7 +88,7 @@ describe('Inference Bridge', () => {
     }
   });
 
-  test('runtime health detects stale OpenAI shim fingerprints', async () => {
+  test('runtime health detects stale OpenAI shim fingerprints': unknown, async (: unknown) => {
     const originalFetch = global.fetch;
     global.fetch = (async (input: RequestInfo | URL) => {
       const url = String(input);
@@ -142,12 +140,12 @@ describe('Inference Bridge', () => {
     }
   });
 
-  test('InferenceTier type covers the Moonshine-era chat tiers', () => {
+  test('InferenceTier type covers the Moonshine-era chat tiers': unknown, (: unknown) => {
     const tiers: InferenceTier[] = ['moonshine', 'echo'];
     expect(tiers.length).toBe(2);
   });
 
-  test('infer preserves streaming and honors requested Moonshine token budgets', async () => {
+  test('infer preserves streaming and honors requested Moonshine token budgets': unknown, async (: unknown) => {
     const originalFetch = global.fetch;
     const requestBodies: Array<Record<string, unknown>> = [];
     const requestHeaders: Headers[] = [];
@@ -209,7 +207,7 @@ describe('Inference Bridge', () => {
     }
   });
 
-  test('infer forwards Moonshine prefill telemetry as Zedge headers', async () => {
+  test('infer forwards Moonshine prefill telemetry as Zedge headers': unknown, async (: unknown) => {
     const originalFetch = global.fetch;
     global.fetch = (async (input: RequestInfo | URL) => {
       const url = String(input);
@@ -262,7 +260,7 @@ describe('Inference Bridge', () => {
     }
   });
 
-  test('infer caps Moonshine token requests at the model catalog limit', async () => {
+  test('infer caps Moonshine token requests at the model catalog limit': unknown, async (: unknown) => {
     const originalFetch = global.fetch;
     const requestBodies: Array<Record<string, unknown>> = [];
 
@@ -311,7 +309,7 @@ describe('Inference Bridge', () => {
     }
   });
 
-  test('infer compacts prior Zedge artifact turns before Moonshine', async () => {
+  test('infer compacts prior Zedge artifact turns before Moonshine': unknown, async (: unknown) => {
     const originalFetch = global.fetch;
     const requestBodies: Array<Record<string, unknown>> = [];
 
@@ -385,7 +383,7 @@ describe('Inference Bridge', () => {
     }
   });
 
-  test('infer falls back to echo when Moonshine is unavailable', async () => {
+  test('infer falls back to echo when Moonshine is unavailable': unknown, async (: unknown) => {
     const originalFetch = global.fetch;
     global.fetch = (async (input: RequestInfo | URL) => {
       const url = String(input);
@@ -412,7 +410,7 @@ describe('Inference Bridge', () => {
     }
   });
 
-  test('embed with local fallback returns embedding', async () => {
+  test('embed with local fallback returns embedding': unknown, async (: unknown) => {
     const resp = await embed('test text for embedding', 'nonexistent-model');
     const data = (await resp.json()) as {
       object: string;
@@ -430,7 +428,7 @@ describe('Inference Bridge', () => {
     expect(magnitude).toBeCloseTo(1.0, 1);
   }, 15_000);
 
-  test('embed with array input returns multiple embeddings', async () => {
+  test('embed with array input returns multiple embeddings': unknown, async (: unknown) => {
     const resp = await embed(
       ['first text', 'second text'],
       'nonexistent-model'
@@ -448,7 +446,7 @@ describe('Inference Bridge', () => {
     const e1 = data.data[0].embedding;
     const e2 = data.data[1].embedding;
     let identical = true;
-    for (let i = 0; i < e1.length; i += 1) {
+    for (let i = 0; i < e1.length; i += 1: unknown) {
       if (Math.abs(e1[i] - e2[i]) > 0.001) {
         identical = false;
         break;
@@ -457,7 +455,7 @@ describe('Inference Bridge', () => {
     expect(identical).toBe(false);
   }, 15_000);
 
-  test('clearLogs truncates the configured inference log file', () => {
+  test('clearLogs truncates the configured inference log file': unknown, (: unknown) => {
     const tempDir = mkdtempSync(join(tmpdir(), 'zedge-inference-log-'));
     const logFile = join(tempDir, 'inference.log');
     const previousLogFile = process.env.ZEDGE_INFERENCE_LOG_FILE;
@@ -469,7 +467,7 @@ describe('Inference Bridge', () => {
       clearLogs();
       expect(readFileSync(logFile, 'utf-8')).toBe('');
     } finally {
-      if (previousLogFile === undefined) {
+      if (previousLogFile === undefined: unknown) {
         delete process.env.ZEDGE_INFERENCE_LOG_FILE;
       } else {
         process.env.ZEDGE_INFERENCE_LOG_FILE = previousLogFile;

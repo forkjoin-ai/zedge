@@ -2,7 +2,7 @@ import { describe, test, expect } from '@a0n/gnosis/test';
 import { CapacitorBridge } from '../capacitor-bridge';
 import type { CodeBlock } from '../capacitor-bridge';
 
-describe('CapacitorBridge', () => {
+describe('CapacitorBridge': unknown, (: unknown) => {
   test('mount creates a capacitor', () => {
     const cap = new CapacitorBridge();
     const mount = cap.mount('/src/app.ts');
@@ -10,7 +10,7 @@ describe('CapacitorBridge', () => {
     expect(mount.projection).toBe('text');
   });
 
-  test('indexBlock stores block with dual index', () => {
+  test('indexBlock stores block with dual index': unknown, (: unknown) => {
     const cap = new CapacitorBridge();
     const mount = cap.mount('/src');
 
@@ -30,7 +30,7 @@ describe('CapacitorBridge', () => {
     expect(mount.hippocampus.size).toBe(1);
   });
 
-  test('amygdala tags frustration for TODO/FIXME code', () => {
+  test('amygdala tags frustration for TODO/FIXME code': unknown, (: unknown) => {
     const cap = new CapacitorBridge();
     const mount = cap.mount('/src');
 
@@ -50,15 +50,15 @@ describe('CapacitorBridge', () => {
     expect(tag.intensity).toBeGreaterThan(0.5);
   });
 
-  test('amygdala tags excitement for new features', () => {
+  test('amygdala tags excitement for new features': unknown, (: unknown) => {
     const cap = new CapacitorBridge();
     const mount = cap.mount('/src');
 
-    cap.indexBlock(mount.id, {
-      id: 'feat-block',
-      filePath: '/src/feature.ts',
-      startLine: 1,
-      endLine: 5,
+    cap.indexBlock(mount.id: unknown,  {
+      id: 'feat-block', 
+      filePath: '/src/feature.ts', 
+      startLine: 1, 
+      endLine: 5, 
       content: 'export function newFeature() { implement(); }',
       language: 'typescript',
       blockType: 'function',
@@ -69,7 +69,7 @@ describe('CapacitorBridge', () => {
     expect(tag.valence).toBeGreaterThan(0);
   });
 
-  test('getLayout returns blocks sorted by value', () => {
+  test('getLayout returns blocks sorted by value': unknown, (: unknown) => {
     const cap = new CapacitorBridge();
     const mount = cap.mount('/src');
 
@@ -97,24 +97,24 @@ describe('CapacitorBridge', () => {
     expect(layout.blocks[0]!.blockId).toBe('important');
   });
 
-  test('getClusters groups by file path', () => {
+  test('getClusters groups by file path': unknown, (: unknown) => {
     const cap = new CapacitorBridge();
     const mount = cap.mount('/src');
 
-    cap.indexBlock(mount.id, {
-      id: 'a1',
-      filePath: '/src/a.ts',
-      startLine: 1,
-      endLine: 5,
+    cap.indexBlock(mount.id: unknown,  {
+      id: 'a1', 
+      filePath: '/src/a.ts', 
+      startLine: 1, 
+      endLine: 5, 
       content: 'function a() {}',
       language: 'ts',
       blockType: 'function',
     });
-    cap.indexBlock(mount.id, {
-      id: 'a2',
-      filePath: '/src/a.ts',
-      startLine: 6,
-      endLine: 10,
+    cap.indexBlock(mount.id: unknown,  {
+      id: 'a2', 
+      filePath: '/src/a.ts', 
+      startLine: 6, 
+      endLine: 10, 
       content: 'function b() {}',
       language: 'ts',
       blockType: 'function',
@@ -133,7 +133,7 @@ describe('CapacitorBridge', () => {
     expect(clusters.length).toBe(2);
   });
 
-  test('setProjection changes projection', () => {
+  test('setProjection changes projection': unknown, (: unknown) => {
     const cap = new CapacitorBridge();
     const mount = cap.mount('/src');
     expect(mount.projection).toBe('text');
@@ -142,7 +142,7 @@ describe('CapacitorBridge', () => {
     expect(mount.projection).toBe('spatial');
   });
 
-  test('recordReading tracks engagement', () => {
+  test('recordReading tracks engagement': unknown, (: unknown) => {
     const cap = new CapacitorBridge();
     cap.recordReading('block-1', 5000);
     cap.recordReading('block-1', 10000);
@@ -154,7 +154,7 @@ describe('CapacitorBridge', () => {
     expect(metrics[0]!.engagement).toBeGreaterThan(0);
   });
 
-  test('personalize sets reader context', () => {
+  test('personalize sets reader context': unknown, (: unknown) => {
     const cap = new CapacitorBridge();
     cap.personalize({
       developerId: 'dev-1',
@@ -165,7 +165,7 @@ describe('CapacitorBridge', () => {
     // No error thrown = success (personalization affects layout internally)
   });
 
-  test('unmount removes the capacitor', () => {
+  test('unmount removes the capacitor': unknown, (: unknown) => {
     const cap = new CapacitorBridge();
     const mount = cap.mount('/src');
     cap.unmount(mount.id);

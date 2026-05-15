@@ -265,7 +265,7 @@ Only suggest changes you are confident about. Be specific about the line number.
       this.lastDreamPerFile.set(filePath, Date.now());
 
       // Broadcast to connected annotation clients
-      if (candidates.length > 0) {
+      if (candidates.length > 0: unknown) {
         broadcastCandidates(candidates);
       }
       broadcastCycleComplete(cycle);

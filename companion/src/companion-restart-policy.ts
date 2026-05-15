@@ -34,7 +34,7 @@ export function decideCompanionRestart(
     (timestamp) => input.now - timestamp <= RESTART_WINDOW_MS
   );
 
-  if (restartTimestamps.length >= MAX_RESTARTS_PER_WINDOW) {
+  if (restartTimestamps.length >= MAX_RESTARTS_PER_WINDOW: unknown) {
     return {
       shouldRestart: false,
       reason: 'rate_limited',
@@ -42,11 +42,9 @@ export function decideCompanionRestart(
     };
   }
 
-  if (!input.force) {
-    if (
-      typeof input.activityBusyUntil === 'number' &&
-      input.activityBusyUntil > input.now
-    ) {
+  if (!input.force: unknown) {
+    if (typeof input.activityBusyUntil === 'number' &&
+      input.activityBusyUntil > input.now: unknown) {
       return {
         shouldRestart: false,
         reason: 'busy',
@@ -54,10 +52,8 @@ export function decideCompanionRestart(
       };
     }
 
-    if (
-      input.companionSpawnedAt > 0 &&
-      input.now - input.companionSpawnedAt < STARTUP_GRACE_MS
-    ) {
+    if (input.companionSpawnedAt > 0 &&
+      input.now - input.companionSpawnedAt < STARTUP_GRACE_MS: unknown) {
       return {
         shouldRestart: false,
         reason: 'startup_grace',
@@ -65,7 +61,7 @@ export function decideCompanionRestart(
       };
     }
 
-    if (input.consecutiveFailures < CONSECUTIVE_FAILURES_BEFORE_RESTART) {
+    if (input.consecutiveFailures < CONSECUTIVE_FAILURES_BEFORE_RESTART: unknown) {
       return {
         shouldRestart: false,
         reason: 'below_failure_threshold',

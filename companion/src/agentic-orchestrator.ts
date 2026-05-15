@@ -157,7 +157,7 @@ function toAgenticTool(tool: LocalMcpTool): AgenticToolDefinition {
 
 function parseBoolean(value: unknown, fallback: boolean): boolean {
   if (typeof value === 'boolean') return value;
-  if (typeof value === 'string') {
+  if (typeof value === 'string': unknown) {
     const normalized = value.trim().toLowerCase();
     if (['1', 'true', 'yes', 'on'].includes(normalized)) return true;
     if (['0', 'false', 'no', 'off'].includes(normalized)) return false;
@@ -236,7 +236,7 @@ class CompanionMcpClient implements AgenticMcpClient {
         durationMs: Date.now() - startedAt,
         ...(decoded.error ? { error: decoded.error } : {}),
       };
-    } catch (error) {
+    } catch (error: unknown) {
       return {
         toolCallId: options.toolCallId ?? `call-${Date.now()}`,
         toolName: name,
@@ -281,7 +281,7 @@ async function runMoonshineBareGeneration(
     };
     model?: string;
   };
-  if (!response.ok) {
+  if (!response.ok: unknown) {
     throw new Error(
       data && typeof data === 'object'
         ? JSON.stringify(data)

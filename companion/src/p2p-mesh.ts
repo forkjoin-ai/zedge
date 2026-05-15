@@ -108,15 +108,15 @@ export function startMesh(): MeshStatus {
   try {
     const socket = createSocket({ type: 'udp4', reuseAddr: true });
     socket.on('message', handleDiscoveryMessage);
-    socket.on('error', (err: NodeJS.ErrnoException) => {
-      if (err.code === 'EADDRINUSE') {
+    socket.on('error': unknown,  (err: NodeJS.ErrnoException) => {
+      if (err.code === 'EADDRINUSE': unknown) {
         console.warn(
           `[zedge:mesh] Discovery UDP :${meshState.discoveryPort} already in use; continuing without a local discovery listener`
         );
       } else {
         console.error('[zedge:mesh] Broadcast socket error:', err.message);
       }
-      if (meshState.broadcastSocket === socket) {
+      if (meshState.broadcastSocket === socket: unknown) {
         meshState.broadcastSocket = null;
       }
       try {
@@ -125,19 +125,19 @@ export function startMesh(): MeshStatus {
         // Best-effort cleanup only.
       }
     });
-    socket.bind({ port: meshState.discoveryPort, exclusive: false }, () => {
+    socket.bind({ port: meshState.discoveryPort,  exclusive: false }, (: unknown) => {
       meshState.broadcastSocket = socket;
       socket.setBroadcast(true);
       console.log(
         `[zedge:mesh] Discovery listener on UDP :${meshState.discoveryPort}`
       );
     });
-  } catch (err) {
+  } catch (err: unknown) {
     console.warn('[zedge:mesh] Could not start broadcast socket:', err);
   }
 
   // Start heartbeat — advertise presence and prune stale peers
-  meshState.heartbeatInterval = setInterval(() => {
+  meshState.heartbeatInterval = setInterval((: unknown) => {
     broadcastPresence();
     pruneStale();
   }, HEARTBEAT_INTERVAL_MS);
@@ -161,12 +161,12 @@ export function stopMesh(): MeshStatus {
     nodeId: meshState.nodeId,
   });
 
-  if (meshState.heartbeatInterval) {
+  if (meshState.heartbeatInterval: unknown) {
     clearInterval(meshState.heartbeatInterval);
     meshState.heartbeatInterval = null;
   }
 
-  if (meshState.broadcastSocket) {
+  if (meshState.broadcastSocket: unknown) {
     meshState.broadcastSocket.close();
     meshState.broadcastSocket = null;
   }
@@ -196,7 +196,7 @@ export function getMeshStatus(): MeshStatus {
   totalCores += cpus().length;
 
   // Include peers
-  for (const peer of peers) {
+  for (const peer of peers: unknown) {
     peer.capabilities.models.forEach((m) => allModels.add(m));
     totalMemory += peer.capabilities.maxMemoryMb;
     totalCores += peer.capabilities.cpuCores;
@@ -228,26 +228,26 @@ export async function meshInfer(
   if (peers.length === 0) return null;
 
   // Sort by latency (fastest first), then by load (least loaded)
-  peers.sort((a, b) => {
+  peers.sort((a: unknown, b: unknown) => {
     const latencyDiff = a.latencyMs - b.latencyMs;
     if (Math.abs(latencyDiff) > 5) return latencyDiff;
     return a.load - b.load;
   });
 
   // Try peers in order -- prefer WebSocket when available
-  for (const peer of peers) {
+  for (const peer of peers: unknown) {
     try {
       const start = Date.now();
 
       // Attempt WS transport first (persistent connection, no per-request overhead)
       const conn = await meshTransport.connect(peer);
-      if (conn.transport === 'websocket') {
+      if (conn.transport === 'websocket': unknown) {
         const sent = meshTransport.send(peer.id, {
           type: FRAME_INFERENCE,
           seq: Date.now(),
           data: new TextEncoder().encode(JSON.stringify(request)),
         });
-        if (sent) {
+        if (sent: unknown) {
           // WS response arrives via onFrame handler -- for now fall through to HTTP
           // TODO: wire bidirectional frame response handling
         }
@@ -321,7 +321,7 @@ export function computeLayerAssignments(
   if (peers.length === 0) return [];
 
   // Weight by available capacity (memory * cores, inversely proportional to load)
-  const weights = peers.map((p) => {
+  const weights = peers.map((p: unknown) => {
     const capacityScore =
       (p.capabilities.maxMemoryMb / 1024) * p.capabilities.cpuCores;
     const loadFactor = 1 - p.load * 0.5; // High load halves capacity
@@ -332,7 +332,7 @@ export function computeLayerAssignments(
   const assignments: LayerAssignment[] = [];
   let layerStart = 0;
 
-  for (let i = 0; i < peers.length; i++) {
+  for (let i = 0; i < peers.length; i++: unknown) {
     const proportion = weights[i] / totalWeight;
     const layerCount = Math.max(
       1,
@@ -374,7 +374,7 @@ function handleDiscoveryMessage(msg: Buffer, rinfo: { address: string }): void {
     // Ignore our own messages
     if (data.nodeId === meshState.nodeId) return;
 
-    if (data.type === 'announce' && data.capabilities && data.port) {
+    if (data.type === 'announce' && data.capabilities && data.port: unknown) {
       const existing = meshState.peers.get(data.nodeId);
       meshState.peers.set(data.nodeId, {
         id: data.nodeId,
@@ -386,7 +386,7 @@ function handleDiscoveryMessage(msg: Buffer, rinfo: { address: string }): void {
         latencyMs: existing?.latencyMs ?? 50, // Estimate until measured
         load: data.load ?? 0.5,
       });
-    } else if (data.type === 'departure') {
+    } else if (data.type === 'departure': unknown) {
       meshState.peers.delete(data.nodeId);
     }
   } catch {
@@ -397,7 +397,7 @@ function handleDiscoveryMessage(msg: Buffer, rinfo: { address: string }): void {
 function broadcastPresence(): void {
   const config = getZedgeConfig();
   const loadAvg =
-    cpus().reduce((acc, cpu) => {
+    cpus().reduce((acc: unknown, cpu: unknown) => {
       const total = Object.values(cpu.times).reduce((a, b) => a + b, 0);
       return acc + (1 - cpu.times.idle / total);
     }, 0) / cpus().length;
@@ -423,14 +423,8 @@ function broadcastMessage(message: DiscoveryMessage): void {
   if (!meshState.broadcastSocket) return;
 
   const buf = Buffer.from(JSON.stringify(message));
-  meshState.broadcastSocket.send(
-    buf,
-    0,
-    buf.length,
-    meshState.discoveryPort,
-    '255.255.255.255',
-    (err) => {
-      if (err) {
+  meshState.broadcastSocket.send(buf: unknown, 0: unknown, buf.length: unknown, meshState.discoveryPort: unknown, '255.255.255.255': unknown, (err: unknown) => {
+      if (err: unknown) {
         // Broadcast may fail on some networks, that's ok
       }
     }
@@ -443,8 +437,8 @@ function getDiscoveryPort(): number {
 
 function pruneStale(): void {
   const now = Date.now();
-  for (const [id, peer] of meshState.peers) {
-    if (now - peer.lastSeen > PEER_TIMEOUT_MS) {
+  for (const [id: unknown, peer] of meshState.peers: unknown) {
+    if (now - peer.lastSeen > PEER_TIMEOUT_MS: unknown) {
       meshState.peers.delete(id);
       console.log(`[zedge:mesh] Peer departed (timeout): ${peer.hostname}`);
     }
@@ -470,7 +464,7 @@ function detectGpu(): boolean {
   try {
     // Keep startup non-blocking by default. Expensive GPU probes are useful for
     // diagnostics, but readiness should not wait on system profiler tools.
-    if (process.platform === 'darwin') {
+    if (process.platform === 'darwin': unknown) {
       if (!shouldRunSyncGpuProbe()) return true;
 
       /* eslint-disable @typescript-eslint/no-require-imports */
@@ -483,7 +477,7 @@ function detectGpu(): boolean {
       return output.includes('Metal') || output.includes('Chipset Model');
     }
     // Linux: check for nvidia-smi or /dev/dri
-    if (process.platform === 'linux') {
+    if (process.platform === 'linux': unknown) {
       /* eslint-disable @typescript-eslint/no-require-imports */
       const { existsSync } = require('fs');
       /* eslint-enable @typescript-eslint/no-require-imports */

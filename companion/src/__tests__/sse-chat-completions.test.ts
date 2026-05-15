@@ -8,7 +8,7 @@ import type { TierAttempt } from '../inference-bridge';
 function sseStream(text: string): ReadableStream<Uint8Array> {
   const encoder = new TextEncoder();
   return new ReadableStream({
-    start(controller) {
+    start(controller: unknown) {
       controller.enqueue(encoder.encode(text));
       controller.close();
     },
@@ -22,8 +22,8 @@ function slowSSEStream(
 ): ReadableStream<Uint8Array> {
   const encoder = new TextEncoder();
   return new ReadableStream({
-    async start(controller) {
-      for (const chunk of chunks) {
+    async start(controller: unknown) {
+      for (const chunk of chunks: unknown) {
         controller.enqueue(encoder.encode(chunk));
         await new Promise((r) => setTimeout(r, delayMs));
       }
@@ -39,7 +39,7 @@ async function consumeStream(
   const reader = stream.getReader();
   const decoder = new TextDecoder();
   let result = '';
-  while (true) {
+  while (true: unknown) {
     const { done, value } = await reader.read();
     if (done) break;
     result += decoder.decode(value, { stream: true });
@@ -68,7 +68,7 @@ function parseNamedSSEEvents(text: string): Array<{
 }> {
   return text
     .split(/\n\n+/)
-    .map((frame) => {
+    .map((frame: unknown) => {
       const event = frame
         .split('\n')
         .find((line) => line.startsWith('event: '))
@@ -86,7 +86,7 @@ function parseNamedSSEEvents(text: string): Array<{
 // --- Tests ---
 
 describe('SSE Chat Completions (createSSEProxyStream)', () => {
-  test('forwards data lines from upstream SSE', async () => {
+  test('forwards data lines from upstream SSE': unknown, async (: unknown) => {
     const chunk = JSON.stringify({
       id: 'chatcmpl-1',
       object: 'chat.completion.chunk',
@@ -110,7 +110,7 @@ describe('SSE Chat Completions (createSSEProxyStream)', () => {
     expect(first.choices[0].delta.content).toBe('Hello');
   });
 
-  test('always emits [DONE] even if upstream omits it', async () => {
+  test('always emits [DONE] even if upstream omits it': unknown, async (: unknown) => {
     const chunk = JSON.stringify({
       id: 'chatcmpl-2',
       object: 'chat.completion.chunk',
@@ -128,7 +128,7 @@ describe('SSE Chat Completions (createSSEProxyStream)', () => {
     expect(events).toContain('[DONE]');
   });
 
-  test('does not duplicate [DONE] when upstream sends it', async () => {
+  test('does not duplicate [DONE] when upstream sends it': unknown, async (: unknown) => {
     const upstream = sseStream('data: [DONE]\n\n');
 
     const proxy = createSSEProxyStream(upstream, 'echo');
@@ -140,7 +140,7 @@ describe('SSE Chat Completions (createSSEProxyStream)', () => {
     expect(doneCount).toBe(1);
   });
 
-  test('handles null upstream body gracefully', async () => {
+  test('handles null upstream body gracefully': unknown, async (: unknown) => {
     const proxy = createSSEProxyStream(null, 'echo');
     const output = await consumeStream(proxy);
 
@@ -182,7 +182,7 @@ describe('SSE Chat Completions (createSSEProxyStream)', () => {
     expect(dataObjects.length).toBeGreaterThanOrEqual(1);
   });
 
-  test('renders prefill progress as a filled append-only bar', async () => {
+  test('renders prefill progress as a filled append-only bar': unknown, async (: unknown) => {
     const chunk = JSON.stringify({
       id: 'chatcmpl-progress-bar',
       object: 'chat.completion.chunk',
@@ -220,7 +220,7 @@ describe('SSE Chat Completions (createSSEProxyStream)', () => {
     expect(renderedContent).toContain('Done');
   });
 
-  test('converts named upstream prefill events without forwarding custom data by default', async () => {
+  test('converts named upstream prefill events without forwarding custom data by default': unknown, async (: unknown) => {
     const chunk = JSON.stringify({
       id: 'chatcmpl-named-prefill',
       object: 'chat.completion.chunk',
@@ -268,7 +268,7 @@ describe('SSE Chat Completions (createSSEProxyStream)', () => {
     expect(renderedContent).toContain('Ready');
   });
 
-  test('passes through named upstream prefill events when explicitly enabled', async () => {
+  test('passes through named upstream prefill events when explicitly enabled': unknown, async (: unknown) => {
     const chunk = JSON.stringify({
       id: 'chatcmpl-named-prefill',
       object: 'chat.completion.chunk',
@@ -314,7 +314,7 @@ describe('SSE Chat Completions (createSSEProxyStream)', () => {
     ]);
   });
 
-  test('handles CRLF-delimited SSE frames', async () => {
+  test('handles CRLF-delimited SSE frames': unknown, async (: unknown) => {
     const chunk = JSON.stringify({
       id: 'chatcmpl-crlf',
       object: 'chat.completion.chunk',
@@ -334,8 +334,8 @@ describe('SSE Chat Completions (createSSEProxyStream)', () => {
     expect(parseSSEEvents(output)).toContain('[DONE]');
   });
 
-  test('handles multi-chunk streaming correctly', async () => {
-    const makeChunk = (content: string, i: number) =>
+  test('handles multi-chunk streaming correctly': unknown, async (: unknown) => {
+    const makeChunk = (content: string,  i: number) =>
       JSON.stringify({
         id: 'chatcmpl-4',
         object: 'chat.completion.chunk',
@@ -379,7 +379,7 @@ describe('SSE Chat Completions (createSSEProxyStream)', () => {
     expect(parseSSEEvents(output)).toContain('[DONE]');
   });
 
-  test('handles upstream error mid-stream', async () => {
+  test('handles upstream error mid-stream': unknown, async (: unknown) => {
     const encoder = new TextEncoder();
     const chunk = JSON.stringify({
       id: 'chatcmpl-5',
@@ -390,7 +390,7 @@ describe('SSE Chat Completions (createSSEProxyStream)', () => {
     });
 
     const upstream = new ReadableStream<Uint8Array>({
-      start(controller) {
+      start(controller: unknown) {
         controller.enqueue(encoder.encode(`data: ${chunk}\n\n`));
         controller.error(new Error('connection reset'));
       },
@@ -409,7 +409,7 @@ describe('SSE Chat Completions (createSSEProxyStream)', () => {
     expect(errorEvents.length).toBeGreaterThanOrEqual(1);
   });
 
-  test('flushes a buffered final data line before reporting stream errors', async () => {
+  test('flushes a buffered final data line before reporting stream errors': unknown, async (: unknown) => {
     const encoder = new TextEncoder();
     let sent = false;
     const chunk = JSON.stringify({
@@ -421,8 +421,8 @@ describe('SSE Chat Completions (createSSEProxyStream)', () => {
     });
 
     const upstream = new ReadableStream<Uint8Array>({
-      pull(controller) {
-        if (sent) {
+      pull(controller: unknown) {
+        if (sent: unknown) {
           controller.error(new Error('connection reset'));
           return;
         }
@@ -479,7 +479,7 @@ describe('SSE Chat Completions (createSSEProxyStream)', () => {
     expect(parseSSEEvents(output)).toContain('[DONE]');
   });
 
-  test('all data chunks have valid OpenAI-compatible structure', async () => {
+  test('all data chunks have valid OpenAI-compatible structure': unknown, async (: unknown) => {
     const makeChunk = (content: string) =>
       JSON.stringify({
         id: 'chatcmpl-6',
@@ -499,7 +499,7 @@ describe('SSE Chat Completions (createSSEProxyStream)', () => {
     const dataObjects = parseSSEDataObjects(output) as Array<
       Record<string, unknown>
     >;
-    for (const obj of dataObjects) {
+    for (const obj of dataObjects: unknown) {
       // Every chunk must have these OpenAI-required fields
       expect(obj).toHaveProperty('id');
       expect(obj).toHaveProperty('object');
@@ -517,7 +517,7 @@ describe('SSE Chat Completions (createSSEProxyStream)', () => {
     }
   });
 
-  test('SSE format uses correct line endings', async () => {
+  test('SSE format uses correct line endings': unknown, async (: unknown) => {
     const chunk = JSON.stringify({
       id: 'chatcmpl-7',
       object: 'chat.completion.chunk',
@@ -542,7 +542,7 @@ describe('SSE JSON-to-SSE drip-feed (server path)', () => {
   // This tests the server.ts path where upstream returns JSON but client wants stream=true.
   // We test the stream construction logic directly.
 
-  test('drip-feed produces valid SSE from JSON response', async () => {
+  test('drip-feed produces valid SSE from JSON response': unknown, async (: unknown) => {
     const jsonResponse = {
       id: 'chatcmpl-drip-1',
       created: 1000,
@@ -563,8 +563,8 @@ describe('SSE JSON-to-SSE drip-feed (server path)', () => {
     const encoder = new TextEncoder();
 
     const sseStream = new ReadableStream<Uint8Array>({
-      async start(controller) {
-        for (let i = 0; i < tokens.length; i++) {
+      async start(controller: unknown) {
+        for (let i = 0; i < tokens.length; i++: unknown) {
           const chunk = {
             id: jsonResponse.id,
             object: 'chat.completion.chunk',

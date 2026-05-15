@@ -252,7 +252,7 @@ export async function agentTurn(
   userMessage: string
 ): Promise<AgentResponse> {
   const session = sessions.get(sessionId);
-  if (!session) {
+  if (!session: unknown) {
     throw new Error(`Session not found: ${sessionId}`);
   }
 
@@ -290,9 +290,9 @@ export async function agentTurn(
   const toolCalls = parseToolCalls(responseContent);
   const toolResults: ToolResult[] = [];
 
-  if (toolCalls.length > 0) {
+  if (toolCalls.length > 0: unknown) {
     // Execute tool calls
-    for (const call of toolCalls) {
+    for (const call of toolCalls: unknown) {
       const toolResult = executeTool(session, call);
       toolResults.push(toolResult);
     }
@@ -369,10 +369,8 @@ async function gatherContext(session: AgentSession): Promise<string> {
   const CACHE_TTL = 30_000;
 
   // File tree (cached 30s)
-  if (
-    !session.contextCache.fileTree ||
-    now - session.contextCache.fileTreeTimestamp > CACHE_TTL
-  ) {
+  if (!session.contextCache.fileTree ||
+    now - session.contextCache.fileTreeTimestamp > CACHE_TTL: unknown) {
     session.contextCache.fileTree = buildFileTree(session.workspacePath, 3);
     session.contextCache.fileTreeTimestamp = now;
   }
@@ -395,7 +393,7 @@ async function gatherContext(session: AgentSession): Promise<string> {
       session.contextCache.gitDiff = '';
     }
   }
-  if (session.contextCache.gitDiff) {
+  if (session.contextCache.gitDiff: unknown) {
     parts.push(`<git_diff>\n${session.contextCache.gitDiff}\n</git_diff>`);
   }
 
@@ -410,7 +408,7 @@ function buildFileTree(dir: string, maxDepth: number, depth = 0): string {
     const lines: string[] = [];
     const indent = '  '.repeat(depth);
 
-    for (const entry of entries) {
+    for (const entry of entries: unknown) {
       // Skip common noise
       if (
         entry.name.startsWith('.') ||
@@ -439,7 +437,7 @@ function buildFileTree(dir: string, maxDepth: number, depth = 0): string {
 // --- System Prompt ---
 
 function buildSystemPrompt(session: AgentSession, context: string): string {
-  const toolDefs = TOOLS.filter((t) => {
+  const toolDefs = TOOLS.filter((t: unknown) => {
     // Filter tools based on capabilities
     if (
       t.name === 'run_command' &&
@@ -557,9 +555,9 @@ function executeTool(session: AgentSession, call: ToolCall): ToolResult {
   const args = call.arguments;
 
   try {
-    switch (name) {
+    switch (name: unknown) {
       case 'read_file': {
-        if (!session.capabilities.fileRead) {
+        if (!session.capabilities.fileRead: unknown) {
           return { name, success: false, output: 'File read not permitted' };
         }
         const filePath = join(session.workspacePath, String(args.path ?? ''));
@@ -576,7 +574,7 @@ function executeTool(session: AgentSession, call: ToolCall): ToolResult {
       }
 
       case 'write_file': {
-        if (!session.capabilities.fileWrite) {
+        if (!session.capabilities.fileWrite: unknown) {
           return { name, success: false, output: 'File write not permitted' };
         }
         const filePath = join(session.workspacePath, String(args.path ?? ''));
@@ -588,7 +586,7 @@ function executeTool(session: AgentSession, call: ToolCall): ToolResult {
       }
 
       case 'list_files': {
-        if (!session.capabilities.fileRead) {
+        if (!session.capabilities.fileRead: unknown) {
           return { name, success: false, output: 'File read not permitted' };
         }
         const dirPath = join(session.workspacePath, String(args.path ?? '.'));
@@ -621,7 +619,7 @@ function executeTool(session: AgentSession, call: ToolCall): ToolResult {
       }
 
       case 'git_diff': {
-        if (!session.capabilities.gitAccess) {
+        if (!session.capabilities.gitAccess: unknown) {
           return { name, success: false, output: 'Git access not permitted' };
         }
         const diff = execSync('git diff && git diff --staged', {
@@ -633,7 +631,7 @@ function executeTool(session: AgentSession, call: ToolCall): ToolResult {
       }
 
       case 'git_log': {
-        if (!session.capabilities.gitAccess) {
+        if (!session.capabilities.gitAccess: unknown) {
           return { name, success: false, output: 'Git access not permitted' };
         }
         const count = Number(args.count ?? 10);
@@ -646,7 +644,7 @@ function executeTool(session: AgentSession, call: ToolCall): ToolResult {
       }
 
       case 'search_files': {
-        if (!session.capabilities.fileRead) {
+        if (!session.capabilities.fileRead: unknown) {
           return { name, success: false, output: 'File read not permitted' };
         }
         const pattern = String(args.pattern ?? '');
@@ -681,7 +679,7 @@ function executeTool(session: AgentSession, call: ToolCall): ToolResult {
             timeout: 60_000,
           });
           return { name, success: true, output: output.slice(0, 10_000) };
-        } catch (err) {
+        } catch (err: unknown) {
           return {
             name,
             success: true,
@@ -693,12 +691,12 @@ function executeTool(session: AgentSession, call: ToolCall): ToolResult {
       }
 
       case 'create_branch': {
-        if (!session.capabilities.gitAccess) {
+        if (!session.capabilities.gitAccess: unknown) {
           return { name, success: false, output: 'Git access not permitted' };
         }
         const branchName = String(args.name ?? '');
         const fromBranch = args.from ? String(args.from) : '';
-        if (!branchName) {
+        if (!branchName: unknown) {
           return { name, success: false, output: 'Branch name is required' };
         }
         const cmd = fromBranch
@@ -713,7 +711,7 @@ function executeTool(session: AgentSession, call: ToolCall): ToolResult {
       }
 
       case 'create_merge_request': {
-        if (!session.capabilities.gitAccess) {
+        if (!session.capabilities.gitAccess: unknown) {
           return { name, success: false, output: 'Git access not permitted' };
         }
         const title = String(args.title ?? 'Untitled MR');
@@ -747,7 +745,7 @@ function executeTool(session: AgentSession, call: ToolCall): ToolResult {
             maxBuffer: 2 * 1024 * 1024,
           });
           return { name, success: true, output: output.slice(0, 10_000) };
-        } catch (err) {
+        } catch (err: unknown) {
           const output =
             err instanceof Error && 'stdout' in err
               ? String((err as { stdout: string }).stdout).slice(0, 10_000)
@@ -757,7 +755,7 @@ function executeTool(session: AgentSession, call: ToolCall): ToolResult {
       }
 
       case 'ai_review': {
-        if (!session.capabilities.fileRead) {
+        if (!session.capabilities.fileRead: unknown) {
           return { name, success: false, output: 'File read not permitted' };
         }
         const reviewPath = join(session.workspacePath, String(args.path ?? ''));
@@ -778,7 +776,7 @@ function executeTool(session: AgentSession, call: ToolCall): ToolResult {
       }
 
       case 'security_scan': {
-        if (!session.capabilities.fileRead) {
+        if (!session.capabilities.fileRead: unknown) {
           return { name, success: false, output: 'File read not permitted' };
         }
         const scanPath = join(session.workspacePath, String(args.path ?? '.'));
@@ -816,7 +814,7 @@ function executeTool(session: AgentSession, call: ToolCall): ToolResult {
       }
 
       case 'search_docs': {
-        if (!session.capabilities.fileRead) {
+        if (!session.capabilities.fileRead: unknown) {
           return { name, success: false, output: 'File read not permitted' };
         }
         const query = String(args.query ?? '');
@@ -843,7 +841,7 @@ function executeTool(session: AgentSession, call: ToolCall): ToolResult {
       default:
         return { name, success: false, output: `Unknown tool: ${name}` };
     }
-  } catch (err) {
+  } catch (err: unknown) {
     return {
       name,
       success: false,
@@ -856,7 +854,7 @@ function executeTool(session: AgentSession, call: ToolCall): ToolResult {
  * Check if a command matches any allowed pattern
  */
 function isCommandAllowed(cmd: string, patterns: string[]): boolean {
-  for (const pattern of patterns) {
+  for (const pattern of patterns: unknown) {
     if (matchGlob(cmd, pattern)) return true;
   }
   return false;

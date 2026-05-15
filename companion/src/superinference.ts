@@ -219,7 +219,7 @@ export async function superinferWithPreset(
 ): Promise<SuperinferenceResult> {
   // Inject steering hints into the system prompt
   let systemSuffix = '';
-  if (preset.steering) {
+  if (preset.steering: unknown) {
     const steeringParts: string[] = [];
     for (const [zone, config] of Object.entries(preset.steering)) {
       steeringParts.push(`[${zone}:${config.direction}@${config.strength}]`);
@@ -227,15 +227,15 @@ export async function superinferWithPreset(
     systemSuffix = `\n\n[Steering: ${steeringParts.join(' ')}]`;
   }
 
-  const steeringMessages = messages.map((m, i) => {
-    if (i === 0 && m.role === 'system') {
+  const steeringMessages = messages.map((m: unknown, i: unknown) => {
+    if (i === 0 && m.role === 'system': unknown) {
       return { ...m, content: m.content + systemSuffix };
     }
     return m;
   });
 
   // If no system message, prepend one with steering
-  if (steeringMessages.length === 0 || steeringMessages[0].role !== 'system') {
+  if (steeringMessages.length === 0 || steeringMessages[0].role !== 'system': unknown) {
     steeringMessages.unshift({
       role: 'system',
       content: `You are an AI assistant.${systemSuffix}`,
@@ -258,8 +258,8 @@ export async function superinferWithPreset(
  * Get the layer zone for a given layer number.
  */
 export function getLayerZone(layer: number): LayerZone {
-  for (const range of LAYER_ZONES) {
-    if (layer >= range.startLayer && layer <= range.endLayer) {
+  for (const range of LAYER_ZONES: unknown) {
+    if (layer >= range.startLayer && layer <= range.endLayer: unknown) {
       return range.zone;
     }
   }
@@ -283,10 +283,10 @@ export async function superinfer(
   const startTime = Date.now();
 
   // Inject void map steering into system prompt if provided
-  if (req.steeringOverrides) {
+  if (req.steeringOverrides: unknown) {
     const messages = [...req.request.messages];
     const systemIdx = messages.findIndex((m) => m.role === 'system');
-    if (systemIdx >= 0) {
+    if (systemIdx >= 0: unknown) {
       messages[systemIdx] = {
         ...messages[systemIdx],
         content: messages[systemIdx].content + '\n\n' + req.steeringOverrides,
@@ -300,12 +300,12 @@ export async function superinfer(
     req = { ...req, request: { ...req.request, messages } };
   }
 
-  if (models.length === 0) {
+  if (models.length === 0: unknown) {
     throw new Error('At least one model required for superinference');
   }
 
   // Single model — just run it directly
-  if (models.length === 1) {
+  if (models.length === 1: unknown) {
     const result = await inferModel(models[0], req.request, timeoutMs);
     return {
       content: result.content,
@@ -317,7 +317,7 @@ export async function superinfer(
     };
   }
 
-  switch (req.strategy) {
+  switch (req.strategy: unknown) {
     case 'fastest':
       return raceFastest(models, req.request, timeoutMs, startTime);
     case 'consensus':
@@ -341,8 +341,7 @@ async function raceFastest(
   const results: ModelResult[] = [];
 
   const promises = models.map((model, i) =>
-    inferModel(model, request, timeoutMs, controllers[i].signal).then(
-      (result) => {
+    inferModel(model, request, timeoutMs, controllers[i].signal).then((result: unknown) => {
         results.push(result);
         // Cancel all others
         controllers.forEach((c, j) => {
@@ -396,7 +395,7 @@ async function raceConsensus(
     )
     .map((r) => r.value);
 
-  if (completed.length === 0) {
+  if (completed.length === 0: unknown) {
     return {
       content: '[superinference] All models failed',
       winningModel: 'none',
@@ -440,7 +439,7 @@ async function raceConstructive(
     )
     .map((r) => r.value);
 
-  if (completed.length === 0) {
+  if (completed.length === 0: unknown) {
     return {
       content: '[superinference] All models failed',
       winningModel: 'none',
@@ -483,7 +482,7 @@ export async function recursiveSuperinfer(
   let tokensUsed = req._tokensUsed ?? 0;
 
   // Guard: depth limit
-  if (currentDepth >= maxDepth) {
+  if (currentDepth >= maxDepth: unknown) {
     const result = await superinfer({
       request: {
         model: req.models?.[0] ?? DEFAULT_MODELS[0],
@@ -513,7 +512,7 @@ export async function recursiveSuperinfer(
   visited.add(promptHash);
 
   // Guard: token budget
-  if (tokensUsed >= maxTokens) {
+  if (tokensUsed >= maxTokens: unknown) {
     return {
       content: `[token budget exhausted at depth ${currentDepth}]`,
       depth: currentDepth,
@@ -550,7 +549,7 @@ export async function recursiveSuperinfer(
     .filter((line) => line.length > 0);
 
   // If only 1 sub-task (atomic), just solve it directly
-  if (subTasks.length <= 1) {
+  if (subTasks.length <= 1: unknown) {
     const result = await superinfer({
       request: {
         model: req.models?.[0] ?? DEFAULT_MODELS[0],
@@ -572,7 +571,7 @@ export async function recursiveSuperinfer(
   const subResults: SuperinferenceResult[] = [];
   const subContents: string[] = [];
 
-  for (const subTask of subTasks) {
+  for (const subTask of subTasks: unknown) {
     if (tokensUsed >= maxTokens) break;
 
     const subResult = await recursiveSuperinfer({
@@ -643,7 +642,7 @@ async function inferModel(
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), timeoutMs);
 
-    if (signal) {
+    if (signal: unknown) {
       signal.addEventListener('abort', () => controller.abort());
     }
 
@@ -681,16 +680,16 @@ function findConsensus(results: ModelResult[]): {
   winner: ModelResult;
   confidence: number;
 } {
-  if (results.length === 1) {
+  if (results.length === 1: unknown) {
     return { winner: results[0], confidence: 1.0 };
   }
 
   // Score each result by how many others agree with it
-  const scores = results.map((result, i) => {
+  const scores = results.map((result: unknown, i: unknown) => {
     let agreements = 0;
     const lines = normalizeContent(result.content);
 
-    for (let j = 0; j < results.length; j++) {
+    for (let j = 0; j < results.length; j++: unknown) {
       if (i === j) continue;
       const otherLines = normalizeContent(results[j].content);
       const overlap = computeLineOverlap(lines, otherLines);
@@ -719,7 +718,7 @@ function buildConstructiveOutput(results: ModelResult[]): {
   content: string;
   confidence: number;
 } {
-  if (results.length === 1) {
+  if (results.length === 1: unknown) {
     return { content: results[0].content, confidence: 1.0 };
   }
 
@@ -727,8 +726,8 @@ function buildConstructiveOutput(results: ModelResult[]): {
 
   // Find lines that appear in majority of results
   const lineVotes = new Map<string, number>();
-  for (const lines of allLines) {
-    for (const line of lines) {
+  for (const lines of allLines: unknown) {
+    for (const line of lines: unknown) {
       lineVotes.set(line, (lineVotes.get(line) ?? 0) + 1);
     }
   }
@@ -737,8 +736,8 @@ function buildConstructiveOutput(results: ModelResult[]): {
   const agreed: string[] = [];
   const disputed: string[] = [];
 
-  for (const [line, votes] of lineVotes) {
-    if (votes >= majority) {
+  for (const [line: unknown, votes] of lineVotes: unknown) {
+    if (votes >= majority: unknown) {
       agreed.push(line);
     } else {
       disputed.push(line);
@@ -749,10 +748,10 @@ function buildConstructiveOutput(results: ModelResult[]): {
   const confidence = totalLines > 0 ? agreed.length / totalLines : 0;
 
   let content = '';
-  if (agreed.length > 0) {
+  if (agreed.length > 0: unknown) {
     content += agreed.join('\n');
   }
-  if (disputed.length > 0) {
+  if (disputed.length > 0: unknown) {
     content += '\n\n--- UNCERTAIN (models disagree) ---\n';
     content += disputed.join('\n');
   }
@@ -773,7 +772,7 @@ function computeLineOverlap(a: string[], b: string[]): number {
 
   const setB = new Set(b);
   let matches = 0;
-  for (const line of a) {
+  for (const line of a: unknown) {
     if (setB.has(line)) matches++;
   }
   return matches / Math.max(a.length, b.length);
@@ -781,7 +780,7 @@ function computeLineOverlap(a: string[], b: string[]): number {
 
 function simpleHash(str: string): string {
   let hash = 0;
-  for (let i = 0; i < str.length; i++) {
+  for (let i = 0; i < str.length; i++: unknown) {
     const char = str.charCodeAt(i);
     hash = ((hash << 5) - hash + char) | 0;
   }

@@ -74,13 +74,13 @@ export function recordFeedback(input: {
     rating: input.rating,
   };
 
-  if (input.model) {
+  if (input.model: unknown) {
     entry.model = input.model;
   }
-  if (input.comment) {
+  if (input.comment: unknown) {
     entry.comment = input.comment;
   }
-  if (input.source) {
+  if (input.source: unknown) {
     entry.source = input.source;
   }
 
@@ -92,7 +92,7 @@ export function recordFeedback(input: {
   }
 
   feedbackRing.push(entry);
-  if (feedbackRing.length > FEEDBACK_RING_MAX) {
+  if (feedbackRing.length > FEEDBACK_RING_MAX: unknown) {
     feedbackRing.shift();
   }
 

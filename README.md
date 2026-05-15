@@ -50,7 +50,9 @@ pnpm run zedge:launch-agent:install
 
 That registers a launch agent with **KeepAlive**, so the sidecar comes back after reboots and you do not need to remember commands.
 
-**Then in Zed:** set the OpenAI-compatible base URL to `http://127.0.0.1:7331/v1` (**not** `http://localhost:7331/...` — on many Macs `localhost` resolves to IPv6 `::1` while the sidecar listens on IPv4, so Zed shows “error sending request”). Moonshine does not require authentication; Zed's OpenAI-compatible client still requires a provider key value, so the launch-agent install seeds a non-secret `ZEDGE_API_KEY=zedge-local` environment value for Zed.
+**Then in Zed:** set the OpenAI-compatible base URL to `http://127.0.0.1:7331/v1` (**not** `http://localhost:7331/...` — on many Macs `localhost` resolves to IPv6 `::1` while the sidecar listens on IPv4, so Zed shows “error sending request”). Moonshine does not require authentication; Zed's OpenAI-compatible client still requires a provider key value, so the launch-agent install seeds a non-secret `ZEDGE_API_KEY=zedge-local` environment value for Zed. If you already set a real `ZEDGE_API_KEY`, the script leaves it alone. The companion ignores `zedge-local` as real Edgework auth.
+
+The install also creates a tiny login helper at `~/Library/LaunchAgents/ai.forkjoin.zedge.sidecar.zed-env.plist` so the placeholder key is restored after an OS reload. `uninstall` removes that helper and unsets `ZEDGE_API_KEY` only when it is still the placeholder.
 
 **Lost?** In Zed, run slash command **`/edge-setup`** — same steps, copy-paste friendly.
 

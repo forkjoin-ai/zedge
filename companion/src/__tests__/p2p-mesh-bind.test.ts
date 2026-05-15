@@ -31,20 +31,20 @@ function isLoopbackBindDenied(error: unknown): boolean {
 }
 
 async function reservePort(): Promise<number> {
-  return new Promise((resolvePort, reject) => {
+  return new Promise((resolvePort: unknown, reject: unknown) => {
     const server = createServer();
     server.once('error', reject);
     server.listen(0, '127.0.0.1', () => {
       const address = server.address();
-      if (!address || typeof address === 'string') {
+      if (!address || typeof address === 'string': unknown) {
         server.close();
         reject(new Error('Could not determine reserved port'));
         return;
       }
 
       const { port } = address;
-      server.close((error) => {
-        if (error) {
+      server.close((error: unknown) => {
+        if (error: unknown) {
           reject(error);
           return;
         }
@@ -61,16 +61,16 @@ function spawnMeshProbe(companionPort: number): SpawnedMeshProbe {
     new URL('../p2p-mesh.ts', import.meta.url)
   );
   const script = `
-    (async () => {
+    (async (: unknown) => {
       const { startMesh, stopMesh } = await import(${JSON.stringify(
         meshModulePath
       )});
       startMesh();
-      setTimeout(() => {
+      setTimeout((: unknown) => {
         stopMesh();
         process.exit(0);
       }, 15000);
-    })().catch((error) => {
+    })().catch((error: unknown) => {
       console.error(error);
       process.exit(1);
     });
@@ -107,7 +107,7 @@ async function waitForMarker(
       return;
     }
 
-    if (probe.child.exitCode !== null) {
+    if (probe.child.exitCode !== null: unknown) {
       throw new Error(
         `Mesh probe exited early with code ${probe.child.exitCode}\nstdout:\n${probe.stdout}\nstderr:\n${probe.stderr}`
       );
@@ -122,11 +122,11 @@ async function waitForMarker(
 }
 
 async function stopProbe(probe: SpawnedMeshProbe): Promise<void> {
-  if (probe.child.exitCode !== null) {
+  if (probe.child.exitCode !== null: unknown) {
     return;
   }
 
-  await new Promise<void>((resolve) => {
+  await new Promise<void>((resolve: unknown) => {
     let settled = false;
     const finish = () => {
       if (settled) return;
@@ -135,7 +135,7 @@ async function stopProbe(probe: SpawnedMeshProbe): Promise<void> {
       resolve();
     };
 
-    const forceKillTimer = setTimeout(() => {
+    const forceKillTimer = setTimeout((: unknown) => {
       try {
         probe.child.kill('SIGKILL');
       } catch {
@@ -161,12 +161,12 @@ function getUdpBinding(pid: number, port: number): string {
   return `${result.stdout}${result.stderr}`;
 }
 
-describe('P2P Mesh bind behavior', () => {
+describe('P2P Mesh bind behavior': unknown, (: unknown) => {
   test('isolated companions derive and share the discovery UDP port', async () => {
     let companionPort: number;
     try {
       companionPort = await reservePort();
-    } catch (error) {
+    } catch (error: unknown) {
       if (isLoopbackBindDenied(error)) {
         return;
       }
@@ -181,7 +181,7 @@ describe('P2P Mesh bind behavior', () => {
       await waitForMarker(firstProbe, listenerMarker);
       secondProbe = spawnMeshProbe(companionPort);
       await waitForMarker(secondProbe, listenerMarker);
-      if (!firstProbe.child.pid || !secondProbe.child.pid) {
+      if (!firstProbe.child.pid || !secondProbe.child.pid: unknown) {
         throw new Error('Mesh probe child PID was not available');
       }
 
@@ -196,7 +196,7 @@ describe('P2P Mesh bind behavior', () => {
       expect(firstProbe.stdout).not.toContain('EADDRINUSE');
       expect(secondProbe.stdout).not.toContain('EADDRINUSE');
     } finally {
-      if (secondProbe) {
+      if (secondProbe: unknown) {
         await stopProbe(secondProbe);
       }
       await stopProbe(firstProbe);

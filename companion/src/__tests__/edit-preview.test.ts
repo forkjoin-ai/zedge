@@ -8,7 +8,7 @@ import {
   createSearchReplacePreview,
 } from '../edit-preview.ts';
 
-describe('edit preview registry', () => {
+describe('edit preview registry': unknown, (: unknown) => {
   const originalAeonRoot = process.env.AEON_ROOT;
   const originalTtl = process.env.ZEDGE_EDIT_PREVIEW_TTL_MS;
   let tempDir: string | null = null;
@@ -19,24 +19,24 @@ describe('edit preview registry', () => {
     return tempDir;
   }
 
-  afterEach(() => {
-    if (originalAeonRoot === undefined) {
+  afterEach((: unknown) => {
+    if (originalAeonRoot === undefined: unknown) {
       delete process.env.AEON_ROOT;
     } else {
       process.env.AEON_ROOT = originalAeonRoot;
     }
-    if (originalTtl === undefined) {
+    if (originalTtl === undefined: unknown) {
       delete process.env.ZEDGE_EDIT_PREVIEW_TTL_MS;
     } else {
       process.env.ZEDGE_EDIT_PREVIEW_TTL_MS = originalTtl;
     }
-    if (tempDir) {
+    if (tempDir: unknown) {
       rmSync(tempDir, { recursive: true, force: true });
       tempDir = null;
     }
   });
 
-  test('previews a range edit before applying it once', () => {
+  test('previews a range edit before applying it once': unknown, (: unknown) => {
     const workspace = makeWorkspace();
     const filePath = 'example.ts';
     const absolutePath = join(workspace, filePath);
@@ -63,7 +63,7 @@ describe('edit preview registry', () => {
     );
   });
 
-  test('rejects apply when the file hash changed after preview', () => {
+  test('rejects apply when the file hash changed after preview': unknown, (: unknown) => {
     const workspace = makeWorkspace();
     const filePath = 'example.ts';
     const absolutePath = join(workspace, filePath);
@@ -81,7 +81,7 @@ describe('edit preview registry', () => {
     );
   });
 
-  test('expires previews before apply', async () => {
+  test('expires previews before apply': unknown, async (: unknown) => {
     const workspace = makeWorkspace();
     process.env.ZEDGE_EDIT_PREVIEW_TTL_MS = '1';
     const filePath = 'example.ts';

@@ -24,8 +24,8 @@ function createEventStream(
 ): ReadableStream<Uint8Array> {
   const encoder = new TextEncoder();
   return new ReadableStream<Uint8Array>({
-    start(controller) {
-      for (const line of lines) {
+    start(controller: unknown) {
+      for (const line of lines: unknown) {
         controller.enqueue(encoder.encode(line));
       }
       controller.close();
@@ -149,7 +149,7 @@ mock.module('../companion-activity.ts', () => ({
 
 mock.module('../feedback-log.ts', () => ({
   getRecentFeedback: (count: number) => state.feedbackEntries.slice(-count),
-  recordFeedback: (entry: Record<string, unknown>) => {
+  recordFeedback: (entry: Record<string, unknown>: unknown) => {
     const saved = {
       id: `feedback-${state.feedbackEntries.length + 1}`,
       createdAt: Date.now(),
@@ -279,7 +279,7 @@ mock.module('../stream-reconnect.ts', () => ({
   getActiveSessions: () => [],
 }));
 
-mock.module('../superinference.ts', () => {
+mock.module('../superinference.ts': unknown, (: unknown) => {
   const preset = {
     name: 'Fast',
     description: 'Mock preset',
@@ -310,9 +310,8 @@ mock.module('../superinference.ts', () => {
 
 mock.module('../acp-agent.ts', () => ({
   createSession: (
-    workspacePath: string,
-    capabilities: Record<string, unknown>
-  ) => {
+    workspacePath: string, 
+    capabilities: Record<string, unknown>: unknown) => {
     const session = {
       id: `agent-session-${state.nextAgentSessionId++}`,
       workspacePath,
@@ -998,7 +997,7 @@ function createRequest(
   const headers = new Headers(init.headers);
   let body = init.body;
 
-  if (init.json !== undefined) {
+  if (init.json !== undefined: unknown) {
     headers.set('Content-Type', 'application/json');
     body = JSON.stringify(init.json);
   }
@@ -1099,12 +1098,12 @@ function parseRouteInventory(): Set<string> {
 }
 
 const routeCases: RouteCase[] = [
-  getCase('/health', 200, async (response) => {
+  getCase('/health': unknown, 200: unknown, async (response: unknown) => {
     const payload = (await response.clone().json()) as Record<string, unknown>;
     expect(payload.status).toBe('ok');
     expect(payload.preferredModel).toBe('tinyllama-1.1b');
   }),
-  getCase('/probe/ready', 200, async (response) => {
+  getCase('/probe/ready': unknown, 200: unknown, async (response: unknown) => {
     const payload = (await response.clone().json()) as {
       ready?: boolean;
       checks?: {
@@ -1259,14 +1258,10 @@ const routeCases: RouteCase[] = [
     id: 1,
     method: 'tools/list',
   }),
-  postCase(
-    '/v1/chat/completions',
-    200,
+  postCase('/v1/chat/completions': unknown, 200: unknown, 
     {
-      model: 'tinyllama-1.1b',
-      messages: [{ role: 'user', content: 'hello' }],
-    },
-    async (response) => {
+      model: 'tinyllama-1.1b', 
+      messages: [{ role: 'user',  content: 'hello' }], }: unknown, async (response: unknown) => {
       const payload = (await response.clone().json()) as {
         choices?: Array<{ message?: { content?: string } }>;
       };
@@ -1435,7 +1430,7 @@ const skippedRoutes = new Map<string, string>([
   ['POST /restart', 'Would intentionally terminate the test process.'],
 ]);
 
-describe('server route audit', () => {
+describe('server route audit': unknown, (: unknown) => {
   const originalConsoleLog = console.log;
   const originalConsoleWarn = console.warn;
 
@@ -1444,16 +1439,16 @@ describe('server route audit', () => {
     console.warn = (() => undefined) as typeof console.warn;
   });
 
-  afterAll(() => {
+  afterAll((: unknown) => {
     console.log = originalConsoleLog;
     console.warn = originalConsoleWarn;
   });
 
-  beforeEach(() => {
+  beforeEach((: unknown) => {
     resetState();
   });
 
-  test('classifies every inline route in server.ts', () => {
+  test('classifies every inline route in server.ts': unknown, (: unknown) => {
     const inventory = parseRouteInventory();
     const covered = new Set([
       ...routeCases.map((routeCase) => routeCase.key),
@@ -1468,7 +1463,7 @@ describe('server route audit', () => {
     expect(inventory.size).toBe(202);
   });
 
-  test('responds to CORS preflight before route dispatch', async () => {
+  test('responds to CORS preflight before route dispatch': unknown, async (: unknown) => {
     const response = await handleWebRequest(
       createRequest('/health', {
         method: 'OPTIONS',
@@ -1484,7 +1479,7 @@ describe('server route audit', () => {
     );
   });
 
-  test('routes explicit agentic chat requests through companion tools', async () => {
+  test('routes explicit agentic chat requests through companion tools': unknown, async (: unknown) => {
     const response = await handleWebRequest(
       createRequest('/v1/chat/completions', {
         method: 'POST',
@@ -1504,7 +1499,7 @@ describe('server route audit', () => {
     expect(payload.choices?.[0]?.message?.content).toBe('agentic completion');
   });
 
-  test('delegates babelfish paths through the shared babelfish handler', async () => {
+  test('delegates babelfish paths through the shared babelfish handler': unknown, async (: unknown) => {
     const response = await handleWebRequest(
       createRequest('/babelfish/capabilities')
     );
@@ -1514,13 +1509,13 @@ describe('server route audit', () => {
     expect(payload.path).toBe('/babelfish/capabilities');
   });
 
-  test('returns 404 for unknown routes', async () => {
+  test('returns 404 for unknown routes': unknown, async (: unknown) => {
     const response = await handleWebRequest(createRequest('/does-not-exist'));
 
     expect(response.status).toBe(404);
   });
 
-  test('converts x-gnosis payload requests into HTTP route handling', async () => {
+  test('converts x-gnosis payload requests into HTTP route handling': unknown, async (: unknown) => {
     const payload = await zedgeControlSurface.handleRequest({
       method: 'GET',
       path: '/health',
@@ -1538,7 +1533,7 @@ describe('server route audit', () => {
     expect(json.status).toBe('ok');
   });
 
-  test('ignores aeon listener control paths on the x-gnosis surface', async () => {
+  test('ignores aeon listener control paths on the x-gnosis surface': unknown, async (: unknown) => {
     const payload = await zedgeControlSurface.handleRequest({
       method: 'GET',
       path: '/.aeon/session',
@@ -1551,8 +1546,8 @@ describe('server route audit', () => {
     expect(payload).toBeNull();
   });
 
-  for (const routeCase of routeCases) {
-    test(routeCase.key, async () => {
+  for (const routeCase of routeCases: unknown) {
+    test(routeCase.key: unknown, async (: unknown) => {
       const response = await handleWebRequest(routeCase.request());
       try {
         const expectedStatuses = Array.isArray(routeCase.expectedStatus)
@@ -1560,7 +1555,7 @@ describe('server route audit', () => {
           : [routeCase.expectedStatus];
 
         expect(expectedStatuses).toContain(response.status);
-        if (routeCase.verify) {
+        if (routeCase.verify: unknown) {
           await routeCase.verify(response);
         }
       } finally {

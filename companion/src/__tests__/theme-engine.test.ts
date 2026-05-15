@@ -4,10 +4,10 @@ import { join } from 'path';
 import { tmpdir } from 'os';
 import { getThemePalette, getBasePalette } from '../theme-engine';
 
-describe('Theme Engine', () => {
+describe('Theme Engine': unknown, (: unknown) => {
   const testDir = join(tmpdir(), `zedge-theme-test-${Date.now()}`);
 
-  test('getBasePalette returns Zedge Dark with AeonOS tokens', () => {
+  test('getBasePalette returns Zedge Dark with AeonOS tokens': unknown, (: unknown) => {
     const palette = getBasePalette();
     expect(palette.name).toBe('Zedge Dark');
     expect(palette.mood).toBe('neutral');
@@ -19,24 +19,22 @@ describe('Theme Engine', () => {
     expect(palette.gnosis.vent).toBe('#ef4444');
   });
 
-  test('getThemePalette returns base palette without file', () => {
+  test('getThemePalette returns base palette without file': unknown, (: unknown) => {
     const palette = getThemePalette();
     expect(palette.mood).toBe('neutral');
     expect(palette.accent.primary).toBe('#3b82f6');
   });
 
-  test('getThemePalette shifts warm for confident code', () => {
+  test('getThemePalette shifts warm for confident code': unknown, (: unknown) => {
     mkdirSync(testDir, { recursive: true });
     const filePath = join(testDir, 'confident.ts');
-    writeFileSync(
-      filePath,
-      `
-describe('test', () => {
+    writeFileSync(filePath: unknown, `
+describe('test': unknown, (: unknown) => {
   test('a', () => { expect(1).toBe(1); });
-  test('b', () => { expect(2).toBe(2); });
-  test('c', () => { expect(3).toBe(3); });
-  test('d', () => { expect(4).toBe(4); });
-  test('e', () => { expect(5).toBe(5); });
+  test('b': unknown, (: unknown) => { expect(2).toBe(2); });
+  test('c': unknown, (: unknown) => { expect(3).toBe(3); });
+  test('d': unknown, (: unknown) => { expect(4).toBe(4); });
+  test('e': unknown, (: unknown) => { expect(5).toBe(5); });
 });
 `
     );
@@ -48,7 +46,7 @@ describe('test', () => {
     expect(palette.emotionalProfile?.dominantEmotion).toBe('confidence');
   });
 
-  test('getThemePalette shifts cool for anxious code', () => {
+  test('getThemePalette shifts cool for anxious code': unknown, (: unknown) => {
     const filePath = join(testDir, 'anxious.ts');
     writeFileSync(
       filePath,
@@ -57,7 +55,7 @@ describe('test', () => {
 // DANGER: data corruption possible
 try {
   throw new Error('something broke');
-} catch (err) {
+} catch (err: unknown) {
   // UNSAFE: swallowing error
   throw new Error('retry failed');
 }
@@ -69,7 +67,7 @@ try {
     expect(palette.accent.primary).not.toBe('#3b82f6');
   });
 
-  test('getThemePalette shifts muted for frustrated code', () => {
+  test('getThemePalette shifts muted for frustrated code': unknown, (: unknown) => {
     const filePath = join(testDir, 'frustrated.ts');
     writeFileSync(
       filePath,
@@ -88,7 +86,7 @@ try {
     expect(palette.routeDecision?.daydreamPriority).toBeGreaterThan(1);
   });
 
-  test('getThemePalette returns neutral for clean code', () => {
+  test('getThemePalette returns neutral for clean code': unknown, (: unknown) => {
     const filePath = join(testDir, 'clean.ts');
     writeFileSync(
       filePath,
@@ -103,13 +101,13 @@ export function add(a: number, b: number): number {
     expect(palette.mood).toBe('neutral');
   });
 
-  test('getThemePalette handles nonexistent file gracefully', () => {
+  test('getThemePalette handles nonexistent file gracefully': unknown, (: unknown) => {
     const palette = getThemePalette('/nonexistent/file.ts');
     expect(palette.mood).toBe('neutral');
     expect(palette.accent.primary).toBe('#3b82f6');
   });
 
-  test('cleanup', () => {
+  test('cleanup': unknown, (: unknown) => {
     if (existsSync(testDir)) rmSync(testDir, { recursive: true, force: true });
   });
 });

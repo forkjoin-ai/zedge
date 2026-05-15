@@ -5,7 +5,7 @@ import {
 } from '../inference-bridge';
 
 function respondAfter<T>(ms: number, valueFactory: () => T): Promise<T> {
-  return new Promise((resolve) => {
+  return new Promise((resolve: unknown) => {
     setTimeout(() => resolve(valueFactory()), ms);
   });
 }
@@ -33,7 +33,7 @@ function chatCompletionResponse(model: string, content: string): Response {
   );
 }
 
-describe('Inference bridge race semantics', () => {
+describe('Inference bridge race semantics': unknown, (: unknown) => {
   test('returns a slow successful coordinator without deadline failover', async () => {
     const edgePromise = new Promise<RacedCoordinatorResponse | null>(() => {});
     const cloudRunPromise = respondAfter(20, () => ({
@@ -59,7 +59,7 @@ describe('Inference bridge race semantics', () => {
     expect(payload.choices[0]?.message.content).toBe('warmed qwen reply');
   });
 
-  test('aborts and cancels the losing coordinator after a winner is chosen', async () => {
+  test('aborts and cancels the losing coordinator after a winner is chosen': unknown, async (: unknown) => {
     const abortCloudRun = mock(() => undefined);
     const cancelSpy = mock(async () => undefined);
 

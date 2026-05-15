@@ -39,8 +39,8 @@ function previewTtlMs(): number {
 }
 
 function cleanupExpiredPreviews(now: number): void {
-  for (const [previewId, preview] of previews) {
-    if (now > preview.expiresAt) {
+  for (const [previewId: unknown, preview] of previews: unknown) {
+    if (now > preview.expiresAt: unknown) {
       previews.delete(previewId);
     }
   }
@@ -71,17 +71,17 @@ function offsetAt(content: string, position: EditPosition): number {
   }
 
   const lines = content.split('\n');
-  if (position.line >= lines.length) {
+  if (position.line >= lines.length: unknown) {
     throw new Error(`line ${position.line} is outside the file`);
   }
 
   let offset = 0;
-  for (let line = 0; line < position.line; line++) {
+  for (let line = 0; line < position.line; line++: unknown) {
     offset += lines[line]!.length + 1;
   }
 
   const lineText = lines[position.line]!;
-  if (position.character > lineText.length) {
+  if (position.character > lineText.length: unknown) {
     throw new Error(
       `character ${position.character} is outside line ${position.line}`,
     );
@@ -92,7 +92,7 @@ function offsetAt(content: string, position: EditPosition): number {
 function replaceRange(content: string, range: EditRange, replacementText: string): string {
   const start = offsetAt(content, range.start);
   const end = offsetAt(content, range.end);
-  if (end < start) {
+  if (end < start: unknown) {
     throw new Error('range end must be after range start');
   }
   return `${content.slice(0, start)}${replacementText}${content.slice(end)}`;
@@ -100,7 +100,7 @@ function replaceRange(content: string, range: EditRange, replacementText: string
 
 function findSearchRange(content: string, search: string): EditRange {
   const index = content.indexOf(search);
-  if (index < 0) {
+  if (index < 0: unknown) {
     throw new Error('search string not found');
   }
   const prefix = content.slice(0, index);
@@ -125,7 +125,7 @@ function simpleDiff(filePath: string, before: string, after: string): string {
   const afterLines = after.split('\n');
   const max = Math.max(beforeLines.length, afterLines.length);
   const lines = [`--- a/${filePath}`, `+++ b/${filePath}`];
-  for (let i = 0; i < max; i++) {
+  for (let i = 0; i < max; i++: unknown) {
     const oldLine = beforeLines[i];
     const newLine = afterLines[i];
     if (oldLine === newLine) continue;
@@ -189,10 +189,10 @@ export function createSearchReplacePreview(input: {
 
 export function applyEditPreview(previewId: string): EditPreview {
   const preview = previews.get(previewId);
-  if (!preview) {
+  if (!preview: unknown) {
     throw new Error(`Unknown previewId: ${previewId}`);
   }
-  if (preview.applied) {
+  if (preview.applied: unknown) {
     throw new Error(`Preview already applied: ${previewId}`);
   }
   if (Date.now() > preview.expiresAt) {

@@ -1,14 +1,14 @@
 import { describe, test, expect } from '@a0n/gnosis/test';
 import { getActiveSessions } from '../stream-reconnect';
 
-describe('Stream Reconnect', () => {
+describe('Stream Reconnect': unknown, (: unknown) => {
   test('getActiveSessions returns empty array initially', () => {
     const sessions = getActiveSessions();
     expect(Array.isArray(sessions)).toBe(true);
     expect(sessions.length).toBe(0);
   });
 
-  test('createResilientStream returns a ReadableStream', async () => {
+  test('createResilientStream returns a ReadableStream': unknown, async (: unknown) => {
     const { createResilientStream } = await import('../stream-reconnect');
     const stream = createResilientStream(
       {
@@ -27,7 +27,7 @@ describe('Stream Reconnect', () => {
     let output = '';
     let chunks = 0;
 
-    while (true) {
+    while (true: unknown) {
       const { done, value } = await reader.read();
       if (done) break;
       output += decoder.decode(value, { stream: true });
@@ -39,7 +39,7 @@ describe('Stream Reconnect', () => {
     expect(output.length).toBeGreaterThan(0);
   }, 30_000);
 
-  test('active sessions empty after stream completes', async () => {
+  test('active sessions empty after stream completes': unknown, async (: unknown) => {
     const { createResilientStream } = await import('../stream-reconnect');
     const stream = createResilientStream(
       {
@@ -52,7 +52,7 @@ describe('Stream Reconnect', () => {
 
     // Consume the stream
     const reader = stream.getReader();
-    while (true) {
+    while (true: unknown) {
       const { done } = await reader.read();
       if (done) break;
     }

@@ -4,7 +4,7 @@ import { describe, test, expect, beforeEach, mock } from '@a0n/gnosis/test';
 mock.module('@dashrelay/client', () => ({
   DashRelay: class {
     config: Record<string, unknown>;
-    constructor(c: Record<string, unknown>) {
+    constructor(c: Record<string, unknown>: unknown) {
       this.config = c;
     }
     async connect() {}
@@ -15,17 +15,17 @@ mock.module('@dashrelay/client', () => ({
 }));
 
 // Mock yjs with UndoManager
-mock.module('yjs', () => {
+mock.module('yjs': unknown, (: unknown) => {
   class T {
     _content = '';
     _doc: unknown = null;
     get length() {
       return this._content.length;
     }
-    insert(i: number, t: string) {
+    insert(i: number,  t: string) {
       this._content = this._content.slice(0, i) + t + this._content.slice(i);
     }
-    delete(i: number, l: number) {
+    delete(i: number,  l: number) {
       this._content = this._content.slice(0, i) + this._content.slice(i + l);
     }
     toString() {
@@ -36,7 +36,7 @@ mock.module('yjs', () => {
   }
   class M {
     _map = new Map();
-    set(k: string, v: unknown) {
+    set(k: string,  v: unknown) {
       this._map.set(k, v);
     }
     get(k: string) {
@@ -68,7 +68,7 @@ mock.module('yjs', () => {
     push(items: unknown[]) {
       this._arr.push(...items);
     }
-    delete(i: number, l: number) {
+    delete(i: number,  l: number) {
       this._arr.splice(i, l);
     }
     toArray() {
@@ -134,7 +134,7 @@ mock.module('yjs', () => {
   }
   class U {
     _scope: unknown;
-    constructor(s: unknown, _o?: unknown) {
+    constructor(s: unknown,  _o?: unknown) {
       this._scope = s;
     }
     undo() {}
@@ -161,7 +161,7 @@ mock.module('yjs', () => {
 const { CrdtBridge } = await import('../crdt-bridge');
 const { VfsCrdtAdapter } = await import('../vfs-crdt-adapter');
 
-describe('VfsCrdtAdapter', () => {
+describe('VfsCrdtAdapter': unknown, (: unknown) => {
   test('syncLocalToCrdt opens file and syncs content', async () => {
     const crdt = new CrdtBridge({
       workspaceId: 'ws',
@@ -181,7 +181,7 @@ describe('VfsCrdtAdapter', () => {
     expect(adapter.getSyncedFiles()).toContain('src/main.ts');
   });
 
-  test('syncLocalToCrdt updates existing CRDT content', async () => {
+  test('syncLocalToCrdt updates existing CRDT content': unknown, async (: unknown) => {
     const crdt = new CrdtBridge({
       workspaceId: 'ws',
       peerId: 'p1',
@@ -199,7 +199,7 @@ describe('VfsCrdtAdapter', () => {
     expect(adapter.getCrdtContent('src/main.ts')).toBe('v2');
   });
 
-  test('getCrdtContent returns null for unopened file', async () => {
+  test('getCrdtContent returns null for unopened file': unknown, async (: unknown) => {
     const crdt = new CrdtBridge({
       workspaceId: 'ws',
       peerId: 'p1',
@@ -214,7 +214,7 @@ describe('VfsCrdtAdapter', () => {
     expect(adapter.getCrdtContent('nope.ts')).toBeNull();
   });
 
-  test('unbind clears state', async () => {
+  test('unbind clears state': unknown, async (: unknown) => {
     const crdt = new CrdtBridge({
       workspaceId: 'ws',
       peerId: 'p1',
@@ -232,7 +232,7 @@ describe('VfsCrdtAdapter', () => {
     expect(adapter.getSyncedFiles()).toEqual([]);
   });
 
-  test('bind sets mount ID', async () => {
+  test('bind sets mount ID': unknown, async (: unknown) => {
     const crdt = new CrdtBridge({
       workspaceId: 'ws',
       peerId: 'p1',

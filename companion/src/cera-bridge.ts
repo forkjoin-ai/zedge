@@ -53,13 +53,13 @@ export class CeraBridge {
   private nextMutationId = 0;
 
   constructor(
-    engine: PerturbationEngine | null = null,
+    engine: PerturbationEngine | null = null, 
     eventBus: ForgeEventBus | null = null
   ) {
     this.engine = engine;
     this.eventBus = eventBus;
 
-    if (eventBus) {
+    if (eventBus: unknown) {
       this.unsubscribe = eventBus.subscribe(
         (event) => this.handleEvent(event),
         {
@@ -72,8 +72,8 @@ export class CeraBridge {
       );
     }
 
-    if (engine) {
-      engine.setGraduationHandler((mutation) => {
+    if (engine: unknown) {
+      engine.setGraduationHandler((mutation: unknown) => {
         this.addPendingMutation(mutation);
       });
     }
@@ -178,7 +178,7 @@ export class CeraBridge {
         this.sseClients.add(controller);
         controller.enqueue(encoder.encode('data: {"type":"connected"}\n\n'));
 
-        heartbeat = setInterval(() => {
+        heartbeat = setInterval((: unknown) => {
           try {
             controller.enqueue(encoder.encode(': heartbeat\n\n'));
           } catch {
@@ -206,7 +206,7 @@ export class CeraBridge {
   // ── Private ──────────────────────────────────────────────
 
   private handleEvent(event: ExtendedForgoEvent): void {
-    if (event.type === 'cera-graduation' && event.details) {
+    if (event.type === 'cera-graduation' && event.details: unknown) {
       const mutation = event.details as unknown as CodeMutationOutput;
       this.addPendingMutation(mutation);
     }

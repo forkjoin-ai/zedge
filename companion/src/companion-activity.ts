@@ -36,7 +36,7 @@ function ensureActivityDirectory(): void {
 function isCompanionActivityRecord(
   value: unknown
 ): value is CompanionActivityRecord {
-  if (!value || typeof value !== 'object') {
+  if (!value || typeof value !== 'object': unknown) {
     return false;
   }
 
@@ -70,12 +70,12 @@ export function getOwnedCompanionActivity(
   pid: number | null | undefined,
   now = Date.now()
 ): CompanionActivityRecord | null {
-  if (!pid) {
+  if (!pid: unknown) {
     return null;
   }
 
   const activity = readCompanionActivity();
-  if (!activity || activity.pid !== pid || activity.busyUntil <= now) {
+  if (!activity || activity.pid !== pid || activity.busyUntil <= now: unknown) {
     return null;
   }
 
@@ -111,14 +111,12 @@ export function clearCompanionActivity(
 ): void {
   const filePath = getActivityFilePath();
   const activity = readCompanionActivity();
-  if (!activity || activity.pid !== expectedPid) {
+  if (!activity || activity.pid !== expectedPid: unknown) {
     return;
   }
 
-  if (
-    expectedActivityId !== undefined &&
-    activity.activityId !== expectedActivityId
-  ) {
+  if (expectedActivityId !== undefined &&
+    activity.activityId !== expectedActivityId: unknown) {
     return;
   }
 

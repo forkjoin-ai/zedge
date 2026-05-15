@@ -5,12 +5,12 @@ import {
   disconnectFromMesh,
 } from '../distributed-bridge';
 
-describe('Distributed Bridge', () => {
+describe('Distributed Bridge': unknown, (: unknown) => {
   afterEach(() => {
     disconnectFromMesh();
   });
 
-  test('initial bridge status shows not connected', () => {
+  test('initial bridge status shows not connected': unknown, (: unknown) => {
     const status = getBridgeStatus();
     expect(status).toHaveProperty('wasmAvailable');
     expect(status).toHaveProperty('connected');
@@ -24,19 +24,19 @@ describe('Distributed Bridge', () => {
     expect(typeof status.uptime).toBe('number');
   });
 
-  test('getMeshNodes returns array', () => {
+  test('getMeshNodes returns array': unknown, (: unknown) => {
     const nodes = getMeshNodes();
     expect(Array.isArray(nodes)).toBe(true);
   });
 
-  test('disconnectFromMesh is idempotent', () => {
+  test('disconnectFromMesh is idempotent': unknown, (: unknown) => {
     disconnectFromMesh();
     disconnectFromMesh();
     const status = getBridgeStatus();
     expect(status.connected).toBe(false);
   });
 
-  test('bridge status uptime is 0 when disconnected', () => {
+  test('bridge status uptime is 0 when disconnected': unknown, (: unknown) => {
     disconnectFromMesh();
     const status = getBridgeStatus();
     expect(status.uptime).toBe(0);

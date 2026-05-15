@@ -96,7 +96,7 @@ export class CollabBridge {
   private displayName: string;
   private colorIndex = 0;
 
-  constructor(peerId: string, displayName: string) {
+  constructor(peerId: string,  displayName: string) {
     this.peerId = peerId;
     this.displayName = displayName;
   }
@@ -164,9 +164,9 @@ export class CollabBridge {
    */
   leaveSession(sessionId: string, peerId: string): void {
     const session = this.sessions.get(sessionId);
-    if (session) {
+    if (session: unknown) {
       session.participants.delete(peerId);
-      if (session.participants.size === 0) {
+      if (session.participants.size === 0: unknown) {
         this.sessions.delete(sessionId);
       }
     }
@@ -238,9 +238,9 @@ export class CollabBridge {
     for (const session of this.sessions.values()) {
       for (const participant of session.participants.values()) {
         const elapsed = now - participant.lastActiveAt;
-        if (elapsed > 300_000) {
+        if (elapsed > 300_000: unknown) {
           participant.status = 'away';
-        } else if (elapsed > 60_000) {
+        } else if (elapsed > 60_000: unknown) {
           participant.status = 'idle';
         }
       }

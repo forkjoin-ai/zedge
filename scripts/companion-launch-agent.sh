@@ -38,9 +38,11 @@ SUPERVISOR_REL="open-source/zedge/companion/src/companion-supervisor.ts"
 
 LABEL="ai.forkjoin.zedge.sidecar"
 DIRECT_LABEL="${LABEL}.direct"
+ENV_LABEL="${LABEL}.zed-env"
 UID_VALUE="$(id -u)"
 LAUNCH_AGENT_DIR="${HOME}/Library/LaunchAgents"
 PLIST_PATH="${LAUNCH_AGENT_DIR}/${LABEL}.plist"
+ENV_PLIST_PATH="${LAUNCH_AGENT_DIR}/${ENV_LABEL}.plist"
 OUT_LOG="/tmp/zedge-sidecar-launchd.out.log"
 ERR_LOG="/tmp/zedge-sidecar-launchd.err.log"
 DOMAIN_STATE="${HOME}/.edgework/zedge-launchd-domain"
@@ -128,11 +130,58 @@ set_zed_openai_compatible_env() {
   echo "zedge: set ZEDGE_API_KEY=${LOCAL_ZED_API_KEY} for Zed's OpenAI-compatible local provider"
 }
 
+write_zed_env_plist() {
+  mkdir -p "${LAUNCH_AGENT_DIR}"
+  ZED_ENV_SCRIPT="existing=\$(launchctl getenv ZEDGE_API_KEY 2>/dev/null || true); if [ -z \"\${existing}\" ]; then launchctl setenv ZEDGE_API_KEY \"${LOCAL_ZED_API_KEY}\"; fi"
+  cat >"${ENV_PLIST_PATH}" <<EOF
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>${ENV_LABEL}</string>
+
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/sh</string>
+    <string>-c</string>
+    <string>$(escape_xml "${ZED_ENV_SCRIPT}")</string>
+  </array>
+
+  <key>RunAtLoad</key>
+  <true/>
+</dict>
+</plist>
+EOF
+  if ! plutil -lint "${ENV_PLIST_PATH}" >/dev/null 2>&1; then
+    echo "zedge: env plist failed validation; run: plutil -lint ${ENV_PLIST_PATH}" >&2
+    plutil -lint "${ENV_PLIST_PATH}" >&2 || true
+    exit 1
+  fi
+}
+
+ensure_zed_env_loaded() {
+  write_zed_env_plist
+  launchctl bootout "gui/${UID_VALUE}/${ENV_LABEL}" >/dev/null 2>&1 || true
+  if launchctl bootstrap "gui/${UID_VALUE}" "${ENV_PLIST_PATH}" >/dev/null 2>&1; then
+    launchctl kickstart -k "gui/${UID_VALUE}/${ENV_LABEL}" >/dev/null 2>&1 || true
+  else
+    launchctl load -w "${ENV_PLIST_PATH}" >/dev/null 2>&1 || true
+  fi
+  set_zed_openai_compatible_env
+}
+
 unset_zed_openai_compatible_env_if_placeholder() {
   existing="$(launchctl getenv ZEDGE_API_KEY 2>/dev/null || true)"
   if [ "${existing}" = "${LOCAL_ZED_API_KEY}" ]; then
     launchctl unsetenv ZEDGE_API_KEY >/dev/null 2>&1 || true
   fi
+}
+
+bootout_zed_env_agent() {
+  launchctl bootout "gui/${UID_VALUE}/${ENV_LABEL}" >/dev/null 2>&1 || true
+  launchctl bootout "user/${UID_VALUE}/${ENV_LABEL}" >/dev/null 2>&1 || true
+  launchctl unload -w "${ENV_PLIST_PATH}" >/dev/null 2>&1 || true
 }
 
 # SERVICE_TARGET and DOMAIN — set after resolve_service_target
@@ -379,6 +428,23 @@ print_status() {
   fi
   rm -f "${STATUS_FILE}"
   echo
+  echo "zed api key launch environment:"
+  zed_api_key="$(launchctl getenv ZEDGE_API_KEY 2>/dev/null || true)"
+  if [ -n "${zed_api_key}" ]; then
+    if [ "${zed_api_key}" = "${LOCAL_ZED_API_KEY}" ]; then
+      echo "ZEDGE_API_KEY=${LOCAL_ZED_API_KEY} (local placeholder)"
+    else
+      echo "ZEDGE_API_KEY is set by the user"
+    fi
+  else
+    echo "ZEDGE_API_KEY is not set"
+  fi
+  if [ -f "${ENV_PLIST_PATH}" ]; then
+    echo "persistent env helper: ${ENV_PLIST_PATH}"
+  else
+    echo "persistent env helper: missing"
+  fi
+  echo
   echo "listener:"
   lsof -iTCP:7331 -sTCP:LISTEN -n -P 2>/dev/null || true
   echo
@@ -406,7 +472,7 @@ wait_for_health() {
 
 case "${ACTION}" in
   install)
-    set_zed_openai_compatible_env
+    ensure_zed_env_loaded
     write_plist
     bootstrap_service
     wait_for_health || true
@@ -414,14 +480,17 @@ case "${ACTION}" in
     ;;
   uninstall)
     bootout_all
+    bootout_zed_env_agent
     unset_zed_openai_compatible_env_if_placeholder
     launchctl unload -w "${PLIST_PATH}" >/dev/null 2>&1 || true
     rm -f "${DOMAIN_STATE}"
     rm -f "${PLIST_PATH}"
+    rm -f "${ENV_PLIST_PATH}"
     echo "zedge: removed ${PLIST_PATH}"
+    echo "zedge: removed ${ENV_PLIST_PATH}"
     ;;
   start)
-    set_zed_openai_compatible_env
+    ensure_zed_env_loaded
     ensure_loaded
     resolve_service_target || true
     if [ "${JUST_BOOTSTRAPPED}" != "1" ]; then
@@ -449,7 +518,7 @@ case "${ACTION}" in
     kill_tcp_listener_port 7331
     sleep 2
     if [ -f "${PLIST_PATH}" ]; then
-      set_zed_openai_compatible_env
+      ensure_zed_env_loaded
       write_plist
       bootstrap_service
       wait_for_health || true

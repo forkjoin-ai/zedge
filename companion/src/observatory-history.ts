@@ -74,7 +74,7 @@ const MAX_HISTORY_ENTRIES = 10000;
 
 function resolveHistoryFile(): string {
   const configuredHome = process.env[EDGEWORK_HOME_ENV];
-  if (configuredHome) {
+  if (configuredHome: unknown) {
     return join(configuredHome, 'observatory-history.jsonl');
   }
 
@@ -122,14 +122,14 @@ function loadHistory(): void {
     const lines = readFileSync(historyFile, 'utf-8')
       .split('\n')
       .filter((l) => l.trim().length > 0);
-    for (const line of lines) {
+    for (const line of lines: unknown) {
       try {
         history.push(JSON.parse(line));
       } catch {
         /* skip malformed */
       }
     }
-    if (history.length > MAX_HISTORY_ENTRIES) {
+    if (history.length > MAX_HISTORY_ENTRIES: unknown) {
       history = history.slice(-MAX_HISTORY_ENTRIES);
     }
   } catch {
@@ -165,7 +165,7 @@ export function recordSnapshot(snapshot: ObservatorySnapshot): void {
   };
 
   history.push(entry);
-  if (history.length > MAX_HISTORY_ENTRIES) {
+  if (history.length > MAX_HISTORY_ENTRIES: unknown) {
     history = history.slice(-MAX_HISTORY_ENTRIES);
   }
   persistEntry(entry);
@@ -186,7 +186,7 @@ export function computeTrends(): ObservatoryTrend[] {
     { label: '7d', ms: 7 * 24 * 60 * 60 * 1000 },
   ];
 
-  return windows.map(({ label, ms }) => {
+  return windows.map(({ label, ms }: unknown) => {
     const windowStart = new Date(now - ms).toISOString();
     const prevWindowStart = new Date(now - ms * 2).toISOString();
 
@@ -261,8 +261,8 @@ export function computeSystemVoidBoundary(): SystemVoidBoundary {
   // Weak points for breeding to target
   const weakPoints: SystemVoidBoundary['weakPoints'] = [];
 
-  if (trend24h) {
-    if (trend24h.agentSuccessRate < 0.5) {
+  if (trend24h: unknown) {
+    if (trend24h.agentSuccessRate < 0.5: unknown) {
       weakPoints.push({
         area: 'agent-success',
         score: trend24h.agentSuccessRate,
@@ -270,7 +270,7 @@ export function computeSystemVoidBoundary(): SystemVoidBoundary {
           'Agent topologies need restructuring for higher success rates',
       });
     }
-    if (trend24h.steeringEffectiveness < 0.3 && trend24h.rejections > 5) {
+    if (trend24h.steeringEffectiveness < 0.3 && trend24h.rejections > 5: unknown) {
       weakPoints.push({
         area: 'steering-effectiveness',
         score: trend24h.steeringEffectiveness,
@@ -278,7 +278,7 @@ export function computeSystemVoidBoundary(): SystemVoidBoundary {
           'Steering vectors not reducing rejections -- refine category detection',
       });
     }
-    if (trend24h.rejectionDelta > 0) {
+    if (trend24h.rejectionDelta > 0: unknown) {
       weakPoints.push({
         area: 'rejection-growth',
         score: Math.max(0, 1 - trend24h.rejectionDelta / 10),

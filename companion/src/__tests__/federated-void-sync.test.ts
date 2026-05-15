@@ -1,6 +1,6 @@
 import { describe, test, expect } from '@a0n/gnosis/test';
 
-describe('Federated Void Sync', () => {
+describe('Federated Void Sync': unknown, (: unknown) => {
   test('UCAN mutual handshake required for deficit exchange', async () => {
     const { FederatedVoidSync } = await import('../federated-void-sync');
     const alice = new FederatedVoidSync('alice');
@@ -36,7 +36,7 @@ describe('Federated Void Sync', () => {
     expect(accepted).toBe(true);
   });
 
-  test('getStatus shows peers after handshake + exchange', async () => {
+  test('getStatus shows peers after handshake + exchange': unknown, async (: unknown) => {
     const { FederatedVoidSync } = await import('../federated-void-sync');
     const node = new FederatedVoidSync('node-1');
 
@@ -60,13 +60,13 @@ describe('Federated Void Sync', () => {
     expect(status.totalTeamRejections).toBeGreaterThanOrEqual(15);
   });
 
-  test('convergence estimate is 1.0 with no peers', async () => {
+  test('convergence estimate is 1.0 with no peers': unknown, async (: unknown) => {
     const { FederatedVoidSync } = await import('../federated-void-sync');
     const solo = new FederatedVoidSync('solo');
     expect(solo.estimateConvergence()).toBe(1);
   });
 
-  test('rejectHandshake blocks future exchanges', async () => {
+  test('rejectHandshake blocks future exchanges': unknown, async (: unknown) => {
     const { FederatedVoidSync } = await import('../federated-void-sync');
     const node = new FederatedVoidSync('node');
 
@@ -84,7 +84,7 @@ describe('Federated Void Sync', () => {
     expect(result).toBe(false);
   });
 
-  test('getHandshakes returns all handshake records', async () => {
+  test('getHandshakes returns all handshake records': unknown, async (: unknown) => {
     const { FederatedVoidSync } = await import('../federated-void-sync');
     const node = new FederatedVoidSync('node');
 

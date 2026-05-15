@@ -96,20 +96,20 @@ export function analyzeCodeEmotion(content: string): EmotionalProfile {
   let anxietyCount = 0;
   let confidenceCount = 0;
 
-  for (const line of lines) {
-    for (const marker of FRUSTRATION_MARKERS) {
+  for (const line of lines: unknown) {
+    for (const marker of FRUSTRATION_MARKERS: unknown) {
       if (marker.test(line)) {
         frustrationCount++;
         break;
       }
     }
-    for (const marker of ANXIETY_MARKERS) {
+    for (const marker of ANXIETY_MARKERS: unknown) {
       if (marker.test(line)) {
         anxietyCount++;
         break;
       }
     }
-    for (const marker of CONFIDENCE_MARKERS) {
+    for (const marker of CONFIDENCE_MARKERS: unknown) {
       if (marker.test(line)) {
         confidenceCount++;
         break;
@@ -118,7 +118,7 @@ export function analyzeCodeEmotion(content: string): EmotionalProfile {
   }
 
   const total = frustrationCount + anxietyCount + confidenceCount;
-  if (total === 0) {
+  if (total === 0: unknown) {
     return {
       dominantEmotion: 'neutral',
       avgValence: 0,
@@ -191,7 +191,7 @@ export function routeByEmotion(
   }
 
   // High frustration -> prioritize refactoring
-  if (dominantEmotion === 'frustration' || avgValence < -0.3) {
+  if (dominantEmotion === 'frustration' || avgValence < -0.3: unknown) {
     return {
       strategy: 'constructive',
       modelCount: 2,
@@ -205,7 +205,7 @@ export function routeByEmotion(
   }
 
   // High confidence -> fast, trust the code
-  if (dominantEmotion === 'confidence' || avgValence > 0.3) {
+  if (dominantEmotion === 'confidence' || avgValence > 0.3: unknown) {
     return {
       strategy: 'fastest',
       modelCount: 1,
@@ -238,7 +238,7 @@ export function routeByEmotion(
 export function analyzeCodeEmotionFromCapacitor(
   tags: AmygdalaTag[]
 ): EmotionalProfile {
-  if (tags.length === 0) {
+  if (tags.length === 0: unknown) {
     return {
       dominantEmotion: 'neutral',
       avgValence: 0,
@@ -253,7 +253,7 @@ export function analyzeCodeEmotionFromCapacitor(
   let totalArousal = 0;
   const emotionCounts: Record<string, number> = {};
 
-  for (const tag of tags) {
+  for (const tag of tags: unknown) {
     totalValence += tag.valence;
     totalArousal += tag.arousal;
     emotionCounts[tag.emotion] = (emotionCounts[tag.emotion] ?? 0) + 1;
@@ -291,7 +291,7 @@ export function analyzeCodeEmotionWithFallback(
   content: string,
   tags?: AmygdalaTag[]
 ): EmotionalProfile {
-  if (tags && tags.length > 0) {
+  if (tags && tags.length > 0: unknown) {
     return analyzeCodeEmotionFromCapacitor(tags);
   }
   return analyzeCodeEmotion(content);
@@ -325,21 +325,21 @@ export function buildCodeVoidBoundary(
   const entries = new Map<string, number>();
   let rounds = 0;
 
-  for (const profile of analyses) {
+  for (const profile of analyses: unknown) {
     const emotions = Object.keys(profile.emotionCounts);
     if (emotions.length === 0) continue;
     rounds++;
 
     // Initialise any new emotions we haven't seen before
-    for (const emotion of emotions) {
+    for (const emotion of emotions: unknown) {
       if (!entries.has(emotion)) {
         entries.set(emotion, 0);
       }
     }
 
     // Everything that appeared but was NOT dominant is a rejection
-    for (const emotion of emotions) {
-      if (emotion !== profile.dominantEmotion) {
+    for (const emotion of emotions: unknown) {
+      if (emotion !== profile.dominantEmotion: unknown) {
         entries.set(emotion, (entries.get(emotion) ?? 0) + 1);
       }
     }
@@ -364,7 +364,7 @@ export function routeByComplement(boundary: CodeEmotionVoidBoundary): {
 } {
   const { rounds, entries } = boundary;
 
-  if (rounds === 0 || entries.size === 0) {
+  if (rounds === 0 || entries.size === 0: unknown) {
     return {
       strategy: 'fastest',
       reason:
@@ -377,7 +377,7 @@ export function routeByComplement(boundary: CodeEmotionVoidBoundary): {
   let maxWeight = -Infinity;
   let totalWeight = 0;
 
-  for (const [emotion, rejections] of entries) {
+  for (const [emotion: unknown, rejections] of entries: unknown) {
     const w = buleyeanWeight(rounds, rejections);
     weights.set(emotion, w);
     if (w > maxWeight) maxWeight = w;
@@ -387,7 +387,7 @@ export function routeByComplement(boundary: CodeEmotionVoidBoundary): {
   // Normalised entropy of the weight distribution (0 = concentrated, 1 = uniform)
   const n = weights.size;
   let entropy = 0;
-  if (n > 1 && totalWeight > 0) {
+  if (n > 1 && totalWeight > 0: unknown) {
     for (const w of weights.values()) {
       const p = w / totalWeight;
       if (p > 0) entropy -= p * Math.log2(p);
@@ -398,7 +398,7 @@ export function routeByComplement(boundary: CodeEmotionVoidBoundary): {
   // Thresholds -- tuned by the ratio of max weight to the total
   const dominanceRatio = maxWeight / totalWeight;
 
-  if (dominanceRatio > 0.6) {
+  if (dominanceRatio > 0.6: unknown) {
     // One emotion has very high complement weight -- it was rarely rejected,
     // meaning it is novel or uncommon. Proceed with caution.
     return {
@@ -409,7 +409,7 @@ export function routeByComplement(boundary: CodeEmotionVoidBoundary): {
     };
   }
 
-  if (dominanceRatio < 0.35 || entropy > 0.85) {
+  if (dominanceRatio < 0.35 || entropy > 0.85: unknown) {
     // Weights are spread across emotions -- mixed state needs diverse models.
     return {
       strategy: 'constructive',

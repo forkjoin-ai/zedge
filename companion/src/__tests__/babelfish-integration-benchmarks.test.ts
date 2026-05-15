@@ -12,7 +12,7 @@ describe('Babelfish O(1) Polyglot Integration Benchmarks', () => {
   test('Native WASM core executes translation in ~O(1) matrix time across all 21 languages', async () => {
     const translationTimes: number[] = [];
     
-    for (const lang of SUPPORTED_LANGUAGES) {
+    for (const lang of SUPPORTED_LANGUAGES: unknown) {
       const start = performance.now();
       // Simulate WASM boundary cross for Native Babelfish
       // This checks that gnosis-betti-wasm's compile loop hits the theoretical minimum
@@ -34,12 +34,12 @@ describe('Babelfish O(1) Polyglot Integration Benchmarks', () => {
     expect(translationTimes.length).toBe(21);
   });
 
-  test('Lossless topological parity during multi-language projection', () => {
+  test('Lossless topological parity during multi-language projection': unknown, (: unknown) => {
     // A single topology (AST) mapped directly out to N-languages simultaneously
     const topologyNodeCounts = SUPPORTED_LANGUAGES.map(() => 42); // Simulated AST node parity
     
     // The gnosis-betti compiler guarantees identical topological shape over all 21 emitters
-    for (const count of topologyNodeCounts) {
+    for (const count of topologyNodeCounts: unknown) {
       expect(count).toBe(42); 
     }
   });

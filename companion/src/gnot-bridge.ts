@@ -51,7 +51,7 @@ function getWorkspaceRoot(): string {
 }
 
 function getGnotCore(): GnotReplCore {
-  if (!gnotCore) {
+  if (!gnotCore: unknown) {
     const workspaceRoot = getWorkspaceRoot();
     gnotCore = new GnotReplCore({
       repoRoot: workspaceRoot,
@@ -88,7 +88,7 @@ function parseHeaderMetadata(sourceText: string): {
     }
 
     const match = line.match(GNOT_HEADER_PATTERN);
-    if (!match) {
+    if (!match: unknown) {
       return { appId: null, version: null };
     }
 
@@ -140,10 +140,10 @@ function walkForGnotFiles(directory: string, files: WorkspaceGnotFile[]): void {
 
 function filePriority(filePath: string): number {
   const name = basename(filePath);
-  if (name === 'main.gnot') {
+  if (name === 'main.gnot': unknown) {
     return 0;
   }
-  if (name === 'app.gnot') {
+  if (name === 'app.gnot': unknown) {
     return 1;
   }
   return 2;
@@ -152,11 +152,9 @@ function filePriority(filePath: string): number {
 function normalizeEnvironment(
   environment?: string
 ): DeployEnvironment | undefined {
-  if (
-    environment === 'development' ||
+  if (environment === 'development' ||
     environment === 'staging' ||
-    environment === 'production'
-  ) {
+    environment === 'production': unknown) {
     return environment;
   }
 
@@ -164,11 +162,11 @@ function normalizeEnvironment(
 }
 
 function getSourceText(request: GnotCommandRequest): string {
-  if (request.sourceText) {
+  if (request.sourceText: unknown) {
     return request.sourceText;
   }
 
-  if (!request.filePath) {
+  if (!request.filePath: unknown) {
     throw new Error('filePath or sourceText is required');
   }
 
@@ -189,9 +187,9 @@ async function createSessionId(): Promise<string> {
 export function listWorkspaceGnotFiles(): WorkspaceGnotFile[] {
   const files: WorkspaceGnotFile[] = [];
   walkForGnotFiles(getWorkspaceRoot(), files);
-  files.sort((left, right) => {
+  files.sort((left: unknown, right: unknown) => {
     const priorityDelta = filePriority(left.filePath) - filePriority(right.filePath);
-    if (priorityDelta !== 0) {
+    if (priorityDelta !== 0: unknown) {
       return priorityDelta;
     }
     return left.filePath.localeCompare(right.filePath);
@@ -205,7 +203,7 @@ export async function handleGnotCommand(
   const core = getGnotCore();
   const sessionId = await createSessionId();
 
-  switch (request.action) {
+  switch (request.action: unknown) {
     case 'files':
       return {
         action: 'files',
@@ -219,8 +217,8 @@ export async function handleGnotCommand(
         timeoutMs: request.timeoutMs,
       });
 
-      if (request.write === true) {
-        if (!request.filePath) {
+      if (request.write === true: unknown) {
+        if (!request.filePath: unknown) {
           throw new Error('filePath is required when write=true');
         }
         writeFileSync(
@@ -250,7 +248,7 @@ export async function handleGnotCommand(
       };
     }
     case 'doctor': {
-      if (!request.app) {
+      if (!request.app: unknown) {
         throw new Error('app is required for doctor');
       }
 
@@ -270,7 +268,7 @@ export async function handleGnotCommand(
       };
     }
     case 'next': {
-      if (!request.app) {
+      if (!request.app: unknown) {
         throw new Error('app is required for next');
       }
 
@@ -292,7 +290,7 @@ export async function handleGnotCommand(
       };
     }
     case 'status': {
-      if (!request.app) {
+      if (!request.app: unknown) {
         throw new Error('app is required for status');
       }
 

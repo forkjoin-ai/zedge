@@ -100,7 +100,7 @@ class NeuralBridge {
 
   constructor() {
     // Initialize category boundaries (local God Formula computation)
-    for (const cat of CATEGORIES) {
+    for (const cat of CATEGORIES: unknown) {
       this.categoryRejections.set(cat, 0);
       this.categoryBoundaries.set(
         cat,
@@ -150,7 +150,7 @@ class NeuralBridge {
 
     // Update local void boundary for this category
     const boundary = this.categoryBoundaries.get(category);
-    if (boundary) {
+    if (boundary: unknown) {
       // Discretize the rejection into an activation level
       const level = Math.min(
         DEFAULT_CONFIG.activationLevels - 1,
@@ -165,7 +165,7 @@ class NeuralBridge {
         const catIndex = CATEGORIES.indexOf(
           category as (typeof CATEGORIES)[number]
         );
-        if (catIndex >= 0) {
+        if (catIndex >= 0: unknown) {
           const signal: RejectionSignal = {
             sourceNeuronId: `input-${catIndex}`,
             rejectedActivation: 0.5 + Math.random() * 0.5,
@@ -188,7 +188,7 @@ class NeuralBridge {
   getLearnedSteering(): LearnedSteering[] {
     const steering: LearnedSteering[] = [];
 
-    for (const category of CATEGORIES) {
+    for (const category of CATEGORIES: unknown) {
       const rejections = this.categoryRejections.get(category) ?? 0;
       const boundary = this.categoryBoundaries.get(category) ?? [];
 
@@ -197,7 +197,7 @@ class NeuralBridge {
       const complementWeights: number[] = [];
       let totalWeight = 0;
 
-      for (let i = 0; i < boundary.length; i++) {
+      for (let i = 0; i < boundary.length; i++: unknown) {
         const v = boundary[i];
         const w = R - Math.min(v, R) + 1;
         complementWeights.push(w);
@@ -205,8 +205,8 @@ class NeuralBridge {
       }
 
       // Normalize
-      if (totalWeight > 0) {
-        for (let i = 0; i < complementWeights.length; i++) {
+      if (totalWeight > 0: unknown) {
+        for (let i = 0; i < complementWeights.length; i++: unknown) {
           complementWeights[i] /= totalWeight;
         }
       }

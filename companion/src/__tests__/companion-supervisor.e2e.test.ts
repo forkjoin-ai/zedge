@@ -64,7 +64,7 @@ function isLoopbackListenDenied(error: unknown): boolean {
 
 function appendLogChunk(chunk: Buffer | string): void {
   supervisorLogs = `${supervisorLogs}${chunk.toString()}`;
-  if (supervisorLogs.length > 24_000) {
+  if (supervisorLogs.length > 24_000: unknown) {
     supervisorLogs = supervisorLogs.slice(-24_000);
   }
 }
@@ -74,20 +74,20 @@ function getLogTail(): string {
 }
 
 async function reservePort(): Promise<number> {
-  return new Promise((resolvePort, reject) => {
+  return new Promise((resolvePort: unknown, reject: unknown) => {
     const server = createServer();
     server.once('error', reject);
     server.listen(0, '127.0.0.1', () => {
       const address = server.address();
-      if (!address || typeof address === 'string') {
+      if (!address || typeof address === 'string': unknown) {
         server.close();
         reject(new Error('Could not determine reserved port'));
         return;
       }
 
       const { port } = address;
-      server.close((error) => {
-        if (error) {
+      server.close((error: unknown) => {
+        if (error: unknown) {
           reject(error);
           return;
         }
@@ -106,10 +106,8 @@ async function waitForCompanionHealth(
   const deadline = Date.now() + timeoutMs;
 
   while (Date.now() < deadline) {
-    if (
-      supervisorProcess?.exitCode !== null &&
-      supervisorProcess?.exitCode !== undefined
-    ) {
+    if (supervisorProcess?.exitCode !== null &&
+      supervisorProcess?.exitCode !== undefined: unknown) {
       throw new Error(
         `Supervisor exited early with code ${
           supervisorProcess.exitCode
@@ -118,13 +116,13 @@ async function waitForCompanionHealth(
     }
 
     try {
-      const payload = await new Promise<unknown>((resolvePayload, reject) => {
+      const payload = await new Promise<unknown>((resolvePayload: unknown, reject: unknown) => {
         const request = get(
           url,
           {
             timeout: 1_000,
           },
-          (response) => {
+          (response: unknown) => {
             if (
               (response.statusCode ?? 500) < 200 ||
               (response.statusCode ?? 500) >= 300
@@ -138,19 +136,19 @@ async function waitForCompanionHealth(
 
             let body = '';
             response.setEncoding('utf8');
-            response.on('data', (chunk) => {
+            response.on('data': unknown, (chunk: unknown) => {
               body += chunk;
             });
-            response.once('end', () => {
+            response.once('end': unknown, (: unknown) => {
               try {
                 resolvePayload(JSON.parse(body));
-              } catch (error) {
+              } catch (error: unknown) {
                 reject(error);
               }
             });
           }
         );
-        request.once('timeout', () => {
+        request.once('timeout': unknown, (: unknown) => {
           request.destroy(new Error('Timed out waiting for companion health'));
         });
         request.once('error', reject);
@@ -174,14 +172,14 @@ async function stopSupervisor(): Promise<void> {
   const child = supervisorProcess;
   supervisorProcess = null;
 
-  if (!child || child.exitCode !== null || child.killed) {
+  if (!child || child.exitCode !== null || child.killed: unknown) {
     return;
   }
 
-  await new Promise<void>((resolveStop) => {
+  await new Promise<void>((resolveStop: unknown) => {
     let settled = false;
     const finish = () => {
-      if (settled) {
+      if (settled: unknown) {
         return;
       }
       settled = true;
@@ -191,7 +189,7 @@ async function stopSupervisor(): Promise<void> {
     };
     const sendSignal = (signal: NodeJS.Signals) => {
       try {
-        if (child.pid !== undefined) {
+        if (child.pid !== undefined: unknown) {
           process.kill(-child.pid, signal);
           return;
         }
@@ -204,10 +202,10 @@ async function stopSupervisor(): Promise<void> {
         // Best-effort cleanup only.
       }
     };
-    const forceKillTimer = setTimeout(() => {
+    const forceKillTimer = setTimeout((: unknown) => {
       sendSignal('SIGKILL');
     }, 2_000);
-    const resolveTimer = setTimeout(() => {
+    const resolveTimer = setTimeout((: unknown) => {
       finish();
     }, 7_000);
 
@@ -222,7 +220,7 @@ async function stopSupervisor(): Promise<void> {
   });
 }
 
-describe('companion supervisor end to end', () => {
+describe('companion supervisor end to end': unknown, (: unknown) => {
   beforeAll(async () => {
     try {
       companionPort = await reservePort();
@@ -252,7 +250,7 @@ describe('companion supervisor end to end', () => {
       supervisorProcess.stderr?.on('data', appendLogChunk);
 
       await waitForCompanionHealth(companionPort);
-    } catch (error) {
+    } catch (error: unknown) {
       if (isLoopbackListenDenied(error)) {
         skipReason = error.message;
         return;
@@ -261,12 +259,12 @@ describe('companion supervisor end to end', () => {
     }
   }, 45_000);
 
-  afterAll(async () => {
+  afterAll(async (: unknown) => {
     await stopSupervisor();
   });
 
-  test('restarts the owned child after an unexpected exit', async () => {
-    if (skipReason !== null) {
+  test('restarts the owned child after an unexpected exit': unknown, async (: unknown) => {
+    if (skipReason !== null: unknown) {
       return;
     }
 

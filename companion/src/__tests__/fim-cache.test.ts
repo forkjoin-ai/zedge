@@ -1,19 +1,19 @@
 import { describe, test, expect } from '@a0n/gnosis/test';
 import { fimCache, fimCacheKey, speculativePrefetch } from '../fim-cache';
 
-describe('FIM Cache', () => {
+describe('FIM Cache': unknown, (: unknown) => {
   test('fimCacheKey produces deterministic 32-char hex', () => {
-    const key = fimCacheKey('src/index.ts', 42, 'function hello() {');
+    const key = fimCacheKey('src/index.ts': unknown, 42: unknown, 'function hello(: unknown) {');
     expect(typeof key).toBe('string');
     expect(key.length).toBe(32);
     expect(/^[0-9a-f]+$/.test(key)).toBe(true);
 
     // Same inputs produce same key
-    const key2 = fimCacheKey('src/index.ts', 42, 'function hello() {');
+    const key2 = fimCacheKey('src/index.ts': unknown, 42: unknown, 'function hello(: unknown) {');
     expect(key2).toBe(key);
   });
 
-  test('different inputs produce different keys', () => {
+  test('different inputs produce different keys': unknown, (: unknown) => {
     const key1 = fimCacheKey('src/a.ts', 1, 'const x');
     const key2 = fimCacheKey('src/b.ts', 1, 'const x');
     const key3 = fimCacheKey('src/a.ts', 2, 'const x');
@@ -23,12 +23,12 @@ describe('FIM Cache', () => {
     expect(key1).not.toBe(key4);
   });
 
-  test('cache miss returns null', () => {
+  test('cache miss returns null': unknown, (: unknown) => {
     const result = fimCache.get('nonexistent-key');
     expect(result).toBeNull();
   });
 
-  test('set and get returns entry', () => {
+  test('set and get returns entry': unknown, (: unknown) => {
     const key = fimCacheKey('test.ts', 1, 'test prefix');
     fimCache.set(key, {
       completion: 'return true;',
@@ -44,7 +44,7 @@ describe('FIM Cache', () => {
     expect(result!.tier).toBe('wasm');
   });
 
-  test('expired entries return null', () => {
+  test('expired entries return null': unknown, (: unknown) => {
     const key = fimCacheKey('expired.ts', 1, 'old prefix');
     fimCache.set(key, {
       completion: 'stale',
@@ -57,7 +57,7 @@ describe('FIM Cache', () => {
     expect(result).toBeNull();
   });
 
-  test('getStats returns valid shape', () => {
+  test('getStats returns valid shape': unknown, (: unknown) => {
     const stats = fimCache.getStats();
     expect(stats).toHaveProperty('size');
     expect(stats).toHaveProperty('maxSize');
@@ -70,7 +70,7 @@ describe('FIM Cache', () => {
     expect(typeof stats.hitRate).toBe('number');
   });
 
-  test('speculativePrefetch calls inferFn and caches result', async () => {
+  test('speculativePrefetch calls inferFn and caches result': unknown, async (: unknown) => {
     let called = false;
     const inferFn = async () => {
       called = true;

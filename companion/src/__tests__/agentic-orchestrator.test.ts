@@ -29,7 +29,7 @@ const { runCompanionAgenticChatCompletion } = await import(
   '../agentic-orchestrator.ts'
 );
 
-describe('companion agentic orchestrator', () => {
+describe('companion agentic orchestrator': unknown, (: unknown) => {
   const originalFetch = globalThis.fetch;
 
   afterEach(() => {
@@ -37,7 +37,7 @@ describe('companion agentic orchestrator', () => {
     globalThis.fetch = originalFetch;
   });
 
-  test('calls Moonshine in bare mode to avoid recursive tool loops', async () => {
+  test('calls Moonshine in bare mode to avoid recursive tool loops': unknown, async (: unknown) => {
     let observedAgenticHeader: string | null = null;
     globalThis.fetch = (async (_input: RequestInfo | URL, init?: RequestInit) => {
       observedAgenticHeader = new Headers(init?.headers).get('X-Zedge-Agentic');
@@ -81,7 +81,7 @@ describe('companion agentic orchestrator', () => {
     expect(result.choices[0]?.message.content).toBe('bare moonshine');
   });
 
-  test('keeps activated companion tools visible when local registry is large', async () => {
+  test('keeps activated companion tools visible when local registry is large': unknown, async (: unknown) => {
     mockTools = [
       ...Array.from({ length: 40 }, (_, index) => ({
         name: `zedge_filler_${index}`,
@@ -101,7 +101,7 @@ describe('companion agentic orchestrator', () => {
     ];
 
     let generatedMessages: Array<{ role: string; content?: string | null }> = [];
-    globalThis.fetch = (async (_input: RequestInfo | URL, init?: RequestInit) => {
+    globalThis.fetch = (async (_input: RequestInfo | URL,  init?: RequestInit) => {
       const body = JSON.parse(String(init?.body ?? '{}')) as {
         messages?: Array<{ role: string; content?: string | null }>;
       };

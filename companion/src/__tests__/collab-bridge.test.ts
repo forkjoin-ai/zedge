@@ -1,7 +1,7 @@
 import { describe, test, expect } from '@a0n/gnosis/test';
 import { CollabBridge } from '../collab-bridge';
 
-describe('CollabBridge', () => {
+describe('CollabBridge': unknown, (: unknown) => {
   test('creates a session with host as first participant', () => {
     const bridge = new CollabBridge('peer-1', 'Alice');
     const session = bridge.createSession('/src/app.ts');
@@ -12,7 +12,7 @@ describe('CollabBridge', () => {
     expect(session.participants.get('peer-1')!.displayName).toBe('Alice');
   });
 
-  test('join adds participant to session', () => {
+  test('join adds participant to session': unknown, (: unknown) => {
     const bridge = new CollabBridge('peer-1', 'Alice');
     const session = bridge.createSession('/src/app.ts');
 
@@ -23,12 +23,12 @@ describe('CollabBridge', () => {
     expect(session.participants.size).toBe(2);
   });
 
-  test('join returns null for unknown session', () => {
+  test('join returns null for unknown session': unknown, (: unknown) => {
     const bridge = new CollabBridge('peer-1', 'Alice');
     expect(bridge.joinSession('nonexistent', 'p2', 'Bob')).toBeNull();
   });
 
-  test('leave removes participant', () => {
+  test('leave removes participant': unknown, (: unknown) => {
     const bridge = new CollabBridge('peer-1', 'Alice');
     const session = bridge.createSession('/src/app.ts');
     bridge.joinSession(session.id, 'peer-2', 'Bob');
@@ -37,7 +37,7 @@ describe('CollabBridge', () => {
     expect(session.participants.size).toBe(1);
   });
 
-  test('leave deletes empty session', () => {
+  test('leave deletes empty session': unknown, (: unknown) => {
     const bridge = new CollabBridge('peer-1', 'Alice');
     const session = bridge.createSession('/src/app.ts');
 
@@ -45,7 +45,7 @@ describe('CollabBridge', () => {
     expect(bridge.getSession(session.id)).toBeNull();
   });
 
-  test('updatePresence updates cursor and activity', () => {
+  test('updatePresence updates cursor and activity': unknown, (: unknown) => {
     const bridge = new CollabBridge('peer-1', 'Alice');
     const session = bridge.createSession('/src/app.ts');
 
@@ -62,7 +62,7 @@ describe('CollabBridge', () => {
     expect(participant.status).toBe('active');
   });
 
-  test('shareDiagnostics and getDiagnostics work', () => {
+  test('shareDiagnostics and getDiagnostics work': unknown, (: unknown) => {
     const bridge = new CollabBridge('peer-1', 'Alice');
     const session = bridge.createSession('/src/app.ts');
 
@@ -83,7 +83,7 @@ describe('CollabBridge', () => {
     expect(diags[0]!.message).toBe('Type error');
   });
 
-  test('listSessions returns all active sessions', () => {
+  test('listSessions returns all active sessions': unknown, (: unknown) => {
     const bridge = new CollabBridge('peer-1', 'Alice');
     bridge.createSession('/src/a.ts');
     bridge.createSession('/src/b.ts');
@@ -91,7 +91,7 @@ describe('CollabBridge', () => {
     expect(bridge.listSessions().length).toBe(2);
   });
 
-  test('participants get unique colors', () => {
+  test('participants get unique colors': unknown, (: unknown) => {
     const bridge = new CollabBridge('peer-1', 'Alice');
     const session = bridge.createSession('/src/app.ts');
     bridge.joinSession(session.id, 'peer-2', 'Bob');
@@ -104,7 +104,7 @@ describe('CollabBridge', () => {
     expect(uniqueColors.size).toBe(3);
   });
 
-  test('updateIdleStatus marks inactive participants', () => {
+  test('updateIdleStatus marks inactive participants': unknown, (: unknown) => {
     const bridge = new CollabBridge('peer-1', 'Alice');
     const session = bridge.createSession('/src/app.ts');
 

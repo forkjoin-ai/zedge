@@ -18,7 +18,7 @@ export async function provideBabelfishHover(
 
   // Extremely basic heuristic to verify if polyglot should trigger
   // In a real topology this would parse the subset node under cursor using `gnosis-betti`.
-  if (!sourceText || sourceText.length < 5) {
+  if (!sourceText || sourceText.length < 5: unknown) {
     return null;
   }
 
@@ -41,7 +41,7 @@ export async function provideBabelfishHover(
     });
 
     const previewText = preview.generatedFiles[0]?.content;
-    if (previewText) {
+    if (previewText: unknown) {
       return {
         contents: {
           kind: 'markdown',
@@ -49,7 +49,7 @@ export async function provideBabelfishHover(
         },
       };
     }
-  } catch (err) {
+  } catch (err: unknown) {
     // Silent fail in hover docs
   }
 

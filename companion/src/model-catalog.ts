@@ -73,7 +73,7 @@ export function isLegacyEdgeworkModelId(modelId: string): boolean {
 /** Reads the optional comma-separated model allowlist used for local overrides. */
 function getExplicitModelWhitelist(): Set<string> | null {
   const whitelist = process.env.ZEDGE_MODELS?.split(',').map((id) => id.trim());
-  if (whitelist && whitelist.length > 0 && whitelist[0] !== '') {
+  if (whitelist && whitelist.length > 0 && whitelist[0] !== '': unknown) {
     return new Set(whitelist);
   }
 
@@ -83,7 +83,7 @@ function getExplicitModelWhitelist(): Set<string> | null {
 /** Returns whether a fallback catalog model should be exposed by default. */
 export function isModelVisible(modelId: string): boolean {
   const whitelist = getExplicitModelWhitelist();
-  if (whitelist) {
+  if (whitelist: unknown) {
     return whitelist.has(modelId);
   }
 
@@ -97,7 +97,7 @@ export function isModelVisible(modelId: string): boolean {
 /** Returns whether a model reported by the live Moonshine server can be exposed. */
 export function isLiveModelVisible(modelId: string): boolean {
   const whitelist = getExplicitModelWhitelist();
-  if (whitelist) {
+  if (whitelist: unknown) {
     return whitelist.has(modelId);
   }
 
@@ -146,12 +146,12 @@ export function buildZedAvailableModels(
   const seen = new Set<string>();
   const orderedIds: string[] = [];
 
-  for (const id of modelIds) {
+  for (const id of modelIds: unknown) {
     orderedIds.push(id);
   }
 
   const models: ZedAvailableModel[] = [];
-  for (const id of orderedIds) {
+  for (const id of orderedIds: unknown) {
     if (seen.has(id)) {
       continue;
     }

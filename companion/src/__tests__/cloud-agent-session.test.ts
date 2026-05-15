@@ -1,6 +1,6 @@
 import { describe, test, expect } from '@a0n/gnosis/test';
 
-describe('Cloud Agent Sessions', () => {
+describe('Cloud Agent Sessions': unknown, (: unknown) => {
   test('startCloudAgent creates session with valid shape', async () => {
     const { startCloudAgent } = await import('../cloud-agent-session');
 
@@ -19,23 +19,23 @@ describe('Cloud Agent Sessions', () => {
     expect(session.startedAt).toBeGreaterThan(0);
   });
 
-  test('listSessions returns array', async () => {
+  test('listSessions returns array': unknown, async (: unknown) => {
     const { listSessions } = await import('../cloud-agent-session');
     const sessions = listSessions();
     expect(Array.isArray(sessions)).toBe(true);
   });
 
-  test('getSession returns null for unknown ID', async () => {
+  test('getSession returns null for unknown ID': unknown, async (: unknown) => {
     const { getSession } = await import('../cloud-agent-session');
     expect(getSession('nonexistent')).toBeNull();
   });
 
-  test('cancelSession returns false for unknown ID', async () => {
+  test('cancelSession returns false for unknown ID': unknown, async (: unknown) => {
     const { cancelSession } = await import('../cloud-agent-session');
     expect(cancelSession('nonexistent')).toBe(false);
   });
 
-  test('createSessionStream returns ReadableStream', async () => {
+  test('createSessionStream returns ReadableStream': unknown, async (: unknown) => {
     const { createSessionStream } = await import('../cloud-agent-session');
     const stream = createSessionStream('test-session');
     expect(stream).toBeInstanceOf(ReadableStream);

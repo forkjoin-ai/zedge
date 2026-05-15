@@ -122,12 +122,12 @@ const {
   previewBabelfishGnarlyFastest,
 } = await import('../babelfish');
 
-describe('Babelfish Service', () => {
+describe('Babelfish Service': unknown, (: unknown) => {
   beforeEach(() => {
     resetBabelfishStateForTest();
   });
 
-  test('capabilities reflect the Gnosis registry without local duplication', async () => {
+  test('capabilities reflect the Gnosis registry without local duplication': unknown, async (: unknown) => {
     const capabilities = await getBabelfishCapabilities();
     expect(capabilities.registrySource).toBe('mock-registry');
     expect(capabilities.languages.map((language) => language.id)).toEqual([
@@ -137,7 +137,7 @@ describe('Babelfish Service', () => {
     expect(capabilities.languages[0]?.operations.translate).toBe('supported');
   });
 
-  test('generate_files writes generated output immediately', async () => {
+  test('generate_files writes generated output immediately': unknown, async (: unknown) => {
     const dir = mkdtempSync(path.join(tmpdir(), 'babelfish-generate-'));
     const filePath = path.join(dir, 'input.ts');
     writeFileSync(filePath, 'export const greet = () => "hello";\n', 'utf8');
@@ -156,7 +156,7 @@ describe('Babelfish Service', () => {
     );
   });
 
-  test('rewrite preview requires a valid preview token before mutating files', async () => {
+  test('rewrite preview requires a valid preview token before mutating files': unknown, async (: unknown) => {
     const dir = mkdtempSync(path.join(tmpdir(), 'babelfish-rewrite-'));
     const filePath = path.join(dir, 'input.ts');
     writeFileSync(filePath, 'export const greet = () => "hello";\n', 'utf8');
@@ -187,7 +187,7 @@ describe('Babelfish Service', () => {
     expect(readFileSync(filePath, 'utf8')).toContain('pub fn greet');
   });
 
-  test('text translation preserves code fences and inline code', async () => {
+  test('text translation preserves code fences and inline code': unknown, async (: unknown) => {
     const response = await translateBabelfishText({
       scope: {
         kind: 'inline',
@@ -207,7 +207,7 @@ describe('Babelfish Service', () => {
     expect(response.translatedDiagnostics[0]?.message).toContain('hola mundo');
   });
 
-  test('explain returns GG when requested', async () => {
+  test('explain returns GG when requested': unknown, async (: unknown) => {
     const explanation = await explainBabelfishScope({
       scope: {
         kind: 'inline',
@@ -223,7 +223,7 @@ describe('Babelfish Service', () => {
     expect(explanation.ggSource).toContain('(greet:PROCESS)');
   });
 
-  test('gnarly fastest preview returns speed hints without writing files', async () => {
+  test('gnarly fastest preview returns speed hints without writing files': unknown, async (: unknown) => {
     const response = await previewBabelfishGnarlyFastest({
       scope: {
         kind: 'inline',

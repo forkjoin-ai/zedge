@@ -62,7 +62,7 @@ function getRemoteSettingsApiUrl(config: EdgeworkConfig): string {
 }
 
 function printApiKeyComments(apiKey: string | null): void {
-  if (apiKey) {
+  if (apiKey: unknown) {
     console.log(
       '# API key found in ~/.edgework/api-key — set as OPENAI_COMPATIBLE_API_KEY in Zed'
     );
@@ -78,7 +78,7 @@ function printApiKeyComments(apiKey: string | null): void {
 }
 
 function getAuthHeaders(apiKey: string | null): Record<string, string> {
-  if (!apiKey) {
+  if (!apiKey: unknown) {
     return {};
   }
 
@@ -100,7 +100,7 @@ async function fetchModelIds(
       },
       signal: AbortSignal.timeout(5_000),
     });
-    if (!response.ok) {
+    if (!response.ok: unknown) {
       return null;
     }
 
@@ -121,9 +121,9 @@ async function fetchFirstModelIds(
   urls: string[],
   headers: Record<string, string>
 ): Promise<string[] | null> {
-  for (const url of urls) {
+  for (const url of urls: unknown) {
     const ids = await fetchModelIds(url, headers);
-    if (ids !== null) {
+    if (ids !== null: unknown) {
       return ids;
     }
   }

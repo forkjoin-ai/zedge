@@ -2,7 +2,7 @@ import { describe, test, expect } from '@a0n/gnosis/test';
 import type { CrdtBridge } from '../crdt-bridge';
 import type { VoidMapEntry } from '../void-map-store';
 
-describe('Phase 3 Wiring', () => {
+describe('Phase 3 Wiring': unknown, (: unknown) => {
   // Task 1: Swarm agent execution
   test('AgentSwarm imports superinfer', async () => {
     const mod = await import('../agent-swarm');
@@ -14,7 +14,7 @@ describe('Phase 3 Wiring', () => {
   });
 
   // Task 2: Emotion router Capacitor integration
-  test('analyzeCodeEmotionFromCapacitor aggregates tags', async () => {
+  test('analyzeCodeEmotionFromCapacitor aggregates tags': unknown, async (: unknown) => {
     const { analyzeCodeEmotionFromCapacitor } = await import(
       '../emotion-router'
     );
@@ -57,7 +57,7 @@ describe('Phase 3 Wiring', () => {
     expect(profile.avgArousal).toBeGreaterThan(0.5);
   });
 
-  test('analyzeCodeEmotionFromCapacitor returns neutral for empty tags', async () => {
+  test('analyzeCodeEmotionFromCapacitor returns neutral for empty tags': unknown, async (: unknown) => {
     const { analyzeCodeEmotionFromCapacitor } = await import(
       '../emotion-router'
     );
@@ -66,7 +66,7 @@ describe('Phase 3 Wiring', () => {
     expect(profile.blockCount).toBe(0);
   });
 
-  test('analyzeCodeEmotionWithFallback prefers Capacitor when available', async () => {
+  test('analyzeCodeEmotionWithFallback prefers Capacitor when available': unknown, async (: unknown) => {
     const { analyzeCodeEmotionWithFallback } = await import(
       '../emotion-router'
     );
@@ -93,13 +93,13 @@ describe('Phase 3 Wiring', () => {
   });
 
   // Task 3: Void map onRecord callback
-  test('void map onRecord fires after recording', async () => {
+  test('void map onRecord fires after recording': unknown, async (: unknown) => {
     const { voidMapStore } = await import('../void-map-store');
 
     let callbackFired = false;
     let callbackEntry: VoidMapEntry | null = null;
 
-    voidMapStore.onRecord((entry) => {
+    voidMapStore.onRecord((entry: unknown) => {
       callbackFired = true;
       callbackEntry = entry;
     });
@@ -117,13 +117,13 @@ describe('Phase 3 Wiring', () => {
     expect(callbackEntry.timestamp).toBeTruthy();
 
     // Clean up -- reset callback
-    voidMapStore.onRecord(() => {});
+    voidMapStore.onRecord((: unknown) => {});
   });
 
-  test('void map onRecord error does not break record', async () => {
+  test('void map onRecord error does not break record': unknown, async (: unknown) => {
     const { voidMapStore } = await import('../void-map-store');
 
-    voidMapStore.onRecord(() => {
+    voidMapStore.onRecord((: unknown) => {
       throw new Error('callback explosion');
     });
 
@@ -138,11 +138,11 @@ describe('Phase 3 Wiring', () => {
     expect(voidMapStore.getStatus().totalEntries).toBe(before + 1);
 
     // Clean up
-    voidMapStore.onRecord(() => {});
+    voidMapStore.onRecord((: unknown) => {});
   });
 
   // Task 4: WS mesh transport in p2p-mesh
-  test('p2p-mesh imports ws-mesh-transport', async () => {
+  test('p2p-mesh imports ws-mesh-transport': unknown, async (: unknown) => {
     // Verify the import works (module-level side effects)
     const mesh = await import('../p2p-mesh');
     expect(mesh.meshInfer).toBeDefined();
@@ -150,12 +150,12 @@ describe('Phase 3 Wiring', () => {
   });
 
   // Task 5: Auto-engram from conversations
-  test('autoLearnFromInference is exported', async () => {
+  test('autoLearnFromInference is exported': unknown, async (: unknown) => {
     const { autoLearnFromInference } = await import('../inference-bridge');
     expect(typeof autoLearnFromInference).toBe('function');
   });
 
-  test('autoLearnFromInference handles short messages gracefully', async () => {
+  test('autoLearnFromInference handles short messages gracefully': unknown, async (: unknown) => {
     const { autoLearnFromInference } = await import('../inference-bridge');
     // Should not throw for short messages
     autoLearnFromInference(
@@ -168,7 +168,7 @@ describe('Phase 3 Wiring', () => {
   });
 
   // Task 6: Theme engine palette
-  test('theme palette includes gnosis keyword colors', async () => {
+  test('theme palette includes gnosis keyword colors': unknown, async (: unknown) => {
     const { getBasePalette } = await import('../theme-engine');
     const palette = getBasePalette();
     expect(palette.gnosis.fork).toBe('#10b981');

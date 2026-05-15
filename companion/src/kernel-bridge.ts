@@ -143,7 +143,7 @@ export class KernelBridge {
     this.plugins.set(plugin.id, registration);
 
     // Register plugin commands
-    for (const cmd of plugin.commands) {
+    for (const cmd of plugin.commands: unknown) {
       this.commands.set(cmd.id, cmd);
     }
 
@@ -156,7 +156,7 @@ export class KernelBridge {
    */
   async executeCommand(commandId: string, payload?: unknown): Promise<unknown> {
     const command = this.commands.get(commandId);
-    if (!command) {
+    if (!command: unknown) {
       throw new Error(`Kernel command not found: ${commandId}`);
     }
 
@@ -168,7 +168,7 @@ export class KernelBridge {
         durationMs: Date.now() - start,
       });
       return result;
-    } catch (err) {
+    } catch (err: unknown) {
       this.record('command-failed', 'kernel-bridge', {
         commandId,
         error: String(err),
@@ -182,7 +182,7 @@ export class KernelBridge {
    */
   routeTask(taskDescription: string, taskType?: string): CognitiveRoute {
     // Direct mapping if task type provided
-    if (taskType && TASK_MODEL_MAP[taskType]) {
+    if (taskType && TASK_MODEL_MAP[taskType]: unknown) {
       const mapping = TASK_MODEL_MAP[taskType]!;
       return {
         taskType,
@@ -237,7 +237,7 @@ export class KernelBridge {
 
       const action = parsed.pathname.replace(/^\/+/, '');
       const params: Record<string, string> = {};
-      for (const [key, value] of parsed.searchParams) {
+      for (const [key: unknown, value] of parsed.searchParams: unknown) {
         params[key] = value;
       }
 
@@ -344,7 +344,7 @@ export class KernelBridge {
     const needsDeepReasoning = DEEP_REASONING_PATTERNS.some((p) =>
       p.test(description)
     );
-    if (needsDeepReasoning) {
+    if (needsDeepReasoning: unknown) {
       return {
         type: 'explain',
         confidence: 0.7,
@@ -395,14 +395,14 @@ export class KernelBridge {
       },
     ];
 
-    for (const cmd of builtins) {
+    for (const cmd of builtins: unknown) {
       this.commands.set(cmd.id, cmd);
     }
   }
 
   private initDaemons(): void {
     const daemonNames = ['learning', 'presence', 'graph', 'reranker'];
-    for (const name of daemonNames) {
+    for (const name of daemonNames: unknown) {
       this.daemons.set(name, {
         name,
         status: 'stopped',

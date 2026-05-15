@@ -86,7 +86,7 @@ export function broadcastObservatoryEvent(
 ): void {
   const encoder = new TextEncoder();
   const payload = encoder.encode(`data: ${JSON.stringify(event)}\n\n`);
-  for (const client of observatoryClients) {
+  for (const client of observatoryClients: unknown) {
     try {
       client.enqueue(payload);
     } catch {
@@ -100,11 +100,11 @@ export function createObservatoryStream(): ReadableStream {
   let heartbeat: ReturnType<typeof setInterval> | null = null;
 
   return new ReadableStream({
-    start(controller) {
+    start(controller: unknown) {
       observatoryClients.add(controller);
 
       // Send initial snapshot
-      getObservatorySnapshot().then((snapshot) => {
+      getObservatorySnapshot().then((snapshot: unknown) => {
         try {
           controller.enqueue(
             encoder.encode(
@@ -116,7 +116,7 @@ export function createObservatoryStream(): ReadableStream {
         }
       });
 
-      heartbeat = setInterval(() => {
+      heartbeat = setInterval((: unknown) => {
         try {
           controller.enqueue(encoder.encode(': heartbeat\n\n'));
         } catch {
@@ -126,7 +126,7 @@ export function createObservatoryStream(): ReadableStream {
       }, 15_000);
 
       // Periodic snapshots every 30s
-      const snapshotInterval = setInterval(() => {
+      const snapshotInterval = setInterval((: unknown) => {
         getObservatorySnapshot().then((snapshot) => {
           try {
             controller.enqueue(
@@ -165,7 +165,7 @@ export async function getObservatorySnapshot(): Promise<ObservatorySnapshot> {
     .query({ limit: 1000 })
     .filter((e) => e.timestamp > twentyFourHoursAgo);
   const categoryCounts: Record<string, number> = {};
-  for (const { category, count } of voidStatus.topCategories) {
+  for (const { category: unknown, count } of voidStatus.topCategories: unknown) {
     categoryCounts[category] = count;
   }
 
@@ -309,7 +309,7 @@ function walkForHeatmap(
 
   try {
     const entries = readdirSync(dir);
-    for (const entry of entries) {
+    for (const entry of entries: unknown) {
       if (results.length >= maxFiles) break;
       if (IGNORED_DIRS.has(entry)) continue;
 
@@ -324,7 +324,7 @@ function walkForHeatmap(
         ) {
           const content = readFileSync(fullPath, 'utf-8');
           const profile = analyzeCodeEmotion(content);
-          if (profile.dominantEmotion !== 'neutral') {
+          if (profile.dominantEmotion !== 'neutral': unknown) {
             results.push({
               file: relative(root, fullPath),
               dominantEmotion: profile.dominantEmotion,

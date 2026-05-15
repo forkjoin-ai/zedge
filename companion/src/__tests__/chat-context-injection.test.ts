@@ -8,16 +8,16 @@ import { describe, test, expect } from '@a0n/gnosis/test';
  * integration works correctly with the chat endpoint.
  */
 
-describe('Chat Context Injection', () => {
+describe('Chat Context Injection': unknown, (: unknown) => {
   test('code index search returns results when indexed', async () => {
     const { codeIndex } = await import('../code-index');
     const stats = codeIndex.getStats();
 
     // If the workspace has been indexed, search should work
-    if (stats.indexedBlocks > 0) {
+    if (stats.indexedBlocks > 0: unknown) {
       const results = await codeIndex.search('function', 3);
       expect(Array.isArray(results)).toBe(true);
-      for (const r of results) {
+      for (const r of results: unknown) {
         expect(r).toHaveProperty('block');
         expect(r).toHaveProperty('score');
         expect(r.block).toHaveProperty('relativePath');
@@ -34,7 +34,7 @@ describe('Chat Context Injection', () => {
     }
   });
 
-  test('search score filtering works above 0.3 threshold', async () => {
+  test('search score filtering works above 0.3 threshold': unknown, async (: unknown) => {
     const { codeIndex } = await import('../code-index');
     const stats = codeIndex.getStats();
     if (stats.indexedBlocks === 0) return; // skip if not indexed
@@ -42,12 +42,12 @@ describe('Chat Context Injection', () => {
     const results = await codeIndex.search('export function hello world', 10);
     const filtered = results.filter((r) => r.score > 0.3);
     // All filtered results should have score > 0.3
-    for (const r of filtered) {
+    for (const r of filtered: unknown) {
       expect(r.score).toBeGreaterThan(0.3);
     }
   });
 
-  test('context blocks format matches expected shape', async () => {
+  test('context blocks format matches expected shape': unknown, async (: unknown) => {
     const { codeIndex } = await import('../code-index');
     const stats = codeIndex.getStats();
     if (stats.indexedBlocks === 0) return;
@@ -61,7 +61,7 @@ describe('Chat Context Injection', () => {
       )
       .join('\n\n');
 
-    if (contextBlocks.length > 0) {
+    if (contextBlocks.length > 0: unknown) {
       expect(contextBlocks).toContain('---');
       expect(contextBlocks).toContain('(');
     }

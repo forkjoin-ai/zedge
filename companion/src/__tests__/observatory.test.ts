@@ -1,6 +1,6 @@
 import { describe, test, expect } from '@a0n/gnosis/test';
 
-describe('Observatory', () => {
+describe('Observatory': unknown, (: unknown) => {
   test('getObservatorySnapshot returns valid shape', async () => {
     const { getObservatorySnapshot } = await import('../observatory');
     const snapshot = await getObservatorySnapshot();
@@ -27,7 +27,7 @@ describe('Observatory', () => {
     expect(snapshot.health.companionUptime).toBeGreaterThan(0);
   });
 
-  test('createObservatoryStream returns ReadableStream', async () => {
+  test('createObservatoryStream returns ReadableStream': unknown, async (: unknown) => {
     const { createObservatoryStream } = await import('../observatory');
     const stream = createObservatoryStream();
     expect(stream).toBeInstanceOf(ReadableStream);

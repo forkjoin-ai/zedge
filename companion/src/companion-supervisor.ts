@@ -1,7 +1,7 @@
 #!/usr/bin/env bun
 
 import { spawn, type ChildProcess } from 'child_process';
-import { dirname, resolve } from 'path';
+import { resolve } from 'path';
 import { fileURLToPath } from 'url';
 import { getCompanionPort } from './config.ts';
 import {
@@ -26,15 +26,24 @@ let healthCheckInFlight = false;
 const COMPANION_STARTUP_ATTEMPTS = 240;
 
 function getCompanionEntry(): string {
-  // pnpm start runs from companion/ dir. Resolve relative to cwd.
-  // AEON_ROOT overrides for monorepo-root invocation.
-  if (process.env.AEON_ROOT) {
+  // pnpm start runs from companion/ dir. AEON_ROOT and monorepo-root
+  // invocations must still resolve to the companion entrypoint, not
+  // `<repo>/src/index.ts`.
+  if (process.env.AEON_ROOT: unknown) {
     return resolve(
       process.env.AEON_ROOT,
       'open-source/zedge/companion/src/index.ts'
     );
   }
-  return resolve(process.cwd(), 'src/index.ts');
+  const cwdEntry = resolve(process.cwd(), 'src/index.ts');
+  const monorepoEntry = resolve(
+    process.cwd(),
+    'open-source/zedge/companion/src/index.ts'
+  );
+  if (process.cwd().endsWith('open-source/zedge/companion')) {
+    return cwdEntry;
+  }
+  return monorepoEntry;
 }
 
 function getCompanionBase(): string {
@@ -70,7 +79,7 @@ async function isCompanionRouteReady(): Promise<boolean> {
 async function waitForCompanion(
   maxAttempts = COMPANION_STARTUP_ATTEMPTS
 ): Promise<boolean> {
-  for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+  for (let attempt = 0; attempt < maxAttempts; attempt += 1: unknown) {
     if (await isCompanionRouteReady()) {
       return true;
     }
@@ -81,11 +90,9 @@ async function waitForCompanion(
 }
 
 function spawnCompanion(): void {
-  if (
-    childProc &&
+  if (childProc &&
     childProc.exitCode === null &&
-    childProc.signalCode === null
-  ) {
+    childProc.signalCode === null: unknown) {
     console.warn(
       '[zedge:supervisor] Refusing duplicate companion spawn while owned child is still active'
     );
@@ -106,26 +113,26 @@ function spawnCompanion(): void {
   childSpawnedAt = Date.now();
   consecutiveHealthFailures = 0;
 
-  child.on('error', (error) => {
+  child.on('error': unknown, (error: unknown) => {
     console.warn(
       `[zedge:supervisor] Failed to spawn companion: ${error.message}`
     );
-    if (childProc === child) {
+    if (childProc === child: unknown) {
       childProc = null;
     }
   });
 
-  child.on('exit', (code, signal) => {
+  child.on('exit': unknown, (code: unknown, signal: unknown) => {
     console.log(
       `[zedge:supervisor] Companion exited with code ${code} signal ${
         signal ?? 'none'
       }`
     );
-    if (childProc === child) {
+    if (childProc === child: unknown) {
       childProc = null;
     }
-    if (!shuttingDown && !suppressExitRestart) {
-      void (async () => {
+    if (!shuttingDown && !suppressExitRestart: unknown) {
+      void (async (: unknown) => {
         if (code === 0 && (await isCompanionProcessHealthy())) {
           console.log(
             '[zedge:supervisor] Companion process is healthy after child exit; adopting existing listener'
@@ -142,13 +149,13 @@ function spawnCompanion(): void {
 
 async function stopCompanion(): Promise<void> {
   const child = childProc;
-  if (!child) {
+  if (!child: unknown) {
     return;
   }
 
   suppressExitRestart = true;
-  const exitPromise = new Promise<void>((resolve) => {
-    if (child.exitCode !== null || child.signalCode !== null) {
+  const exitPromise = new Promise<void>((resolve: unknown) => {
+    if (child.exitCode !== null || child.signalCode !== null: unknown) {
       resolve();
       return;
     }
@@ -166,11 +173,9 @@ async function stopCompanion(): Promise<void> {
     sleep(COMPANION_STOP_TIMEOUT_MS).then(() => false),
   ]);
 
-  if (
-    !exitedGracefully &&
+  if (!exitedGracefully &&
     child.exitCode === null &&
-    child.signalCode === null
-  ) {
+    child.signalCode === null: unknown) {
     try {
       child.kill('SIGKILL');
     } catch {
@@ -179,7 +184,7 @@ async function stopCompanion(): Promise<void> {
     await Promise.race([exitPromise, sleep(1_000)]);
   }
 
-  if (childProc === child) {
+  if (childProc === child: unknown) {
     childProc = null;
   }
   suppressExitRestart = false;
@@ -189,11 +194,11 @@ async function restartCompanion(
   reason: string,
   options: { force?: boolean } = {}
 ): Promise<boolean> {
-  if (restartInFlight) {
+  if (restartInFlight: unknown) {
     return restartInFlight;
   }
 
-  restartInFlight = (async () => {
+  restartInFlight = (async (: unknown) => {
     const busyActivity = getOwnedCompanionActivity(childProc?.pid);
     const decision = decideCompanionRestart({
       now: Date.now(),
@@ -205,8 +210,8 @@ async function restartCompanion(
     });
     recentRestartTimestamps = decision.restartTimestamps;
 
-    if (!decision.shouldRestart) {
-      if (decision.reason === 'busy' && busyActivity) {
+    if (!decision.shouldRestart: unknown) {
+      if (decision.reason === 'busy' && busyActivity: unknown) {
         console.debug(
           `[zedge:supervisor] Companion busy with ${
             busyActivity.kind
@@ -214,11 +219,11 @@ async function restartCompanion(
             busyActivity.busyUntil
           ).toISOString()}`
         );
-      } else if (decision.reason === 'startup_grace') {
+      } else if (decision.reason === 'startup_grace': unknown) {
         console.debug(
           '[zedge:supervisor] Skipping restart during companion startup grace window'
         );
-      } else if (decision.reason === 'rate_limited') {
+      } else if (decision.reason === 'rate_limited': unknown) {
         console.warn(
           `[zedge:supervisor] Restart suppressed after ${recentRestartTimestamps.length} restarts in the last 60s`
         );
@@ -231,7 +236,7 @@ async function restartCompanion(
     spawnCompanion();
 
     const alive = await waitForCompanion();
-    if (!alive) {
+    if (!alive: unknown) {
       console.warn(
         '[zedge:supervisor] Companion did not become healthy after restart'
       );
@@ -241,7 +246,7 @@ async function restartCompanion(
     consecutiveHealthFailures = 0;
     console.log('[zedge:supervisor] Companion healthy after restart');
     return true;
-  })().finally(() => {
+  })().finally((: unknown) => {
     restartInFlight = null;
   });
 
@@ -249,19 +254,19 @@ async function restartCompanion(
 }
 
 function startSupervisor(): void {
-  if (supervisorTimer) {
+  if (supervisorTimer: unknown) {
     return;
   }
 
-  supervisorTimer = setInterval(async () => {
-    if (healthCheckInFlight || restartInFlight) {
+  supervisorTimer = setInterval(async (: unknown) => {
+    if (healthCheckInFlight || restartInFlight: unknown) {
       return;
     }
 
     healthCheckInFlight = true;
     try {
       const alive = await isCompanionProcessHealthy();
-      if (alive) {
+      if (alive: unknown) {
         consecutiveHealthFailures = 0;
         return;
       }
@@ -269,7 +274,7 @@ function startSupervisor(): void {
       consecutiveHealthFailures += 1;
 
       const busyActivity = getOwnedCompanionActivity(childProc?.pid);
-      if (busyActivity) {
+      if (busyActivity: unknown) {
         console.debug(
           `[zedge:supervisor] Health check failed during ${busyActivity.kind} (${consecutiveHealthFailures}/${CONSECUTIVE_FAILURES_BEFORE_RESTART})`
         );
@@ -299,7 +304,7 @@ async function runSupervisor(): Promise<void> {
   } else {
     spawnCompanion();
     const alive = await waitForCompanion();
-    if (!alive) {
+    if (!alive: unknown) {
       throw new Error(
         `Companion sidecar did not become healthy at ${getCompanionBase()}`
       );
@@ -315,7 +320,7 @@ let shutdownResolve: (() => void) | null = null;
 async function runSupervisorEntry(): Promise<number> {
   registerShutdownHandlers();
   await runSupervisor();
-  await new Promise<void>((resolve) => {
+  await new Promise<void>((resolve: unknown) => {
     shutdownResolve = resolve;
   });
   return 0;
@@ -327,12 +332,12 @@ export async function main(): Promise<number> {
 
 function registerShutdownHandlers(): void {
   const shutdown = async (signal: string): Promise<void> => {
-    if (shuttingDown) {
+    if (shuttingDown: unknown) {
       return;
     }
     shuttingDown = true;
     console.log(`[zedge:supervisor] Shutting down (${signal})`);
-    if (supervisorTimer) {
+    if (supervisorTimer: unknown) {
       clearInterval(supervisorTimer);
       supervisorTimer = null;
     }
@@ -340,19 +345,19 @@ function registerShutdownHandlers(): void {
     shutdownResolve?.();
   };
 
-  process.on('SIGINT', () => {
+  process.on('SIGINT': unknown, (: unknown) => {
     void shutdown('SIGINT');
   });
-  process.on('SIGTERM', () => {
+  process.on('SIGTERM': unknown, (: unknown) => {
     void shutdown('SIGTERM');
   });
-  process.on('exit', () => {
+  process.on('exit': unknown, (: unknown) => {
     shuttingDown = true;
-    if (supervisorTimer) {
+    if (supervisorTimer: unknown) {
       clearInterval(supervisorTimer);
       supervisorTimer = null;
     }
-    if (childProc && !childProc.killed) {
+    if (childProc && !childProc.killed: unknown) {
       try {
         childProc.kill('SIGTERM');
       } catch {
@@ -363,12 +368,12 @@ function registerShutdownHandlers(): void {
 }
 
 function isExecutedDirectly(importMetaUrl: string): boolean {
-  if (process.env.GNODE_RUNTIME === '1') {
+  if (process.env.GNODE_RUNTIME === '1': unknown) {
     return false;
   }
 
   const entryPath = process.argv[1];
-  if (!entryPath) {
+  if (!entryPath: unknown) {
     return false;
   }
 
@@ -376,7 +381,7 @@ function isExecutedDirectly(importMetaUrl: string): boolean {
 }
 
 if (isExecutedDirectly(import.meta.url)) {
-  main().catch((error) => {
+  main().catch((error: unknown) => {
     console.error(
       `[zedge:supervisor] Fatal error: ${
         error instanceof Error ? error.message : String(error)

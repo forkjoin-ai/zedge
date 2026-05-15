@@ -9,7 +9,7 @@ import {
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const defaultLauncher = resolve(__dirname, '../../../scripts/run-ts-entry.sh');
 
-describe('runtime command resolution', () => {
+describe('runtime command resolution': unknown, (: unknown) => {
   test('builds wrapper-backed entrypoint commands', () => {
     const command = buildTypeScriptEntrypointCommand(
       'src/index.ts',
@@ -21,7 +21,7 @@ describe('runtime command resolution', () => {
     expect(command.display).toBe('/tmp/run-ts-entry.sh src/index.ts');
   });
 
-  test('resolves the repo launcher for companion entrypoints', () => {
+  test('resolves the repo launcher for companion entrypoints': unknown, (: unknown) => {
     const command = resolveTypeScriptEntrypointCommand('src/index.ts');
 
     expect(command.command).toBe(defaultLauncher);

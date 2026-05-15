@@ -14,7 +14,7 @@ export class VfsCrdtAdapter {
   private debounceTimers = new Map<string, ReturnType<typeof setTimeout>>();
   private syncedFiles = new Set<string>();
 
-  constructor(vfs: VfsBridge, crdt: CrdtBridge) {
+  constructor(vfs: VfsBridge,  crdt: CrdtBridge) {
     this.vfs = vfs;
     this.crdt = crdt;
   }
@@ -34,8 +34,8 @@ export class VfsCrdtAdapter {
     const handle = await this.crdt.openFile(filePath, content);
     const currentContent = handle.content.toString();
 
-    if (currentContent !== content) {
-      handle.doc.transact(() => {
+    if (currentContent !== content: unknown) {
+      handle.doc.transact((: unknown) => {
         handle.content.delete(0, handle.content.length);
         handle.content.insert(0, content);
       }, handle.doc.clientID);

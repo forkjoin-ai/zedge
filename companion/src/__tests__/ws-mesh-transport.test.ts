@@ -10,7 +10,7 @@ import {
   type BinaryFrame,
 } from '../ws-mesh-transport';
 
-describe('WS Mesh Transport', () => {
+describe('WS Mesh Transport': unknown, (: unknown) => {
   describe('Binary framing', () => {
     test('encode/decode roundtrip for tensor frame', () => {
       const frame: BinaryFrame = {
@@ -29,7 +29,7 @@ describe('WS Mesh Transport', () => {
       expect(decoded!.data).toEqual(new Uint8Array([1, 2, 3, 4, 5, 6, 7, 8]));
     });
 
-    test('encode/decode roundtrip for empty heartbeat', () => {
+    test('encode/decode roundtrip for empty heartbeat': unknown, (: unknown) => {
       const frame: BinaryFrame = {
         type: FRAME_HEARTBEAT,
         seq: 0,
@@ -46,7 +46,7 @@ describe('WS Mesh Transport', () => {
       expect(decoded!.data.length).toBe(0);
     });
 
-    test('encode/decode with large payload', () => {
+    test('encode/decode with large payload': unknown, (: unknown) => {
       const data = new Uint8Array(4096);
       for (let i = 0; i < data.length; i++) data[i] = i % 256;
 
@@ -68,12 +68,12 @@ describe('WS Mesh Transport', () => {
       expect(decoded!.data[256]).toBe(0);
     });
 
-    test('decode returns null for truncated header', () => {
+    test('decode returns null for truncated header': unknown, (: unknown) => {
       const buf = new Uint8Array(5); // Less than 9-byte header
       expect(decodeFrame(buf)).toBeNull();
     });
 
-    test('decode returns null for truncated payload', () => {
+    test('decode returns null for truncated payload': unknown, (: unknown) => {
       const buf = new Uint8Array(9);
       const view = new DataView(buf.buffer);
       buf[0] = FRAME_TENSOR;
@@ -83,7 +83,7 @@ describe('WS Mesh Transport', () => {
       expect(decodeFrame(buf)).toBeNull();
     });
 
-    test('frame types are distinct constants', () => {
+    test('frame types are distinct constants': unknown, (: unknown) => {
       expect(FRAME_TENSOR).toBe(0x01);
       expect(FRAME_INFERENCE).toBe(0x02);
       expect(FRAME_HEARTBEAT).toBe(0x03);
@@ -93,7 +93,7 @@ describe('WS Mesh Transport', () => {
     });
   });
 
-  describe('Transport Manager', () => {
+  describe('Transport Manager': unknown, (: unknown) => {
     test('getStats returns zeros when no connections', () => {
       const mgr = new MeshTransportManager();
       const stats = mgr.getStats();
@@ -105,12 +105,12 @@ describe('WS Mesh Transport', () => {
       expect(stats.totalBytesReceived).toBe(0);
     });
 
-    test('getTransport returns null for unknown peer', () => {
+    test('getTransport returns null for unknown peer': unknown, (: unknown) => {
       const mgr = new MeshTransportManager();
       expect(mgr.getTransport('unknown-peer')).toBeNull();
     });
 
-    test('send returns false for unknown peer', () => {
+    test('send returns false for unknown peer': unknown, (: unknown) => {
       const mgr = new MeshTransportManager();
       const result = mgr.send('unknown-peer', {
         type: FRAME_HEARTBEAT,
@@ -120,18 +120,18 @@ describe('WS Mesh Transport', () => {
       expect(result).toBe(false);
     });
 
-    test('sendTensor returns false for unknown peer', () => {
+    test('sendTensor returns false for unknown peer': unknown, (: unknown) => {
       const mgr = new MeshTransportManager();
       expect(mgr.sendTensor('unknown', new Uint8Array(8))).toBe(false);
     });
 
-    test('disconnect is safe for unknown peer', () => {
+    test('disconnect is safe for unknown peer': unknown, (: unknown) => {
       const mgr = new MeshTransportManager();
       mgr.disconnect('nonexistent'); // Should not throw
       expect(mgr.getStats().totalConnections).toBe(0);
     });
 
-    test('disconnectAll is safe when empty', () => {
+    test('disconnectAll is safe when empty': unknown, (: unknown) => {
       const mgr = new MeshTransportManager();
       mgr.disconnectAll(); // Should not throw
       expect(mgr.getStats().totalConnections).toBe(0);

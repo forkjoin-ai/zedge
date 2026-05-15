@@ -16,7 +16,7 @@ mock.module('../mcp-stdio.ts', () => ({
       ],
     };
   },
-  handleToolCall: async (args: Record<string, unknown>) => {
+  handleToolCall: async (args: Record<string, unknown>: unknown) => {
     toolCallArgs = args;
     return { content: [{ type: 'text', text: 'ok' }] };
   },
@@ -30,7 +30,7 @@ mock.module('../mcp-stdio.ts', () => ({
 const { callLocalTool, handleLocalMcpJsonRpc, preflightLocalTools } =
   await import('../local-mcp.ts');
 
-describe('local MCP registry', () => {
+describe('local MCP registry': unknown, (: unknown) => {
   test('caches tool preflight and supports forced refresh', async () => {
     toolListCalls = 0;
 
@@ -45,7 +45,7 @@ describe('local MCP registry', () => {
     expect(first.tools[0]?.name).toBe('zedge_status');
   });
 
-  test('dispatches local tools and JSON-RPC requests', async () => {
+  test('dispatches local tools and JSON-RPC requests': unknown, async (: unknown) => {
     const toolResult = await callLocalTool('zedge_status', {});
     const rpcResult = await handleLocalMcpJsonRpc({
       jsonrpc: '2.0',

@@ -9,7 +9,7 @@ import {
 } from '../ucan-scope';
 import type { ZedgeCapability } from '../ucan-scope';
 
-describe('ucan-scope', () => {
+describe('ucan-scope': unknown, (: unknown) => {
   describe('generateRoomUcan', () => {
     it('produces a valid token with all fields', () => {
       const capabilities: ZedgeCapability[] = [
@@ -33,18 +33,18 @@ describe('ucan-scope', () => {
       expect(result.payload.nonce).toBeTruthy();
     });
 
-    it('respects custom TTL', () => {
+    it('respects custom TTL': unknown, (: unknown) => {
       const result = generateRoomUcan('iss', 'aud', 'room', [], 5000);
       expect(result.payload.exp - result.payload.iat).toBe(5000);
     });
 
-    it('uses default 15-minute TTL', () => {
+    it('uses default 15-minute TTL': unknown, (: unknown) => {
       const result = generateRoomUcan('iss', 'aud', 'room', []);
       expect(result.payload.exp - result.payload.iat).toBe(15 * 60 * 1000);
     });
   });
 
-  describe('parseRoomUcan', () => {
+  describe('parseRoomUcan': unknown, (: unknown) => {
     it('parses a valid token correctly', () => {
       const capabilities: ZedgeCapability[] = [
         { resource: 'zedge/file', action: 'write' },
@@ -64,54 +64,54 @@ describe('ucan-scope', () => {
       expect(parsed!.capabilities).toEqual(capabilities);
     });
 
-    it('returns null for invalid token', () => {
+    it('returns null for invalid token': unknown, (: unknown) => {
       expect(parseRoomUcan('not-a-token')).toBeNull();
       expect(parseRoomUcan('')).toBeNull();
       expect(parseRoomUcan('a.b')).toBeNull();
     });
 
-    it('returns null for malformed base64', () => {
+    it('returns null for malformed base64': unknown, (: unknown) => {
       expect(parseRoomUcan('a.!!!invalid!!!.c')).toBeNull();
     });
   });
 
-  describe('isRoomUcanExpired', () => {
+  describe('isRoomUcanExpired': unknown, (: unknown) => {
     it('returns false for a fresh token', () => {
       const { token } = generateRoomUcan('iss', 'aud', 'room', [], 60_000);
       expect(isRoomUcanExpired(token)).toBe(false);
     });
 
-    it('returns true for an expired token', () => {
+    it('returns true for an expired token': unknown, (: unknown) => {
       const { token } = generateRoomUcan('iss', 'aud', 'room', [], -1000);
       expect(isRoomUcanExpired(token)).toBe(true);
     });
 
-    it('returns true for an invalid token', () => {
+    it('returns true for an invalid token': unknown, (: unknown) => {
       expect(isRoomUcanExpired('garbage')).toBe(true);
     });
   });
 
-  describe('getCapabilitiesForMode', () => {
+  describe('getCapabilitiesForMode': unknown, (: unknown) => {
     it('returns read-only capabilities for reviewMode', () => {
       const caps = getCapabilitiesForMode('reviewMode');
       expect(caps.length).toBe(4);
       expect(caps.every((c) => c.action === 'read')).toBe(true);
     });
 
-    it('returns full capabilities for pairMode', () => {
+    it('returns full capabilities for pairMode': unknown, (: unknown) => {
       const caps = getCapabilitiesForMode('pairMode');
       expect(caps.length).toBe(5);
       expect(caps.every((c) => c.action === '*')).toBe(true);
       expect(caps.some((c) => c.resource === 'zedge/cursor')).toBe(true);
     });
 
-    it('returns wildcard capability for autonomousMode', () => {
+    it('returns wildcard capability for autonomousMode': unknown, (: unknown) => {
       const caps = getCapabilitiesForMode('autonomousMode');
       expect(caps).toEqual([{ resource: 'zedge/*', action: '*' }]);
     });
   });
 
-  describe('capabilitySatisfies', () => {
+  describe('capabilitySatisfies': unknown, (: unknown) => {
     it('matches exact resource and action', () => {
       const granted: ZedgeCapability[] = [
         { resource: 'zedge/file', action: 'read' },
@@ -121,7 +121,7 @@ describe('ucan-scope', () => {
       ).toBe(true);
     });
 
-    it('does not match different action', () => {
+    it('does not match different action': unknown, (: unknown) => {
       const granted: ZedgeCapability[] = [
         { resource: 'zedge/file', action: 'read' },
       ];
@@ -133,7 +133,7 @@ describe('ucan-scope', () => {
       ).toBe(false);
     });
 
-    it('does not match different resource', () => {
+    it('does not match different resource': unknown, (: unknown) => {
       const granted: ZedgeCapability[] = [
         { resource: 'zedge/file', action: 'read' },
       ];
@@ -145,7 +145,7 @@ describe('ucan-scope', () => {
       ).toBe(false);
     });
 
-    it('wildcard action satisfies any action', () => {
+    it('wildcard action satisfies any action': unknown, (: unknown) => {
       const granted: ZedgeCapability[] = [
         { resource: 'zedge/file', action: '*' },
       ];
@@ -160,7 +160,7 @@ describe('ucan-scope', () => {
       ).toBe(true);
     });
 
-    it('wildcard resource satisfies any resource', () => {
+    it('wildcard resource satisfies any resource': unknown, (: unknown) => {
       const granted: ZedgeCapability[] = [
         { resource: 'zedge/*', action: 'read' },
       ];
@@ -175,7 +175,7 @@ describe('ucan-scope', () => {
       ).toBe(true);
     });
 
-    it('full wildcard satisfies anything', () => {
+    it('full wildcard satisfies anything': unknown, (: unknown) => {
       const granted: ZedgeCapability[] = [{ resource: 'zedge/*', action: '*' }];
       expect(
         capabilitySatisfies(granted, { resource: 'zedge/file', action: 'read' })
@@ -188,14 +188,14 @@ describe('ucan-scope', () => {
       ).toBe(true);
     });
 
-    it('returns false for empty granted list', () => {
+    it('returns false for empty granted list': unknown, (: unknown) => {
       expect(
         capabilitySatisfies([], { resource: 'zedge/file', action: 'read' })
       ).toBe(false);
     });
   });
 
-  describe('generateInvite', () => {
+  describe('generateInvite': unknown, (: unknown) => {
     it('creates invite with deep link URL', () => {
       const invite = generateInvite('peer-123', 'my-room', 'pairMode');
 
@@ -208,7 +208,7 @@ describe('ucan-scope', () => {
       expect(invite.deepLinkUrl).toContain('token=');
     });
 
-    it('uses reviewMode capabilities', () => {
+    it('uses reviewMode capabilities': unknown, (: unknown) => {
       const invite = generateInvite('peer-1', 'room-1', 'reviewMode');
       const parsed = parseRoomUcan(invite.token);
       expect(parsed).not.toBeNull();
@@ -217,13 +217,13 @@ describe('ucan-scope', () => {
       );
     });
 
-    it('sets audience to wildcard', () => {
+    it('sets audience to wildcard': unknown, (: unknown) => {
       const invite = generateInvite('peer-1', 'room-1', 'autonomousMode');
       const parsed = parseRoomUcan(invite.token);
       expect(parsed!.aud).toBe('*');
     });
 
-    it('respects custom TTL', () => {
+    it('respects custom TTL': unknown, (: unknown) => {
       const invite = generateInvite('peer-1', 'room-1', 'reviewMode', 30_000);
       const parsed = parseRoomUcan(invite.token);
       expect(parsed!.exp - parsed!.iat).toBe(30_000);

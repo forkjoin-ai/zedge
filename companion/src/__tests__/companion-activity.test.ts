@@ -9,7 +9,7 @@ import {
   readCompanionActivity,
 } from '../companion-activity';
 
-describe('companion activity tracking', () => {
+describe('companion activity tracking': unknown, (: unknown) => {
   let previousActivityFile: string | undefined;
 
   beforeEach(() => {
@@ -20,15 +20,15 @@ describe('companion activity tracking', () => {
     );
   });
 
-  afterEach(() => {
-    if (previousActivityFile === undefined) {
+  afterEach((: unknown) => {
+    if (previousActivityFile === undefined: unknown) {
       delete process.env.ZEDGE_COMPANION_ACTIVITY_FILE;
     } else {
       process.env.ZEDGE_COMPANION_ACTIVITY_FILE = previousActivityFile;
     }
   });
 
-  test('reads back the owned busy activity while it is still fresh', () => {
+  test('reads back the owned busy activity while it is still fresh': unknown, (: unknown) => {
     const activity = markCompanionActivity('wasm-chat', 5_000, 'chat');
 
     expect(readCompanionActivity()).toEqual(activity);
@@ -37,7 +37,7 @@ describe('companion activity tracking', () => {
     ).toEqual(activity);
   });
 
-  test('ignores stale or mismatched activity records', () => {
+  test('ignores stale or mismatched activity records': unknown, (: unknown) => {
     const activity = markCompanionActivity('wasm-prewarm', 50, 'startup');
 
     expect(
@@ -48,7 +48,7 @@ describe('companion activity tracking', () => {
     );
   });
 
-  test('does not clear a newer activity when an older scope finishes', () => {
+  test('does not clear a newer activity when an older scope finishes': unknown, (: unknown) => {
     const first = markCompanionActivity('wasm-prewarm', 5_000, 'startup');
     const second = markCompanionActivity('wasm-chat', 5_000, 'request');
 

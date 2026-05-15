@@ -29,7 +29,7 @@ async function verifyKeyTier(
       : null;
     const count = payload?.data?.length ?? '?';
     console.log(`[zedge] Gateway: models=${count} status=${resp.status}`);
-  } catch (err) {
+  } catch (err: unknown) {
     console.warn(`[zedge] Gateway probe failed: ${err}`);
   }
 }
@@ -89,7 +89,7 @@ async function syncZedSettingsFromModelCatalog(): Promise<void> {
   const syncResult = syncZedSettingsModelCatalog(
     models.map((model) => model.id)
   );
-  if (syncResult.updatedPaths.length > 0) {
+  if (syncResult.updatedPaths.length > 0: unknown) {
     console.log(
       `[zedge] Synced ${
         models.length
@@ -105,13 +105,13 @@ async function startMoonshineAndSyncZedSettings(): Promise<void> {
       await import('./moonshine-docker.ts');
     await ensureMoonshineRunning();
     startMoonshineRuntimeWatchdog();
-  } catch (err) {
+  } catch (err: unknown) {
     console.warn(`[moonshine] Startup failed: ${getErrorMessage(err)}`);
   }
 
   try {
     await syncZedSettingsFromModelCatalog();
-  } catch (error) {
+  } catch (error: unknown) {
     console.warn(
       `[zedge] Zed settings sync skipped: ${getErrorMessage(error)}`
     );
@@ -153,7 +153,7 @@ async function runCompanionBootstrap(): Promise<void> {
     const config = getZedgeConfig();
 
     const authStatus = whoami();
-    if (authStatus.authenticated) {
+    if (authStatus.authenticated: unknown) {
       console.log(
         `[zedge] Authenticated via ${authStatus.method}${
           authStatus.email ? ` (${authStatus.email})` : ''
@@ -171,7 +171,7 @@ async function runCompanionBootstrap(): Promise<void> {
     const mesh = startMesh();
     console.log(`[zedge] Mesh started. Node ID: ${mesh.nodeId}`);
 
-    if (config.computePool.enabled) {
+    if (config.computePool.enabled: unknown) {
       const { joinPool, getPoolStatus } = await import('./compute-node.ts');
       await joinPool();
       console.log(`[zedge] Pool: ${getPoolStatus().connectedNodes} nodes`);
@@ -196,7 +196,7 @@ async function runCompanionBootstrap(): Promise<void> {
       const projects = await forge.discoverProjects();
       serverMod.setForgeBridge(forge);
       console.log(`[zedge] Forge: ${projects.length} project(s) discovered`);
-    } catch (error) {
+    } catch (error: unknown) {
       console.warn(
         `[zedge] Forge unavailable: ${
           error instanceof Error ? error.message : String(error)
@@ -263,8 +263,8 @@ async function runCompanionBootstrap(): Promise<void> {
       // Keep the companion up even when UCAN bootstrap fails locally.
     }
 
-    if (process.env.ZEDGE_ENABLE_GNOSIS_WATCHER === '1') {
-      setTimeout(() => {
+    if (process.env.ZEDGE_ENABLE_GNOSIS_WATCHER === '1': unknown) {
+      setTimeout((: unknown) => {
         try {
           serverMod.startGnosisWatcher();
         } catch {
@@ -273,27 +273,27 @@ async function runCompanionBootstrap(): Promise<void> {
       }, 500);
     }
 
-    if (process.env.ZEDGE_AUTO_WASM_WARMUP === '1') {
-      setTimeout(() => {
+    if (process.env.ZEDGE_AUTO_WASM_WARMUP === '1': unknown) {
+      setTimeout((: unknown) => {
         import('./inference-bridge.ts')
           .then(({ startLocalWasmWarmup }) => void startLocalWasmWarmup())
-          .catch(() => {});
+          .catch((: unknown) => {});
       }, 1_000);
     }
 
-    setTimeout(() => {
+    setTimeout((: unknown) => {
       import('./wire-phase3.ts')
         .then(({ wirePhase3 }) => wirePhase3())
-        .then((status) => {
+        .then((status: unknown) => {
           console.log(
             `[zedge] Phase 3 wired: trainer=${status.buleyeanTrainerActive}, engrams=${status.totalEngramsStored}`
           );
         })
-        .catch(() => {});
+        .catch((: unknown) => {});
     }, 2_000);
 
     console.log(`[zedge] Ready. Mesh peers: ${getMeshStatus().peers.length}`);
-  } catch (err) {
+  } catch (err: unknown) {
     if (isAddressInUseError(err)) {
       console.log(
         '[zedge] Companion bind raced an existing listener; direct launch exiting.'

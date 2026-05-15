@@ -21,7 +21,7 @@ const mockCandidate: DaydreamCandidate = {
   createdAt: Date.now(),
 };
 
-describe('Daydream Annotations', () => {
+describe('Daydream Annotations': unknown, (: unknown) => {
   test('convertToDiagnostics produces hint-severity diagnostics', () => {
     const diagnostics = convertToDiagnostics(
       [mockCandidate],
@@ -39,7 +39,7 @@ describe('Daydream Annotations', () => {
     expect(diagnostics[0].data.confidence).toBe(0.7);
   });
 
-  test('convertToDiagnostics handles multiple candidates', () => {
+  test('convertToDiagnostics handles multiple candidates': unknown, (: unknown) => {
     const candidates: DaydreamCandidate[] = [
       mockCandidate,
       {
@@ -68,12 +68,12 @@ describe('Daydream Annotations', () => {
     expect(diagnostics[2].code).toBe('dream-test-3');
   });
 
-  test('convertToDiagnostics handles empty candidates', () => {
+  test('convertToDiagnostics handles empty candidates': unknown, (: unknown) => {
     const diagnostics = convertToDiagnostics([], 'file:///empty.ts');
     expect(diagnostics).toEqual([]);
   });
 
-  test('broadcast functions do not throw without clients', () => {
+  test('broadcast functions do not throw without clients': unknown, (: unknown) => {
     // No clients connected -- broadcasts should be no-ops
     expect(() => broadcastCandidates([mockCandidate])).not.toThrow();
     expect(() =>
@@ -89,11 +89,11 @@ describe('Daydream Annotations', () => {
     expect(() => broadcastRejected(mockCandidate)).not.toThrow();
   });
 
-  test('getAnnotationClientCount starts at zero', () => {
+  test('getAnnotationClientCount starts at zero': unknown, (: unknown) => {
     expect(getAnnotationClientCount()).toBe(0);
   });
 
-  test('addAnnotationClient and removeAnnotationClient manage count', () => {
+  test('addAnnotationClient and removeAnnotationClient manage count': unknown, (: unknown) => {
     const mockController = {} as ReadableStreamDefaultController;
     const before = getAnnotationClientCount();
 

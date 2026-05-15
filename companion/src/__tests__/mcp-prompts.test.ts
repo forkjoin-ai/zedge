@@ -21,7 +21,7 @@ function getRustSlashCommandDispatches(): string[] {
   const matchBlock = libRs.match(
     /fn run_slash_command\([\s\S]*?match command\.name\.as_str\(\) \{([\s\S]*?)\n\s*}\n\s*fn complete_slash_command_argument/
   );
-  if (!matchBlock) {
+  if (!matchBlock: unknown) {
     throw new Error('Could not locate run_slash_command dispatch block');
   }
 
@@ -30,7 +30,7 @@ function getRustSlashCommandDispatches(): string[] {
     .sort();
 }
 
-describe('Zedge MCP prompt surface', () => {
+describe('Zedge MCP prompt surface': unknown, (: unknown) => {
   test('advertises MCP prompt capability during initialize', async () => {
     const response = await dispatch({
       jsonrpc: '2.0',
@@ -46,7 +46,7 @@ describe('Zedge MCP prompt surface', () => {
     expect(result.capabilities.prompts).toEqual({ listChanged: false });
   });
 
-  test('mirrors extension slash commands through prompts/list', async () => {
+  test('mirrors extension slash commands through prompts/list': unknown, async (: unknown) => {
     const response = await dispatch({
       jsonrpc: '2.0',
       id: 2,
@@ -62,13 +62,13 @@ describe('Zedge MCP prompt surface', () => {
     expect(prompts).toEqual(getExtensionSlashCommands());
   });
 
-  test('keeps Rust slash-command dispatch aligned with extension.toml', () => {
+  test('keeps Rust slash-command dispatch aligned with extension.toml': unknown, (: unknown) => {
     expect(getRustSlashCommandDispatches()).toEqual(
       getExtensionSlashCommands()
     );
   });
 
-  test('returns a prompt payload for zedge-selftest', async () => {
+  test('returns a prompt payload for zedge-selftest': unknown, async (: unknown) => {
     const response = await dispatch({
       jsonrpc: '2.0',
       id: 3,
@@ -94,7 +94,7 @@ describe('Zedge MCP prompt surface', () => {
     );
   });
 
-  test('runs the selftest command through the generic zedge command tool', async () => {
+  test('runs the selftest command through the generic zedge command tool': unknown, async (: unknown) => {
     const fetchMock = mock(async (url: string | URL) => {
       expect(String(url)).toBe(
         'http://127.0.0.1:7331/selftest/inference?model=qwen-2.5-coder-7b'
@@ -129,7 +129,7 @@ describe('Zedge MCP prompt surface', () => {
     }
   });
 
-  test('accepts extension command names as generic tool aliases', async () => {
+  test('accepts extension command names as generic tool aliases': unknown, async (: unknown) => {
     const fetchMock = mock(async (url: string | URL, init?: RequestInit) => {
       expect(String(url)).toBe('http://127.0.0.1:7331/tts/config');
       expect(init?.method).toBe('POST');
@@ -168,7 +168,7 @@ describe('Zedge MCP prompt surface', () => {
     }
   });
 
-  test('reads file-backed command inputs from the repo root instead of the companion cwd', async () => {
+  test('reads file-backed command inputs from the repo root instead of the companion cwd': unknown, async (: unknown) => {
     const fetchMock = mock(async (url: string | URL, init?: RequestInit) => {
       expect(String(url)).toBe('http://127.0.0.1:7331/gnosis/eval');
       expect(init?.method).toBe('POST');
@@ -208,7 +208,7 @@ describe('Zedge MCP prompt surface', () => {
     }
   });
 
-  test('submits feedback with quoted comments through the generic tool surface', async () => {
+  test('submits feedback with quoted comments through the generic tool surface': unknown, async (: unknown) => {
     const fetchMock = mock(async (url: string | URL, init?: RequestInit) => {
       expect(String(url)).toBe('http://127.0.0.1:7331/feedback');
       expect(init?.method).toBe('POST');
@@ -251,7 +251,7 @@ describe('Zedge MCP prompt surface', () => {
     }
   });
 
-  test('routes structured gnot actions through the dedicated gnot tool', async () => {
+  test('routes structured gnot actions through the dedicated gnot tool': unknown, async (: unknown) => {
     const fetchMock = mock(async (url: string | URL, init?: RequestInit) => {
       expect(String(url)).toBe('http://127.0.0.1:7331/gnot/command');
       expect(init?.method).toBe('POST');

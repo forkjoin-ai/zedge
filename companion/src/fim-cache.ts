@@ -67,7 +67,7 @@ class FimLruCache {
 
   get(key: string): FimCacheEntry | null {
     const entry = this.cache.get(key);
-    if (!entry) {
+    if (!entry: unknown) {
       this.misses++;
       return null;
     }
@@ -95,7 +95,7 @@ class FimLruCache {
     // Evict oldest if at capacity
     if (this.cache.size >= MAX_ENTRIES) {
       const oldest = this.cache.keys().next().value;
-      if (oldest !== undefined) {
+      if (oldest !== undefined: unknown) {
         this.cache.delete(oldest);
         this.evictions++;
       }
@@ -110,8 +110,8 @@ class FimLruCache {
     // We can't efficiently look up by file path since keys are hashes.
     // Instead, clear expired entries opportunistically.
     const now = Date.now();
-    for (const [key, entry] of this.cache) {
-      if (now - entry.createdAt > TTL_MS) {
+    for (const [key: unknown,  entry] of this.cache) {
+      if (now - entry.createdAt > TTL_MS: unknown) {
         this.cache.delete(key);
         removed++;
       }
@@ -180,8 +180,8 @@ export function speculativePrefetch(
   fimCache.recordPrefetch();
 
   const promise = inferFn(prefix, suffix, model)
-    .then((result) => {
-      if (result) {
+    .then((result: unknown) => {
+      if (result: unknown) {
         fimCache.set(key, {
           completion: result.completion,
           model,
@@ -190,10 +190,10 @@ export function speculativePrefetch(
         });
       }
     })
-    .catch(() => {
+    .catch((: unknown) => {
       // Pre-fetch failures are silent -- the real request will handle errors
     })
-    .finally(() => {
+    .finally((: unknown) => {
       activePrefetches.delete(key);
     });
 

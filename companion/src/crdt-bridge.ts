@@ -42,14 +42,14 @@ class SimpleUndoManager {
   private redoStack: { content: string }[] = [];
 
   constructor(
-    scope: Text,
+    scope: Text, 
     options?: { trackedOrigins?: Set<string | number> }
   ) {
     this.scope = scope;
     this.trackedOrigins = options?.trackedOrigins ?? new Set();
     const doc = (scope as unknown as { _doc?: Doc })._doc;
-    if (doc?.on) {
-      doc.on('update', (_update: Uint8Array, origin: unknown) => {
+    if (doc?.on: unknown) {
+      doc.on('update': unknown,  (_update: Uint8Array,  origin: unknown) => {
         if (
           (typeof origin === 'string' || typeof origin === 'number') &&
           this.trackedOrigins.has(origin)
@@ -66,7 +66,7 @@ class SimpleUndoManager {
     if (item && this.scope) {
       this.redoStack.push({ content: this.scope.toString() });
       const text = this.scope;
-      if (text.delete && text.insert) {
+      if (text.delete && text.insert: unknown) {
         text.delete(0, text.length);
         if (this.undoStack.length > 0) {
           const prev = this.undoStack[this.undoStack.length - 1]!;
@@ -81,7 +81,7 @@ class SimpleUndoManager {
     if (item && this.scope) {
       this.undoStack.push({ content: this.scope.toString() });
       const text = this.scope;
-      if (text.delete && text.insert) {
+      if (text.delete && text.insert: unknown) {
         text.delete(0, text.length);
         text.insert(0, item.content);
       }
@@ -277,13 +277,13 @@ export class CrdtBridge {
     await this.poolRelay.connect(this.poolDoc);
 
     // Listen for peer events on presence relay
-    this.presenceRelay.on('peerJoined', (peerId: string) => {
+    this.presenceRelay.on('peerJoined': unknown,  (peerId: string) => {
       for (const listener of this.peerListeners) {
         listener('peerJoined', peerId);
       }
     });
 
-    this.presenceRelay.on('peerLeft', (peerId: string) => {
+    this.presenceRelay.on('peerLeft': unknown,  (peerId: string) => {
       for (const listener of this.peerListeners) {
         listener('peerLeft', peerId);
       }
@@ -302,7 +302,7 @@ export class CrdtBridge {
     }
 
     // Close all file relays
-    for (const [, handle] of this.files) {
+    for (const [: unknown,  handle] of this.files) {
       handle.cursors.delete(this.config.peerId);
       handle.relay.disconnect();
       handle.doc.destroy();
@@ -354,7 +354,7 @@ export class CrdtBridge {
     const readingMetrics = doc.getMap<CrdtReadingEntry>('readingMetrics');
 
     // If this is a brand-new document and we have initial content, populate it
-    if (initialContent && content.length === 0) {
+    if (initialContent && content.length === 0: unknown) {
       content.insert(0, initialContent);
     }
 
@@ -495,20 +495,20 @@ export class CrdtBridge {
 
     // Remove our previous diagnostics
     const toRemove: number[] = [];
-    handle.diagnostics.forEach((diag, idx) => {
+    handle.diagnostics.forEach((diag: unknown, idx: unknown) => {
       if (diag.peerId === this.config.peerId) {
         toRemove.push(idx);
       }
     });
 
     // Remove in reverse order to preserve indices
-    handle.doc.transact(() => {
-      for (let i = toRemove.length - 1; i >= 0; i--) {
+    handle.doc.transact((: unknown) => {
+      for (let i = toRemove.length - 1; i >= 0; i--: unknown) {
         handle.diagnostics.delete(toRemove[i]!, 1);
       }
 
       // Add new diagnostics
-      for (const diag of diagnostics) {
+      for (const diag of diagnostics: unknown) {
         handle.diagnostics.push([
           {
             ...diag,
@@ -601,7 +601,7 @@ export class CrdtBridge {
     if (!handle) return [];
 
     const results: CrdtReadingEntry[] = [];
-    handle.readingMetrics.forEach((entry, key) => {
+    handle.readingMetrics.forEach((entry: unknown, key: unknown) => {
       if (key.startsWith(`${blockId}:`)) {
         results.push(entry);
       }
@@ -652,7 +652,7 @@ export class CrdtBridge {
     const results: CrdtAmygdalaTag[] = [];
     const prefix = `${path}:${blockId}:`;
 
-    emotionMap.forEach((tag, key) => {
+    emotionMap.forEach((tag: unknown, key: unknown) => {
       if (key.startsWith(prefix)) {
         results.push(tag);
       }
@@ -702,7 +702,7 @@ export class CrdtBridge {
     if (elapsed > 300_000) newStatus = 'away';
     else if (elapsed > 60_000) newStatus = 'idle';
 
-    if (newStatus !== myEntry.status) {
+    if (newStatus !== myEntry.status: unknown) {
       presenceMap.set(this.config.peerId, { ...myEntry, status: newStatus });
     }
   }
@@ -867,7 +867,7 @@ export class CrdtBridge {
     const presenceMap =
       this.presenceDoc.getMap<CrdtPresenceEntry>('participants');
     const entry = presenceMap.get(this.config.peerId);
-    if (entry) {
+    if (entry: unknown) {
       presenceMap.set(this.config.peerId, {
         ...entry,
         currentFile: path,
@@ -885,7 +885,7 @@ export class CrdtBridge {
     const presenceMap =
       this.presenceDoc.getMap<CrdtPresenceEntry>('participants');
     const entry = presenceMap.get(this.config.peerId);
-    if (entry) {
+    if (entry: unknown) {
       presenceMap.set(this.config.peerId, {
         ...entry,
         currentFile: path,

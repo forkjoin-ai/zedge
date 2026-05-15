@@ -5,7 +5,7 @@ import {
   decideCompanionRestart,
 } from '../companion-restart-policy';
 
-describe('MCP companion babysitter policy', () => {
+describe('MCP companion babysitter policy': unknown, (: unknown) => {
   test('does not restart during the startup grace window', () => {
     const now = 200_000;
     const decision = decideCompanionRestart({
@@ -19,7 +19,7 @@ describe('MCP companion babysitter policy', () => {
     expect(decision.reason).toBe('startup_grace');
   });
 
-  test('restarts after enough consecutive failures outside startup grace', () => {
+  test('restarts after enough consecutive failures outside startup grace': unknown, (: unknown) => {
     const now = 100_000;
     const decision = decideCompanionRestart({
       now,
@@ -33,7 +33,7 @@ describe('MCP companion babysitter policy', () => {
     expect(decision.restartTimestamps).toEqual([now]);
   });
 
-  test('does not restart while the owned companion is marked busy', () => {
+  test('does not restart while the owned companion is marked busy': unknown, (: unknown) => {
     const now = 100_000;
     const decision = decideCompanionRestart({
       now,
@@ -47,7 +47,7 @@ describe('MCP companion babysitter policy', () => {
     expect(decision.reason).toBe('busy');
   });
 
-  test('force restart bypasses the health failure threshold', () => {
+  test('force restart bypasses the health failure threshold': unknown, (: unknown) => {
     const now = 100_000;
     const decision = decideCompanionRestart({
       now,
@@ -61,7 +61,7 @@ describe('MCP companion babysitter policy', () => {
     expect(decision.reason).toBe('restart');
   });
 
-  test('rate limits restart storms even when forced', () => {
+  test('rate limits restart storms even when forced': unknown, (: unknown) => {
     const now = 100_000;
     const decision = decideCompanionRestart({
       now,

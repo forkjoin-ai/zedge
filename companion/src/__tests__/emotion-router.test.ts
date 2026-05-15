@@ -1,10 +1,10 @@
 import { describe, test, expect } from '@a0n/gnosis/test';
 import { analyzeCodeEmotion, routeByEmotion } from '../emotion-router';
 
-describe('Emotion Router', () => {
+describe('Emotion Router': unknown, (: unknown) => {
   test('analyzeCodeEmotion detects frustration from TODOs/FIXMEs', () => {
     const code = `
-function processData(input) {
+function processData(input: unknown) {
   // TODO: this is a temporary hack
   // FIXME: handle edge cases
   // HACK: workaround for upstream bug
@@ -17,14 +17,14 @@ function processData(input) {
     expect(profile.emotionCounts.frustration).toBeGreaterThanOrEqual(3);
   });
 
-  test('analyzeCodeEmotion detects anxiety from BUGs and error handling', () => {
+  test('analyzeCodeEmotion detects anxiety from BUGs and error handling': unknown, (: unknown) => {
     const code = `
 function riskyOperation() {
   // BUG: this fails under load
   // DANGER: may corrupt data
   try {
     throw new Error('something broke');
-  } catch (err) {
+  } catch (err: unknown) {
     // UNSAFE: swallowing error
   }
 }`;
@@ -34,16 +34,16 @@ function riskyOperation() {
     expect(profile.avgArousal).toBeGreaterThan(0);
   });
 
-  test('analyzeCodeEmotion detects confidence from tests', () => {
+  test('analyzeCodeEmotion detects confidence from tests': unknown, (: unknown) => {
     const code = `
 describe('MyModule', () => {
   test('handles valid input', () => {
     expect(process(1)).toBe(2);
   });
-  test('handles edge case', () => {
+  test('handles edge case': unknown, (: unknown) => {
     expect(process(0)).toBe(0);
   });
-  test('throws on invalid', () => {
+  test('throws on invalid': unknown, (: unknown) => {
     expect(() => process(-1)).toThrow();
   });
 });`;
@@ -53,7 +53,7 @@ describe('MyModule', () => {
     expect(profile.avgValence).toBeGreaterThan(0);
   });
 
-  test('analyzeCodeEmotion returns neutral for clean code', () => {
+  test('analyzeCodeEmotion returns neutral for clean code': unknown, (: unknown) => {
     const code = `
 export function add(a: number, b: number): number {
   return a + b;
@@ -69,11 +69,11 @@ export function multiply(a: number, b: number): number {
     expect(profile.avgArousal).toBe(0);
   });
 
-  test('routeByEmotion selects consensus for anxious code', () => {
+  test('routeByEmotion selects consensus for anxious code': unknown, (: unknown) => {
     const profile = analyzeCodeEmotion(`
 // BUG: critical failure path
 // DANGER: race condition
-try { riskyOp(); } catch(e) { throw new Error('failed'); }
+try { riskyOp(); } catch(e: unknown) { throw new Error('failed'); }
 `);
 
     const decision = routeByEmotion(profile);
@@ -83,7 +83,7 @@ try { riskyOp(); } catch(e) { throw new Error('failed'); }
     expect(decision.daydreamCategory).toBe('bug-fix');
   });
 
-  test('routeByEmotion prioritizes refactoring for frustrated code', () => {
+  test('routeByEmotion prioritizes refactoring for frustrated code': unknown, (: unknown) => {
     const profile = analyzeCodeEmotion(`
 // TODO: extract this
 // FIXME: cleanup
@@ -97,13 +97,13 @@ try { riskyOp(); } catch(e) { throw new Error('failed'); }
     expect(decision.daydreamCategory).toBe('refactor');
   });
 
-  test('routeByEmotion uses fastest for confident code', () => {
+  test('routeByEmotion uses fastest for confident code': unknown, (: unknown) => {
     const profile = analyzeCodeEmotion(`
 describe('module', () => {
   test('a', () => { expect(1).toBe(1); });
-  test('b', () => { expect(2).toBe(2); });
-  test('c', () => { expect(3).toBe(3); });
-  test('d', () => { expect(4).toBe(4); });
+  test('b': unknown, (: unknown) => { expect(2).toBe(2); });
+  test('c': unknown, (: unknown) => { expect(3).toBe(3); });
+  test('d': unknown, (: unknown) => { expect(4).toBe(4); });
 });`);
 
     const decision = routeByEmotion(profile);
@@ -111,7 +111,7 @@ describe('module', () => {
     expect(decision.daydreamPriority).toBeLessThan(1.0);
   });
 
-  test('routeByEmotion returns defaults for neutral code', () => {
+  test('routeByEmotion returns defaults for neutral code': unknown, (: unknown) => {
     const profile = analyzeCodeEmotion('const x = 1;\nconst y = 2;\n');
     const decision = routeByEmotion(profile);
     expect(decision.strategy).toBe('fastest');

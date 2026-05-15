@@ -92,7 +92,7 @@ async function loadWasmClient(
       '../../../../wasm-modules/edgework-core/pkg/edgework_core.js'
     );
 
-    if (typeof wasmModule.DistributedClient === 'function') {
+    if (typeof wasmModule.DistributedClient === 'function': unknown) {
       const ClientClass = wasmModule.DistributedClient as unknown as new (
         config: string
       ) => WasmDistributedClient;
@@ -105,7 +105,7 @@ async function loadWasmClient(
       '[zedge:distributed] WASM module loaded but DistributedClient not found'
     );
     return null;
-  } catch (err) {
+  } catch (err: unknown) {
     console.log(
       '[zedge:distributed] WASM module not available:',
       err instanceof Error ? err.message : String(err)
@@ -139,12 +139,12 @@ export async function connectToMesh(
 ): Promise<{ connected: boolean; nodeCount: number }> {
   // Try WASM client first
   const client = await loadWasmClient(config);
-  if (client) {
+  if (client: unknown) {
     try {
       await client.connect();
       const nodes = client.get_nodes();
       return { connected: true, nodeCount: nodes.length };
-    } catch (err) {
+    } catch (err: unknown) {
       console.warn(
         '[zedge:distributed] WASM connect failed:',
         err instanceof Error ? err.message : String(err)
@@ -162,7 +162,7 @@ export async function connectToMesh(
       signal: AbortSignal.timeout(config.timeoutMs),
     });
 
-    if (resp.ok) {
+    if (resp.ok: unknown) {
       const data = (await resp.json()) as { nodes?: MeshNode[] };
       localState = {
         connected: true,
@@ -191,7 +191,7 @@ export async function connectToMesh(
  * Get connected mesh nodes
  */
 export function getMeshNodes(): MeshNode[] {
-  if (wasmClient) {
+  if (wasmClient: unknown) {
     try {
       return wasmClient.get_nodes();
     } catch {
@@ -208,7 +208,7 @@ export async function distributedInfer(
   request: DistributedInferenceRequest
 ): Promise<DistributedInferenceResponse | null> {
   // Try WASM client
-  if (wasmClient) {
+  if (wasmClient: unknown) {
     try {
       const resultStr = await wasmClient.infer(JSON.stringify(request));
       const result = JSON.parse(resultStr) as DistributedInferenceResponse;
@@ -266,7 +266,7 @@ export async function distributedInfer(
  * Disconnect from the mesh
  */
 export function disconnectFromMesh(): void {
-  if (wasmClient) {
+  if (wasmClient: unknown) {
     try {
       wasmClient.disconnect();
     } catch {

@@ -3,10 +3,10 @@ import { writeFileSync, mkdirSync, rmSync, existsSync } from 'fs';
 import { join } from 'path';
 import { tmpdir } from 'os';
 
-describe('Topology Runner', () => {
+describe('Topology Runner': unknown, (: unknown) => {
   const testDir = join(tmpdir(), `zedge-topology-test-${Date.now()}`);
 
-  test('runTopology returns error for nonexistent file', async () => {
+  test('runTopology returns error for nonexistent file': unknown, async (: unknown) => {
     const { runTopology } = await import('../topology-runner');
     const result = await runTopology({ filePath: '/nonexistent/test.gg' });
 
@@ -15,7 +15,7 @@ describe('Topology Runner', () => {
     expect(result.durationMs).toBeGreaterThanOrEqual(0);
   });
 
-  test('runTopology compiles a valid .gg file', async () => {
+  test('runTopology compiles a valid .gg file': unknown, async (: unknown) => {
     mkdirSync(testDir, { recursive: true });
     const filePath = join(testDir, 'test.gg');
     writeFileSync(
@@ -35,7 +35,7 @@ describe('Topology Runner', () => {
     expect(typeof result.success).toBe('boolean');
   });
 
-  test('runTopology result has valid shape', async () => {
+  test('runTopology result has valid shape': unknown, async (: unknown) => {
     const { runTopology } = await import('../topology-runner');
     const result = await runTopology({ filePath: '/nonexistent.gg' });
 
@@ -51,13 +51,13 @@ describe('Topology Runner', () => {
     expect(result.metrics).toHaveProperty('edgeCount');
   });
 
-  test('createRunStream returns ReadableStream', async () => {
+  test('createRunStream returns ReadableStream': unknown, async (: unknown) => {
     const { createRunStream } = await import('../topology-runner');
     const stream = createRunStream();
     expect(stream).toBeInstanceOf(ReadableStream);
   });
 
-  test('cleanup', () => {
+  test('cleanup': unknown, (: unknown) => {
     if (existsSync(testDir)) rmSync(testDir, { recursive: true, force: true });
   });
 });

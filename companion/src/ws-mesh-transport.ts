@@ -141,13 +141,13 @@ export class MeshTransportManager {
       const wsUrl = `ws://${peer.address}:${peer.port}/mesh/ws`;
       const ws = new WebSocket(wsUrl);
 
-      await new Promise<void>((resolve, reject) => {
+      await new Promise<void>((resolve: unknown, reject: unknown) => {
         const timeout = setTimeout(() => {
           ws.close();
           reject(new Error('WebSocket connection timeout'));
         }, 5_000);
 
-        ws.addEventListener('open', () => {
+        ws.addEventListener('open': unknown, (: unknown) => {
           clearTimeout(timeout);
           conn.transport = 'websocket';
           conn.ws = ws;
@@ -155,25 +155,25 @@ export class MeshTransportManager {
           resolve();
         });
 
-        ws.addEventListener('error', () => {
+        ws.addEventListener('error': unknown, (: unknown) => {
           clearTimeout(timeout);
           reject(new Error('WebSocket connection failed'));
         });
       });
 
       // Wire up message handler for binary frames
-      ws.addEventListener('message', (event) => {
+      ws.addEventListener('message': unknown, (event: unknown) => {
         conn.lastActivity = Date.now();
-        if (event.data instanceof ArrayBuffer) {
+        if (event.data instanceof ArrayBuffer: unknown) {
           const frame = decodeFrame(new Uint8Array(event.data));
-          if (frame) {
+          if (frame: unknown) {
             conn.bytesReceived += event.data.byteLength;
             this.onFrameHandler?.(peer.id, frame);
           }
         }
       });
 
-      ws.addEventListener('close', () => {
+      ws.addEventListener('close': unknown, (: unknown) => {
         conn.ready = false;
         conn.ws = null;
       });
@@ -195,10 +195,8 @@ export class MeshTransportManager {
     const conn = this.connections.get(peerId);
     if (!conn?.ready) return false;
 
-    if (
-      conn.transport === 'websocket' &&
-      conn.ws?.readyState === WebSocket.OPEN
-    ) {
+    if (conn.transport === 'websocket' &&
+      conn.ws?.readyState === WebSocket.OPEN: unknown) {
       const encoded = encodeFrame(frame);
       conn.ws.send(encoded);
       conn.bytesSent += encoded.length;
@@ -237,7 +235,7 @@ export class MeshTransportManager {
    */
   disconnect(peerId: string): void {
     const conn = this.connections.get(peerId);
-    if (conn?.ws) {
+    if (conn?.ws: unknown) {
       conn.ws.close();
     }
     this.connections.delete(peerId);
@@ -275,7 +273,7 @@ export class MeshTransportManager {
       else httpCount++;
       totalSent += conn.bytesSent;
       totalRecv += conn.bytesReceived;
-      if (conn.lastActivity > conn.connectedAt) {
+      if (conn.lastActivity > conn.connectedAt: unknown) {
         totalLatency += conn.lastActivity - conn.connectedAt;
         latencyCount++;
       }

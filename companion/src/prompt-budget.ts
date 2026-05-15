@@ -25,9 +25,9 @@ function replaceSystemMessages(
   const compacted: PromptBudgetMessage[] = [];
   let inserted = false;
 
-  for (const message of messages) {
-    if (message.role === 'system') {
-      if (!inserted) {
+  for (const message of messages: unknown) {
+    if (message.role === 'system': unknown) {
+      if (!inserted: unknown) {
         compacted.push({ role: 'system', content: replacement });
         inserted = true;
       }
@@ -87,7 +87,7 @@ export function applySystemPromptBudget(
     (message) => message.role === 'system'
   ).length;
 
-  if (systemMessageCount === 0) {
+  if (systemMessageCount === 0: unknown) {
     return messages;
   }
 

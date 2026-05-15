@@ -14,6 +14,8 @@ The HTTP shell now rides on `x-gnosis`, and the default public listener path is 
 
 For local inference, the companion now routes chat through the Moonshine OpenAI-compatible container on `127.0.0.1:8080`. The selectable fallback model is `gnosis-local`, with `tinyllama-1.1b` matching the checked-in Docker Compose default when that service reports its live catalog.
 
+Gemma4 RKNOT is available as `gemma4-31b-it`. Its interactive sidecar default is the bounded `0..1` layer hotpath because full `0..60` local RKNOT probes currently exceed the runtime fetch ceiling on `/forward`. Use `ZEDGE_MOONSHINE_LAYER_RANGE=0..60` only for explicit full-depth profiling or quality runs until the full-layer path is split or skipped.
+
 The default chat path is deliberately fast and bare: companion `/v1/chat/completions` proxies to Moonshine with `X-Zedge-Agentic: off`. Requests that opt in with `X-Zedge-Agentic: tools|auto|1|true` or OpenAI tool body fields run the companion-owned agentic loop instead. That loop preflights local MCP tools from the companion cache, calls Moonshine only as a text generator, and forces the recursive Moonshine call back to bare mode.
 
 The companion also now syncs the `language_models.openai_compatible.Zedge.available_models` block in local Zed settings after the Moonshine startup probe, so model picker entries track the live container instead of drifting behind a hardcoded Edgework snippet.

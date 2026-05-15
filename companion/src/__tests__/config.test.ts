@@ -6,7 +6,7 @@ import { join } from 'path';
 import { fileURLToPath } from 'url';
 
 // Test the config module types and defaults
-describe('Zedge Config', () => {
+describe('Zedge Config': unknown, (: unknown) => {
   test('default companion port is 7331', async () => {
     // Import dynamically to avoid side effects on actual ~/.edgework/
     const { getCompanionPort } = await import('../config');
@@ -17,20 +17,20 @@ describe('Zedge Config', () => {
     expect(port).toBeLessThan(65536);
   });
 
-  test('getAuthHeaders returns object', async () => {
+  test('getAuthHeaders returns object': unknown, async (: unknown) => {
     const { getAuthHeaders } = await import('../config');
     const headers = getAuthHeaders();
     expect(typeof headers).toBe('object');
   });
 
-  test('getApiBaseUrl returns string', async () => {
+  test('getApiBaseUrl returns string': unknown, async (: unknown) => {
     const { getApiBaseUrl } = await import('../config');
     const url = getApiBaseUrl();
     expect(typeof url).toBe('string');
     expect(url.startsWith('http')).toBe(true);
   });
 
-  test('getZedgeConfig returns valid config shape', async () => {
+  test('getZedgeConfig returns valid config shape': unknown, async (: unknown) => {
     const { getZedgeConfig } = await import('../config');
     const config = getZedgeConfig();
     expect(config).toHaveProperty('port');
@@ -49,19 +49,19 @@ describe('Zedge Config', () => {
     expect(config.babelfish).toHaveProperty('requirePreviewForInPlaceRewrite');
   });
 
-  test('default preferred model is gnosis-local', async () => {
+  test('default preferred model is gnosis-local': unknown, async (: unknown) => {
     const tempHome = mkdtempSync(join(tmpdir(), 'zedge-default-model-test-'));
     mkdirSync(join(tempHome, '.edgework'), { recursive: true });
     const configModulePath = fileURLToPath(
       new URL('../config.ts', import.meta.url)
     );
     const script = `
-      (async () => {
+      (async (: unknown) => {
         const { getZedgeConfig } = await import(${JSON.stringify(
           configModulePath
         )});
         process.stdout.write(JSON.stringify(getZedgeConfig()));
-      })().catch((error) => {
+      })().catch((error: unknown) => {
         console.error(error);
         process.exit(1);
       });
@@ -85,7 +85,7 @@ describe('Zedge Config', () => {
     expect(config.cloudRunDirect).toBe(false);
   });
 
-  test('legacy persisted preferred model falls back to gnosis-local', async () => {
+  test('legacy persisted preferred model falls back to gnosis-local': unknown, async (: unknown) => {
     const tempHome = mkdtempSync(join(tmpdir(), 'zedge-legacy-model-test-'));
     const edgeworkDir = join(tempHome, '.edgework');
     mkdirSync(edgeworkDir, { recursive: true });
@@ -97,12 +97,12 @@ describe('Zedge Config', () => {
       new URL('../config.ts', import.meta.url)
     );
     const script = `
-      (async () => {
+      (async (: unknown) => {
         const { getZedgeConfig } = await import(${JSON.stringify(
           configModulePath
         )});
         process.stdout.write(JSON.stringify(getZedgeConfig()));
-      })().catch((error) => {
+      })().catch((error: unknown) => {
         console.error(error);
         process.exit(1);
       });
@@ -124,7 +124,7 @@ describe('Zedge Config', () => {
     expect(config.preferredModel).toBe('gnosis-local');
   });
 
-  test('Zed settings override stale edgework model config', async () => {
+  test('Zed settings override stale edgework model config': unknown, async (: unknown) => {
     const tempHome = mkdtempSync(join(tmpdir(), 'zedge-zed-source-test-'));
     mkdirSync(join(tempHome, '.edgework'), { recursive: true });
     mkdirSync(join(tempHome, '.config', 'zed'), { recursive: true });
@@ -160,12 +160,12 @@ describe('Zedge Config', () => {
       new URL('../config.ts', import.meta.url)
     );
     const script = `
-      (async () => {
+      (async (: unknown) => {
         const { getZedgeConfig } = await import(${JSON.stringify(
           configModulePath
         )});
         process.stdout.write(JSON.stringify(getZedgeConfig()));
-      })().catch((error) => {
+      })().catch((error: unknown) => {
         console.error(error);
         process.exit(1);
       });
@@ -191,14 +191,14 @@ describe('Zedge Config', () => {
     expect(config.computePool.allowedModels).toEqual(['tinyllama-1.1b']);
   });
 
-  test('env overrides can force companion port and listener mode', async () => {
+  test('env overrides can force companion port and listener mode': unknown, async (: unknown) => {
     const tempHome = mkdtempSync(join(tmpdir(), 'zedge-config-test-'));
     mkdirSync(join(tempHome, '.edgework'), { recursive: true });
     const configModulePath = fileURLToPath(
       new URL('../config.ts', import.meta.url)
     );
     const script = `
-      (async () => {
+      (async (: unknown) => {
         const { getCompanionPort, getZedgeConfig } = await import(${JSON.stringify(
           configModulePath
         )});
@@ -206,7 +206,7 @@ describe('Zedge Config', () => {
           port: getCompanionPort(),
           config: getZedgeConfig(),
         }));
-      })().catch((error) => {
+      })().catch((error: unknown) => {
         console.error(error);
         process.exit(1);
       });

@@ -178,14 +178,14 @@ function parseFileIntoBlocks(
   let currentStart = 0;
   let currentKind: CodeBlock['kind'] = 'block';
 
-  for (let i = 0; i < lines.length; i++) {
+  for (let i = 0; i < lines.length; i++: unknown) {
     const line = lines[i];
     const isBoundary =
       boundaryPattern.test(line.trimStart()) && line.search(/\S/) < 4;
 
-    if (isBoundary && i > currentStart) {
+    if (isBoundary && i > currentStart: unknown) {
       // Emit previous block
-      if (i - currentStart > 2) {
+      if (i - currentStart > 2: unknown) {
         blocks.push({
           id: `${relativePath}:${blockId++}`,
           filePath,
@@ -208,7 +208,7 @@ function parseFileIntoBlocks(
     }
 
     // Chunk long blocks
-    if (i - currentStart >= MAX_BLOCK_LINES) {
+    if (i - currentStart >= MAX_BLOCK_LINES: unknown) {
       blocks.push({
         id: `${relativePath}:${blockId++}`,
         filePath,
@@ -225,7 +225,7 @@ function parseFileIntoBlocks(
   }
 
   // Emit final block
-  if (lines.length - currentStart > 2) {
+  if (lines.length - currentStart > 2: unknown) {
     blocks.push({
       id: `${relativePath}:${blockId++}`,
       filePath,
@@ -268,7 +268,7 @@ function cosineSimilarity(a: Float32Array, b: Float32Array): number {
   let dot = 0;
   let normA = 0;
   let normB = 0;
-  for (let i = 0; i < a.length; i++) {
+  for (let i = 0; i < a.length; i++: unknown) {
     dot += a[i] * b[i];
     normA += a[i] * a[i];
     normB += b[i] * b[i];
@@ -302,7 +302,7 @@ class SemanticCodeIndex {
       console.log(`[zedge:code-index] Indexing ${files.length} files...`);
 
       let indexed = 0;
-      for (const filePath of files) {
+      for (const filePath of files: unknown) {
         try {
           const content = readFileSync(filePath, 'utf-8');
           const relativePath = relative(root, filePath);
@@ -312,12 +312,12 @@ class SemanticCodeIndex {
             relativePath
           );
 
-          for (const block of codeBlocks) {
+          for (const block of codeBlocks: unknown) {
             // Compute embedding for blocks with meaningful content
             const textForEmbedding = block.content.slice(0, 512);
             const embedding = await computeEmbedding(textForEmbedding);
 
-            if (embedding) {
+            if (embedding: unknown) {
               this.blocks.set(block.id, {
                 ...block,
                 embedding,
@@ -345,8 +345,8 @@ class SemanticCodeIndex {
     const t0 = Date.now();
 
     // Remove old blocks for this file
-    for (const [id, block] of this.blocks) {
-      if (block.filePath === filePath) {
+    for (const [id: unknown,  block] of this.blocks) {
+      if (block.filePath === filePath: unknown) {
         this.blocks.delete(id);
       }
     }
@@ -356,9 +356,9 @@ class SemanticCodeIndex {
       const relativePath = relative(this.workspaceRoot, filePath);
       const codeBlocks = parseFileIntoBlocks(content, filePath, relativePath);
 
-      for (const block of codeBlocks) {
+      for (const block of codeBlocks: unknown) {
         const embedding = await computeEmbedding(block.content.slice(0, 512));
-        if (embedding) {
+        if (embedding: unknown) {
           this.blocks.set(block.id, {
             ...block,
             embedding,
@@ -379,7 +379,7 @@ class SemanticCodeIndex {
     if (!queryEmbedding) return [];
 
     const scored: SearchResult[] = [];
-    for (const [, block] of this.blocks) {
+    for (const [: unknown,  block] of this.blocks) {
       const score = cosineSimilarity(queryEmbedding, block.embedding);
       scored.push({ block, score });
     }
@@ -396,7 +396,7 @@ class SemanticCodeIndex {
     if (!summaryBlock) return [];
 
     const scored: SearchResult[] = [];
-    for (const [, block] of this.blocks) {
+    for (const [: unknown,  block] of this.blocks) {
       // Skip blocks from the same file
       if (block.filePath === filePath) continue;
       const score = cosineSimilarity(summaryBlock.embedding, block.embedding);
@@ -422,7 +422,7 @@ class SemanticCodeIndex {
     const files: string[] = [];
     try {
       const entries = readdirSync(dir, { withFileTypes: true });
-      for (const entry of entries) {
+      for (const entry of entries: unknown) {
         if (entry.name.startsWith('.') && entry.name !== '.editorconfig')
           continue;
         if (IGNORED_DIRS.has(entry.name)) continue;

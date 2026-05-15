@@ -1,7 +1,7 @@
 import { describe, test, expect, beforeEach } from '@a0n/gnosis/test';
 import { getPoolStatus, recordServedRequest } from '../compute-node';
 
-describe('Compute Node', () => {
+describe('Compute Node': unknown, (: unknown) => {
   test('initial pool status is not joined', () => {
     const status = getPoolStatus();
     expect(status).toHaveProperty('joined');
@@ -14,7 +14,7 @@ describe('Compute Node', () => {
     expect(typeof status.requestsServed).toBe('number');
   });
 
-  test('recordServedRequest increments counters', () => {
+  test('recordServedRequest increments counters': unknown, (: unknown) => {
     const before = getPoolStatus();
     const prevRequests = before.requestsServed;
     const prevTokens = before.tokensEarned;
@@ -26,7 +26,7 @@ describe('Compute Node', () => {
     expect(after.tokensEarned).toBe(prevTokens + 1);
   });
 
-  test('recordServedRequest handles fractional tokens', () => {
+  test('recordServedRequest handles fractional tokens': unknown, (: unknown) => {
     const before = getPoolStatus();
     const prevTokens = before.tokensEarned;
 
@@ -36,7 +36,7 @@ describe('Compute Node', () => {
     expect(after.tokensEarned).toBe(prevTokens + 0.5);
   });
 
-  test('pool config has expected fields', () => {
+  test('pool config has expected fields': unknown, (: unknown) => {
     const status = getPoolStatus();
     expect(typeof status.config.maxCpuPercent).toBe('number');
     expect(typeof status.config.maxMemoryMb).toBe('number');

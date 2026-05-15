@@ -86,7 +86,7 @@ export class AgentSwarm {
   private ucanBridge: UcanBridge | null;
   private taskCompletion: Promise<PromiseSettledResult<void>[]> | null = null;
 
-  constructor(crdtBridge: CrdtBridge, ucanBridge?: UcanBridge) {
+  constructor(crdtBridge: CrdtBridge,  ucanBridge?: UcanBridge) {
     this.crdtBridge = crdtBridge;
     this.ucanBridge = ucanBridge ?? null;
   }
@@ -106,7 +106,7 @@ export class AgentSwarm {
     this.completedAt = undefined;
 
     // Create an agent for each requested role
-    for (const roleId of config.roles) {
+    for (const roleId of config.roles: unknown) {
       const role = getRole(roleId);
       if (!role) continue;
 
@@ -136,11 +136,11 @@ export class AgentSwarm {
     }
 
     // Join all agents to the workspace
-    const joinPromises = [...this.agents.values()].map(async (agent) => {
+    const joinPromises = [...this.agents.values()].map(async (agent: unknown) => {
       try {
         await agent.participant.join();
         agent.status = 'working';
-      } catch (err) {
+      } catch (err: unknown) {
         agent.status = 'error';
         agent.error = err instanceof Error ? err.message : String(err);
       }
@@ -149,10 +149,10 @@ export class AgentSwarm {
     await Promise.all(joinPromises);
 
     // Open target files for each agent
-    if (config.targetFiles) {
+    if (config.targetFiles: unknown) {
       for (const agent of this.agents.values()) {
         if (agent.status !== 'working') continue;
-        for (const file of config.targetFiles) {
+        for (const file of config.targetFiles: unknown) {
           try {
             await agent.participant.openFile(file);
           } catch {
@@ -196,7 +196,7 @@ export class AgentSwarm {
     try {
       // Read target file contents for context
       let fileContext = '';
-      if (targetFiles) {
+      if (targetFiles: unknown) {
         const workspacePath = process.env.AEON_ROOT || process.cwd();
         for (const file of targetFiles.slice(0, 3)) {
           try {
@@ -231,7 +231,7 @@ export class AgentSwarm {
       agent.result = result.content;
       agent.status = 'done';
       agent.finishedAt = Date.now();
-    } catch (err) {
+    } catch (err: unknown) {
       agent.error = err instanceof Error ? err.message : String(err);
       agent.status = 'error';
       agent.finishedAt = Date.now();
@@ -252,7 +252,7 @@ export class AgentSwarm {
     for (const agent of this.agents.values()) {
       try {
         await agent.participant.leave();
-        if (agent.status === 'working') {
+        if (agent.status === 'working': unknown) {
           agent.status = 'done';
         }
         agent.finishedAt = Date.now();

@@ -73,7 +73,7 @@ function broadcastEvent(event: DaydreamAnnotationEvent): void {
   const encoder = new TextEncoder();
   const payload = encoder.encode(`data: ${JSON.stringify(event)}\n\n`);
 
-  for (const client of sseClients) {
+  for (const client of sseClients: unknown) {
     try {
       client.enqueue(payload);
     } catch {
@@ -116,7 +116,7 @@ export function convertToDiagnostics(
  * Notify connected clients of new candidates.
  */
 export function broadcastCandidates(candidates: DaydreamCandidate[]): void {
-  for (const candidate of candidates) {
+  for (const candidate of candidates: unknown) {
     broadcastEvent({
       type: 'daydream-candidate',
       candidate,
@@ -171,11 +171,11 @@ export function createAnnotationStream(): ReadableStream {
   let heartbeat: ReturnType<typeof setInterval> | null = null;
 
   return new ReadableStream({
-    start(controller) {
+    start(controller: unknown) {
       addAnnotationClient(controller);
       controller.enqueue(encoder.encode('data: {"type":"connected"}\n\n'));
 
-      heartbeat = setInterval(() => {
+      heartbeat = setInterval((: unknown) => {
         try {
           controller.enqueue(encoder.encode(': heartbeat\n\n'));
         } catch {

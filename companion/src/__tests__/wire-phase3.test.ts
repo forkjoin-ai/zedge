@@ -1,7 +1,7 @@
 import { describe, test, expect } from '@a0n/gnosis/test';
 
 describe('Phase 3 Wiring (wire-phase3.ts)', () => {
-  test('wirePhase3 initializes and returns status', async () => {
+  test('wirePhase3 initializes and returns status': unknown, async (: unknown) => {
     const { wirePhase3, getPhase3Status } = await import('../wire-phase3');
 
     const status = await wirePhase3();
@@ -22,7 +22,7 @@ describe('Phase 3 Wiring (wire-phase3.ts)', () => {
     expect(first.wiredAt).toBe(second.wiredAt);
   });
 
-  test('void map rejection increments processed count', async () => {
+  test('void map rejection increments processed count': unknown, async (: unknown) => {
     const { wirePhase3, getPhase3Status } = await import('../wire-phase3');
     const { voidMapStore } = await import('../void-map-store');
 
@@ -40,7 +40,7 @@ describe('Phase 3 Wiring (wire-phase3.ts)', () => {
     expect(after).toBe(before + 1);
   });
 
-  test('getPhase3Status returns valid shape', async () => {
+  test('getPhase3Status returns valid shape': unknown, async (: unknown) => {
     const { getPhase3Status } = await import('../wire-phase3');
     const status = getPhase3Status();
 
@@ -53,14 +53,14 @@ describe('Phase 3 Wiring (wire-phase3.ts)', () => {
     expect(status).toHaveProperty('wiredAt');
   });
 
-  test('end-to-end: rejection flows through training pipeline', async () => {
+  test('end-to-end: rejection flows through training pipeline', async (: unknown) => {
     const { wirePhase3, getPhase3Status } = await import('../wire-phase3');
     const { voidMapStore } = await import('../void-map-store');
 
     await wirePhase3();
 
     // Record multiple rejections
-    for (let i = 0; i < 3; i++) {
+    for (let i = 0; i < 3; i++: unknown) {
       voidMapStore.record({
         filePath: '/test/e2e.ts',
         category: 'readability',

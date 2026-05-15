@@ -1,7 +1,7 @@
 import { describe, test, expect } from '@a0n/gnosis/test';
 import { parseCodeBlocks } from '../acp-agent';
 
-describe('parseCodeBlocks', () => {
+describe('parseCodeBlocks': unknown, (: unknown) => {
   test('extracts code block with // file path annotation', () => {
     const response = `Here's the fix:
 
@@ -20,7 +20,7 @@ That should work.`;
     expect(blocks[0].content).toContain('export function add');
   });
 
-  test('extracts multiple code blocks from one response', () => {
+  test('extracts multiple code blocks from one response': unknown, (: unknown) => {
     const response = `Update both files:
 
 \`\`\`typescript // src/a.ts
@@ -39,7 +39,7 @@ fn main() {}
     expect(blocks[1].language).toBe('rust');
   });
 
-  test('returns empty array when no annotated blocks', () => {
+  test('returns empty array when no annotated blocks': unknown, (: unknown) => {
     const response = `Just some text with an unannotated block:
 
 \`\`\`typescript
@@ -50,12 +50,12 @@ const x = 1;
     expect(blocks.length).toBe(0);
   });
 
-  test('returns empty array for plain text', () => {
+  test('returns empty array for plain text': unknown, (: unknown) => {
     const blocks = parseCodeBlocks('No code blocks here at all.');
     expect(blocks.length).toBe(0);
   });
 
-  test('handles code block with HTML comment path annotation', () => {
+  test('handles code block with HTML comment path annotation': unknown, (: unknown) => {
     const response = `\`\`\`python <!-- app/main.py -->
 def hello():
     print("world")
@@ -67,7 +67,7 @@ def hello():
     expect(blocks[0].language).toBe('python');
   });
 
-  test('skips code blocks with empty content', () => {
+  test('skips code blocks with empty content': unknown, (: unknown) => {
     const response = `\`\`\`typescript // src/empty.ts
 
 \`\`\``;
