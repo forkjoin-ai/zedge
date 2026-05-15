@@ -12,5 +12,9 @@
         "gnarly"
       ]
     }
-  ]
+  ],
+  "scripts": {
+    "type-check": "echo \"No TypeScript configuration found, skipping typecheck\"",
+    "typecheck": "echo \"No TypeScript configuration found, skipping typecheck\""
+  }
 }

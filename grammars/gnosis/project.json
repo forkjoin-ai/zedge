@@ -4,5 +4,17 @@
   "projectType": "library",
   "tags": [
     "npm:public"
-  ]
+  ],
+  "targets": {
+    "typecheck": {
+      "executor": "a0:run-commands",
+      "dependsOn": [
+        "^typecheck"
+      ],
+      "options": {
+        "cwd": "Users/buley/Documents/Code",
+        "command": "bun run tsc --noEmit"
+      }
+    }
+  }
 }

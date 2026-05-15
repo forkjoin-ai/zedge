@@ -40,6 +40,9 @@ const GEMMA4_DENSE_KNOT_PATH = join(
   REPO_ROOT,
   'open-source/bitwise/datasets/gemma4-31b-it.knot'
 );
+const GEMMA4_DENSE_KNOT_URL =
+  process.env.ZEDGE_GEMMA4_DENSE_KNOT_URL ??
+  'https://edgework.ai/api/v1/r2/distributed-inference/models/gemma4-31b-it.knot';
 const GEMMA4_RKNOT_PATH = join(
   REPO_ROOT,
   'open-source/bitwise/datasets/gemma4-31b-it.k10-b8.rknot'
@@ -141,6 +144,7 @@ interface MoonshineStartupConfig {
 interface LocalMoonshineModelSpec {
   modelName: string;
   knotPath: string;
+  denseFallbackUrl?: string;
   rknotPath?: string;
   rknotCandidates?: string[];
   tokenizerGgufPath?: string;
@@ -161,6 +165,7 @@ const LOCAL_MOONSHINE_MODELS: Record<string, LocalMoonshineModelSpec> = {
   [GEMMA4_MOONSHINE_MODEL]: {
     modelName: GEMMA4_MOONSHINE_MODEL,
     knotPath: GEMMA4_DENSE_KNOT_PATH,
+    denseFallbackUrl: GEMMA4_DENSE_KNOT_URL,
     rknotPath: GEMMA4_RKNOT_PATH,
     tokenizerJsonPath: GEMMA4_TOKENIZER_JSON_PATH,
     defaultLayers: '0..60',
@@ -194,7 +199,34 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === 'object' && !Array.isArray(value);
 }
 
+function isHttpUrl(value: string): boolean {
+  return value.startsWith('http://') || value.startsWith('https://');
+}
+
+function sourceExists(value: string): boolean {
+  return isHttpUrl(value) || existsSync(value);
+}
+
+function isExplicitGemma4Selection(): boolean {
+  return (
+    process.env.ZEDGE_MOONSHINE_MODEL?.trim() === GEMMA4_MOONSHINE_MODEL ||
+    !!process.env.ZEDGE_MOONSHINE_RKNOT?.trim()
+  );
+}
+
+function canUseModelSpec(spec: LocalMoonshineModelSpec): boolean {
+  if (spec.modelName === GEMMA4_MOONSHINE_MODEL) {
+    return (
+      isExplicitGemma4Selection() ||
+      resolveMoonshineRknotPath(spec) !== undefined
+    );
+  }
+  return sourceExists(resolveDenseSource(spec));
+}
+
 function readKnotMetadata(knotPath: string): KnotMetadata | null {
+  if (isHttpUrl(knotPath)) return null;
+
   let fd: number | undefined;
   try {
     fd = openSync(knotPath, 'r');
@@ -245,7 +277,7 @@ function resolveZedLocalModelSpec(): LocalMoonshineModelSpec | null {
   const selection = readZedModelSelection();
   if (!selection) {
     const defaultSpec = LOCAL_MOONSHINE_MODELS[GEMMA4_MOONSHINE_MODEL];
-    return defaultSpec && existsSync(defaultSpec.knotPath) ? defaultSpec : null;
+    return defaultSpec && canUseModelSpec(defaultSpec) ? defaultSpec : null;
   }
 
   const candidates = [
@@ -256,12 +288,20 @@ function resolveZedLocalModelSpec(): LocalMoonshineModelSpec | null {
   for (const rawModelId of candidates) {
     const modelId = rawModelId.trim();
     const spec = LOCAL_MOONSHINE_MODELS[modelId];
-    if (spec && existsSync(spec.knotPath)) {
+    if (spec && canUseModelSpec(spec)) {
       return spec;
     }
   }
 
   return null;
+}
+
+function resolveDenseSource(spec?: LocalMoonshineModelSpec): string {
+  const configuredPath = process.env.ZEDGE_MOONSHINE_KNOT?.trim();
+  if (configuredPath) return configuredPath;
+  if (spec?.knotPath && existsSync(spec.knotPath)) return spec.knotPath;
+  if (spec?.denseFallbackUrl) return spec.denseFallbackUrl;
+  return spec?.knotPath || DEFAULT_KNOT_PATH;
 }
 
 function resolveMoonshineModelName(
@@ -359,9 +399,10 @@ function resolveTokenizerJsonPath(
 }
 
 function resolveStartupConfig(): MoonshineStartupConfig {
-  const configuredKnotPath = process.env.ZEDGE_MOONSHINE_KNOT?.trim();
-  const spec = configuredKnotPath ? undefined : resolveZedLocalModelSpec() ?? undefined;
-  const knotPath = configuredKnotPath || spec?.knotPath || DEFAULT_KNOT_PATH;
+  const spec = process.env.ZEDGE_MOONSHINE_KNOT?.trim()
+    ? undefined
+    : resolveZedLocalModelSpec() ?? undefined;
+  const knotPath = resolveDenseSource(spec);
   const rknotPath = resolveMoonshineRknotPath(spec);
   const knotMetadata = readKnotMetadata(knotPath);
   const modelName = resolveMoonshineModelName(knotMetadata, knotPath, spec);
@@ -695,8 +736,8 @@ async function startLocalMoonshine(
     console.warn('[moonshine] local tsx CLI not found');
     return false;
   }
-  if (!existsSync(config.knotPath)) {
-    console.warn(`[moonshine] dense knot file not found: ${config.knotPath}`);
+  if (!sourceExists(config.knotPath)) {
+    console.warn(`[moonshine] dense knot source not found: ${config.knotPath}`);
     return false;
   }
   if (config.rknotPath && !existsSync(config.rknotPath)) {
@@ -885,9 +926,12 @@ async function startDockerMoonshine(
   if (config.rknotPath) {
     composeArgs.push('-f', RKNOT_COMPOSE_FILE);
     composeEnv.MOONSHINE_MESH_RKNOT_HOST_PATH = config.rknotPath;
-    composeEnv.MOONSHINE_MESH_DENSE_HOST_PATH = config.knotPath;
+    composeEnv.MOONSHINE_MESH_DENSE_SOURCE = config.knotPath;
     composeEnv.MOONSHINE_MESH_LAYERS = config.layerRange;
     composeEnv.MODEL_NAME = config.modelName;
+    if (config.tokenizerJsonPath) {
+      composeEnv.GEMMA4_TOKENIZER_JSON = config.tokenizerJsonPath;
+    }
     composeEnv.GNOSIS_RKNOT_DECODE_CACHE_BYTES =
       GNOSIS_RKNOT_DECODE_CACHE_BYTES;
   }
