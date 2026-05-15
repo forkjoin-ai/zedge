@@ -111,6 +111,10 @@ const GNOSIS_FFN_GUARD_HIGH_CONFIDENCE_LOGIT_MARGIN =
 const GNOSIS_FFN_GUARD_ADMIT_WEATHER_CELLS =
   process.env.ZEDGE_GNOSIS_FFN_GUARD_ADMIT_WEATHER_CELLS ??
   process.env.GNOSIS_FFN_GUARD_ADMIT_WEATHER_CELLS;
+const GNOSIS_RKNOT_DECODE_CACHE_BYTES =
+  process.env.ZEDGE_GNOSIS_RKNOT_DECODE_CACHE_BYTES ??
+  process.env.GNOSIS_RKNOT_DECODE_CACHE_BYTES ??
+  '1073741824';
 const HEALTH_POLL_MS = 2_000;
 const HEALTH_TIMEOUT_MS = 90_000;
 const WATCHDOG_INTERVAL_MS = Number(
@@ -728,6 +732,9 @@ async function startLocalMoonshine(
     ], {
       env: {
         GNOSIS_NUM_THREADS,
+        ...(config.rknotPath
+          ? { GNOSIS_RKNOT_DECODE_CACHE_BYTES }
+          : {}),
         ...(GNOSIS_FFN_LEAKAGE_MODE ? { GNOSIS_FFN_LEAKAGE_MODE } : {}),
         ...(GNOSIS_FFN_GUARD_RMS_DELTA3_THRESHOLD
           ? { GNOSIS_FFN_GUARD_RMS_DELTA3_THRESHOLD }
@@ -797,6 +804,9 @@ async function startLocalMoonshine(
     ], {
       env: {
         GNOSIS_NUM_THREADS,
+        ...(config.rknotPath
+          ? { GNOSIS_RKNOT_DECODE_CACHE_BYTES }
+          : {}),
         ...(GNOSIS_FFN_LEAKAGE_MODE ? { GNOSIS_FFN_LEAKAGE_MODE } : {}),
         ...(GNOSIS_FFN_GUARD_RMS_DELTA3_THRESHOLD
           ? { GNOSIS_FFN_GUARD_RMS_DELTA3_THRESHOLD }
@@ -875,6 +885,8 @@ async function startDockerMoonshine(
     composeEnv.MOONSHINE_MESH_DENSE_HOST_PATH = config.knotPath;
     composeEnv.MOONSHINE_MESH_LAYERS = config.layerRange;
     composeEnv.MODEL_NAME = config.modelName;
+    composeEnv.GNOSIS_RKNOT_DECODE_CACHE_BYTES =
+      GNOSIS_RKNOT_DECODE_CACHE_BYTES;
   }
   composeArgs.push('up', '-d');
   if (!DOCKER_COMPOSE_BUILD_ENABLED) {
