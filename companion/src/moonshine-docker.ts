@@ -902,19 +902,6 @@ async function startLocalMoonshine(
         ? { AUX_KNOT_PATH: process.env.ZEDGE_MOONSHINE_AUX_KNOT }
         : {}),
       ...(tokenizerGgufPath ? { TOKENIZER_GGUF_PATH: tokenizerGgufPath } : {}),
-      ...(tokenizerJsonPath ? { GEMMA4_TOKENIZER_JSON: tokenizerJsonPath } : {}),
-      ...(process.env.ZEDGE_GEMMA_TOKENIZER_PYTHON
-        ? { GEMMA_TOKENIZER_PYTHON: process.env.ZEDGE_GEMMA_TOKENIZER_PYTHON }
-        : {}),
-      ...(process.env.ZEDGE_MOONSHINE_TOKEN_BAND
-        ? { MOONSHINE_TOKEN_BAND: process.env.ZEDGE_MOONSHINE_TOKEN_BAND }
-        : {}),
-      ...(process.env.ZEDGE_MOONSHINE_TOKEN_BAND_WORDS
-        ? { MOONSHINE_TOKEN_BAND_WORDS: process.env.ZEDGE_MOONSHINE_TOKEN_BAND_WORDS }
-        : {}),
-      ...(process.env.ZEDGE_MOONSHINE_PREFILL_WINDOWS
-        ? { MOONSHINE_PREFILL_WINDOWS: process.env.ZEDGE_MOONSHINE_PREFILL_WINDOWS }
-        : {}),
     },
     stdoutPath: '/tmp/moonshine-openai-compat-launchd.out.log',
     stderrPath: '/tmp/moonshine-openai-compat-launchd.err.log',

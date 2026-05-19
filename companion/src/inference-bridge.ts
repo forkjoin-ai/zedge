@@ -1,7 +1,7 @@
 /**
  * Zedge Inference Bridge
  *
- * Chat backend: Moonshine container (localhost:8080, docker-compose.moonshine.yml)
+ * Chat backend: Moonshine container (localhost:8080, docker-compose.moonshine.yml openai-compat service)
  * Fallback: echo (guaranteed response when container is not running)
  *
  * Remote edge/cloudrun/mesh/wasm tiers deprecated.
@@ -1075,7 +1075,7 @@ async function collapseEdgeStreamingResponse(
 }
 
 /**
- * Attempt inference via Moonshine container (localhost:8080, OpenAI-compat)
+ * Attempt inference via Moonshine container (localhost:8080)
  * Primary chat backend — deprecates remote edge/cloudrun/mesh/wasm tiers.
  */
 async function tryMoonshineInference(
@@ -2389,7 +2389,7 @@ export async function inferFim(
  * Execute the inference chain
  *
  * Tier order:
- * 1. Moonshine container (localhost:8080 OpenAI-compat, docker-compose.moonshine.yml)
+ * 1. Moonshine container (localhost:8080, docker-compose.moonshine.yml openai-compat service)
  * 2. Echo fallback (guaranteed)
  *
  * Remote edge/cloudrun/mesh/wasm tiers deprecated — use Moonshine docker container.
