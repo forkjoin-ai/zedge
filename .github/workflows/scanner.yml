@@ -32,7 +32,7 @@ jobs:
         run: |
           # Use the published scanner or fall back to npx
           if command -v polyglot-scan >/dev/null 2>&1; then
-            polyglot-scan . --sarif > scanner-results.sarif
+            polyglot-scan . --gadfly --sarif > scanner-results.sarif
           else
             echo "{\"version\":\"2.1.0\",\"\$schema\":\"https://json.schemastore.org/sarif-2.1.0.json\",\"runs\":[{\"tool\":{\"driver\":{\"name\":\"gnosis-polyglot\",\"version\":\"1.0.0\"}},\"results\":[]}]}" > scanner-results.sarif
           fi
@@ -53,4 +53,3 @@ jobs:
             FINDINGS=$(python3 -c "import json; d=json.load(open('scanner-results.sarif')); print(len(d.get('runs',[{}])[0].get('results',[])))" 2>/dev/null || echo "?")
             echo "Findings: **$FINDINGS**" >> $GITHUB_STEP_SUMMARY
           fi
-
