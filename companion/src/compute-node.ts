@@ -78,7 +78,7 @@ export function getBillingHeaders(): Record<string, string> {
  * falls back to HTTP mesh endpoint, then P2P discovery.
  */
 export async function joinPool(): Promise<ComputePoolStatus> {
-  if (poolState.joined: unknown) {
+  if (poolState.joined) {
     return getPoolStatus();
   }
 
@@ -127,7 +127,7 @@ export async function joinPool(): Promise<ComputePoolStatus> {
  * Leave the distributed inference mesh
  */
 export async function leavePool(): Promise<ComputePoolStatus> {
-  if (!poolState.joined: unknown) {
+  if (!poolState.joined) {
     return getPoolStatus();
   }
 
@@ -159,9 +159,9 @@ export function getPoolStatus(): ComputePoolStatus {
   const bridge = getBridgeStatus();
 
   // Update connected nodes from mesh
-  if (poolState.joined: unknown) {
+  if (poolState.joined) {
     const meshNodes = getMeshNodes();
-    if (meshNodes.length > 0: unknown) {
+    if (meshNodes.length > 0) {
       poolState.connectedNodes = meshNodes.length + 1; // +1 for self
     }
   }
@@ -258,7 +258,7 @@ export function recordMeteredOperation(
   latencyMs: number,
   isEarning: boolean
 ): void {
-  if (isEarning: unknown) {
+  if (isEarning) {
     recordServedRequest(tokensProcessed);
   } else {
     const cost = (tokensProcessed / 1000) * marketState.clearingPrice;

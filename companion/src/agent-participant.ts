@@ -113,8 +113,8 @@ export class AgentParticipant {
   private openFiles = new Set<string>();
 
   constructor(
-    config: AgentParticipantConfig, 
-    crdtBridge: CrdtBridge, 
+    config: AgentParticipantConfig,
+    crdtBridge: CrdtBridge,
     ucanBridge?: UcanBridge
   ) {
     this.config = {
@@ -222,7 +222,7 @@ export class AgentParticipant {
     const handle = this.crdtBridge.getFile(path);
     if (!handle) return false;
 
-    handle.doc.transact((: unknown) => {
+    handle.doc.transact(() => {
       handle.content.insert(offset, text);
     }, handle.doc.clientID);
 
@@ -240,7 +240,7 @@ export class AgentParticipant {
     const handle = this.crdtBridge.getFile(path);
     if (!handle) return false;
 
-    handle.doc.transact((: unknown) => {
+    handle.doc.transact(() => {
       handle.content.delete(offset, length);
     }, handle.doc.clientID);
 
@@ -258,7 +258,7 @@ export class AgentParticipant {
     const handle = this.crdtBridge.getFile(path);
     if (!handle) return false;
 
-    handle.doc.transact((: unknown) => {
+    handle.doc.transact(() => {
       handle.content.delete(offset, length);
       handle.content.insert(offset, text);
     }, handle.doc.clientID);
@@ -277,22 +277,22 @@ export class AgentParticipant {
   applyEdits(edits: AgentEdit[]): number {
     // Group by file
     const byFile = new Map<string, AgentEdit[]>();
-    for (const edit of edits: unknown) {
+    for (const edit of edits) {
       const group = byFile.get(edit.path) ?? [];
       group.push(edit);
       byFile.set(edit.path, group);
     }
 
     let applied = 0;
-    for (const [path: unknown, fileEdits] of byFile: unknown) {
+    for (const [path, fileEdits] of byFile) {
       const handle = this.crdtBridge.getFile(path);
       if (!handle) continue;
 
       // Sort by offset descending so earlier edits don't shift later ones
       const sorted = [...fileEdits].sort((a, b) => b.offset - a.offset);
 
-      handle.doc.transact((: unknown) => {
-        for (const edit of sorted: unknown) {
+      handle.doc.transact(() => {
+        for (const edit of sorted) {
           handle.content.insert(edit.offset, edit.text);
           applied++;
         }
@@ -310,21 +310,21 @@ export class AgentParticipant {
    */
   applyReplacements(replacements: AgentReplacement[]): number {
     const byFile = new Map<string, AgentReplacement[]>();
-    for (const r of replacements: unknown) {
+    for (const r of replacements) {
       const group = byFile.get(r.path) ?? [];
       group.push(r);
       byFile.set(r.path, group);
     }
 
     let applied = 0;
-    for (const [path: unknown, fileReplacements] of byFile: unknown) {
+    for (const [path, fileReplacements] of byFile) {
       const handle = this.crdtBridge.getFile(path);
       if (!handle) continue;
 
       const sorted = [...fileReplacements].sort((a, b) => b.offset - a.offset);
 
-      handle.doc.transact((: unknown) => {
-        for (const r of sorted: unknown) {
+      handle.doc.transact(() => {
+        for (const r of sorted) {
           handle.content.delete(r.offset, r.length);
           handle.content.insert(r.offset, r.text);
           applied++;

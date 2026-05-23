@@ -4,7 +4,7 @@ import { describe, test, expect, beforeEach, mock } from '@a0n/gnosis/test';
 mock.module('@dashrelay/client', () => ({
   DashRelay: class MockDashRelay {
     config: Record<string, unknown>;
-    constructor(config: Record<string, unknown>: unknown) {
+    constructor(config: Record<string, unknown>) {
       this.config = config;
     }
     async connect() {}
@@ -19,7 +19,7 @@ mock.module('@dashrelay/client', () => ({
 }));
 
 // Re-mock yjs to ensure UndoManager survives mock.module re-evaluation
-mock.module('yjs': unknown, (: unknown) => {
+mock.module('yjs', () => {
   class MockYText {
     _content = '';
     _observers: ((...args: unknown[]) => void)[] = [];
@@ -27,12 +27,12 @@ mock.module('yjs': unknown, (: unknown) => {
     get length() {
       return this._content.length;
     }
-    insert(index: number,  text: string) {
+    insert(index: number, text: string) {
       this._content =
         this._content.slice(0, index) + text + this._content.slice(index);
       this._notifyDoc();
     }
-    delete(index: number,  length: number) {
+    delete(index: number, length: number) {
       this._content =
         this._content.slice(0, index) + this._content.slice(index + length);
       this._notifyDoc();
@@ -63,7 +63,7 @@ mock.module('yjs': unknown, (: unknown) => {
   class MockYMap {
     _map = new Map();
     _observers: ((...args: unknown[]) => void)[] = [];
-    set(k: string,  v: unknown) {
+    set(k: string, v: unknown) {
       this._map.set(k, v);
     }
     get(k: string) {
@@ -107,10 +107,10 @@ mock.module('yjs': unknown, (: unknown) => {
     push(items: unknown[]) {
       this._arr.push(...items);
     }
-    insert(index: number,  content: unknown[]) {
+    insert(index: number, content: unknown[]) {
       this._arr.splice(index, 0, ...content);
     }
-    delete(index: number,  length: number) {
+    delete(index: number, length: number) {
       this._arr.splice(index, length);
     }
     get(index: number) {
@@ -191,12 +191,12 @@ mock.module('yjs': unknown, (: unknown) => {
     _undoStack: { content: string }[] = [];
     _redoStack: { content: string }[] = [];
 
-    constructor(scope: MockYText,  options?: { trackedOrigins?: Set<unknown> }) {
+    constructor(scope: MockYText, options?: { trackedOrigins?: Set<unknown> }) {
       this._scope = scope;
       this._trackedOrigins = options?.trackedOrigins ?? new Set();
       const doc = scope._doc as MockDoc | null;
-      if (doc: unknown) {
-        doc.on('update': unknown,  (_update: Uint8Array,  origin: unknown) => {
+      if (doc) {
+        doc.on('update', (_update: Uint8Array, origin: unknown) => {
           if (this._trackedOrigins.has(origin)) {
             this._undoStack.push({ content: scope.toString() });
             this._redoStack.length = 0;
@@ -267,7 +267,7 @@ function createConfig(overrides?: Partial<CrdtBridgeConfig>): CrdtBridgeConfig {
   };
 }
 
-describe('CrdtBridge': unknown, (: unknown) => {
+describe('CrdtBridge', () => {
   let bridge: InstanceType<typeof CrdtBridge>;
 
   beforeEach(() => {
@@ -278,7 +278,7 @@ describe('CrdtBridge': unknown, (: unknown) => {
   // Lifecycle
   // ---------------------------------------------------------------------------
 
-  describe('connect / disconnect': unknown, (: unknown) => {
+  describe('connect / disconnect', () => {
     test('connect registers self in presence', async () => {
       await bridge.connect();
       const participants = bridge.getParticipants();
@@ -289,7 +289,7 @@ describe('CrdtBridge': unknown, (: unknown) => {
       expect(participants[0]!.activity).toBe('idle');
     });
 
-    test('disconnect clears all file handles': unknown, async (: unknown) => {
+    test('disconnect clears all file handles', async () => {
       await bridge.connect();
       await bridge.openFile('src/a.ts');
       await bridge.openFile('src/b.ts');
@@ -303,7 +303,7 @@ describe('CrdtBridge': unknown, (: unknown) => {
   // File Operations
   // ---------------------------------------------------------------------------
 
-  describe('openFile / closeFile': unknown, (: unknown) => {
+  describe('openFile / closeFile', () => {
     test('openFile returns a handle with all fields', async () => {
       await bridge.connect();
       const handle = await bridge.openFile('src/main.ts');
@@ -318,43 +318,43 @@ describe('CrdtBridge': unknown, (: unknown) => {
       expect(handle.undoManager).toBeDefined();
     });
 
-    test('openFile with initial content populates text': unknown, async (: unknown) => {
+    test('openFile with initial content populates text', async () => {
       await bridge.connect();
       const handle = await bridge.openFile('src/main.ts', 'const x = 1;');
       expect(handle.content.toString()).toBe('const x = 1;');
     });
 
-    test('openFile returns existing handle for same path': unknown, async (: unknown) => {
+    test('openFile returns existing handle for same path', async () => {
       await bridge.connect();
       const h1 = await bridge.openFile('src/main.ts', 'hello');
       const h2 = await bridge.openFile('src/main.ts');
       expect(h1).toBe(h2);
     });
 
-    test('closeFile removes handle': unknown, async (: unknown) => {
+    test('closeFile removes handle', async () => {
       await bridge.connect();
       await bridge.openFile('src/main.ts');
       bridge.closeFile('src/main.ts');
       expect(bridge.getOpenFiles()).not.toContain('src/main.ts');
     });
 
-    test('closeFile is a no-op for unknown path': unknown, async (: unknown) => {
+    test('closeFile is a no-op for unknown path', async () => {
       await bridge.connect();
       bridge.closeFile('nonexistent.ts');
     });
 
-    test('getFile returns null for unopened file': unknown, async (: unknown) => {
+    test('getFile returns null for unopened file', async () => {
       await bridge.connect();
       expect(bridge.getFile('nope.ts')).toBeNull();
     });
 
-    test('getFile returns handle for opened file': unknown, async (: unknown) => {
+    test('getFile returns handle for opened file', async () => {
       await bridge.connect();
       await bridge.openFile('src/main.ts');
       expect(bridge.getFile('src/main.ts')).not.toBeNull();
     });
 
-    test('getOpenFiles lists all open files': unknown, async (: unknown) => {
+    test('getOpenFiles lists all open files', async () => {
       await bridge.connect();
       await bridge.openFile('a.ts');
       await bridge.openFile('b.ts');
@@ -371,7 +371,7 @@ describe('CrdtBridge': unknown, (: unknown) => {
   // Cursors and Selections
   // ---------------------------------------------------------------------------
 
-  describe('cursors': unknown, (: unknown) => {
+  describe('cursors', () => {
     test('updateCursor sets cursor for local peer', async () => {
       await bridge.connect();
       await bridge.openFile('src/main.ts');
@@ -385,18 +385,18 @@ describe('CrdtBridge': unknown, (: unknown) => {
       expect(cursors[0]!.displayName).toBe('Alice');
     });
 
-    test('getCursors returns empty for unopened file': unknown, async (: unknown) => {
+    test('getCursors returns empty for unopened file', async () => {
       await bridge.connect();
       expect(bridge.getCursors('nope.ts')).toEqual([]);
     });
 
-    test('updateCursor is a no-op for unopened file': unknown, async (: unknown) => {
+    test('updateCursor is a no-op for unopened file', async () => {
       await bridge.connect();
       bridge.updateCursor('nope.ts', 1, 1);
     });
   });
 
-  describe('selections': unknown, (: unknown) => {
+  describe('selections', () => {
     test('updateSelection sets selection for local peer', async () => {
       await bridge.connect();
       await bridge.openFile('src/main.ts');
@@ -411,7 +411,7 @@ describe('CrdtBridge': unknown, (: unknown) => {
       expect(selections[0]!.peerId).toBe('peer-1');
     });
 
-    test('getSelections returns empty for unopened file': unknown, async (: unknown) => {
+    test('getSelections returns empty for unopened file', async () => {
       await bridge.connect();
       expect(bridge.getSelections('nope.ts')).toEqual([]);
     });
@@ -421,7 +421,7 @@ describe('CrdtBridge': unknown, (: unknown) => {
   // Diagnostics
   // ---------------------------------------------------------------------------
 
-  describe('diagnostics': unknown, (: unknown) => {
+  describe('diagnostics', () => {
     test('shareDiagnostics adds diagnostics for local peer', async () => {
       await bridge.connect();
       await bridge.openFile('src/main.ts');
@@ -442,7 +442,7 @@ describe('CrdtBridge': unknown, (: unknown) => {
       expect(diags[0]!.peerId).toBe('peer-1');
     });
 
-    test('shareDiagnostics replaces previous diagnostics from same peer': unknown, async (: unknown) => {
+    test('shareDiagnostics replaces previous diagnostics from same peer', async () => {
       await bridge.connect();
       await bridge.openFile('src/main.ts');
 
@@ -472,7 +472,7 @@ describe('CrdtBridge': unknown, (: unknown) => {
       expect(diags[0]!.message).toBe('Second');
     });
 
-    test('getDiagnostics returns empty for unopened file': unknown, async (: unknown) => {
+    test('getDiagnostics returns empty for unopened file', async () => {
       await bridge.connect();
       expect(bridge.getDiagnostics('nope.ts')).toEqual([]);
     });
@@ -482,7 +482,7 @@ describe('CrdtBridge': unknown, (: unknown) => {
   // Annotations
   // ---------------------------------------------------------------------------
 
-  describe('annotations': unknown, (: unknown) => {
+  describe('annotations', () => {
     test('addAnnotation creates annotation with metadata', async () => {
       await bridge.connect();
       await bridge.openFile('src/main.ts');
@@ -502,7 +502,7 @@ describe('CrdtBridge': unknown, (: unknown) => {
       expect(ann.line).toBe(42);
     });
 
-    test('getAnnotations returns all annotations for a file': unknown, async (: unknown) => {
+    test('getAnnotations returns all annotations for a file', async () => {
       await bridge.connect();
       await bridge.openFile('src/main.ts');
 
@@ -523,7 +523,7 @@ describe('CrdtBridge': unknown, (: unknown) => {
       expect(anns.length).toBe(2);
     });
 
-    test('addAnnotation throws for unopened file': unknown, async (: unknown) => {
+    test('addAnnotation throws for unopened file', async () => {
       await bridge.connect();
       expect(() => {
         bridge.addAnnotation('nope.ts', {
@@ -535,7 +535,7 @@ describe('CrdtBridge': unknown, (: unknown) => {
       }).toThrow('File not open: nope.ts');
     });
 
-    test('getAnnotations returns empty for unopened file': unknown, async (: unknown) => {
+    test('getAnnotations returns empty for unopened file', async () => {
       await bridge.connect();
       expect(bridge.getAnnotations('nope.ts')).toEqual([]);
     });
@@ -545,7 +545,7 @@ describe('CrdtBridge': unknown, (: unknown) => {
   // Reading Metrics
   // ---------------------------------------------------------------------------
 
-  describe('reading metrics': unknown, (: unknown) => {
+  describe('reading metrics', () => {
     test('recordReading accumulates time', async () => {
       await bridge.connect();
       await bridge.openFile('src/main.ts');
@@ -559,7 +559,7 @@ describe('CrdtBridge': unknown, (: unknown) => {
       expect(metrics[0]!.scrollPasses).toBe(2);
     });
 
-    test('getBlockEngagement returns max engagement': unknown, async (: unknown) => {
+    test('getBlockEngagement returns max engagement', async () => {
       await bridge.connect();
       await bridge.openFile('src/main.ts');
 
@@ -568,13 +568,13 @@ describe('CrdtBridge': unknown, (: unknown) => {
       expect(engagement).toBe(0.5);
     });
 
-    test('getBlockEngagement returns 0 for no metrics': unknown, async (: unknown) => {
+    test('getBlockEngagement returns 0 for no metrics', async () => {
       await bridge.connect();
       await bridge.openFile('src/main.ts');
       expect(bridge.getBlockEngagement('src/main.ts', 'nonexistent')).toBe(0);
     });
 
-    test('recordReading is a no-op for unopened file': unknown, async (: unknown) => {
+    test('recordReading is a no-op for unopened file', async () => {
       await bridge.connect();
       bridge.recordReading('nope.ts', 'block-1', 1000);
     });
@@ -584,7 +584,7 @@ describe('CrdtBridge': unknown, (: unknown) => {
   // Emotion Tags
   // ---------------------------------------------------------------------------
 
-  describe('emotion tags': unknown, (: unknown) => {
+  describe('emotion tags', () => {
     test('tagEmotion stores tag in capacitor doc', async () => {
       await bridge.connect();
 
@@ -603,7 +603,7 @@ describe('CrdtBridge': unknown, (: unknown) => {
       expect(tags[0]!.peerId).toBe('peer-1');
     });
 
-    test('getDominantEmotion returns highest intensity tag': unknown, async (: unknown) => {
+    test('getDominantEmotion returns highest intensity tag', async () => {
       await bridge.connect();
 
       bridge.tagEmotion('src/main.ts', {
@@ -620,14 +620,14 @@ describe('CrdtBridge': unknown, (: unknown) => {
       expect(dominant!.emotion).toBe('frustration');
     });
 
-    test('getDominantEmotion returns null for no tags': unknown, async (: unknown) => {
+    test('getDominantEmotion returns null for no tags', async () => {
       await bridge.connect();
       expect(
         bridge.getDominantEmotion('src/main.ts', 'nonexistent')
       ).toBeNull();
     });
 
-    test('getEmotionTags returns empty before connect': unknown, (: unknown) => {
+    test('getEmotionTags returns empty before connect', () => {
       expect(bridge.getEmotionTags('src/main.ts', 'block-1')).toEqual([]);
     });
   });
@@ -636,18 +636,18 @@ describe('CrdtBridge': unknown, (: unknown) => {
   // Presence
   // ---------------------------------------------------------------------------
 
-  describe('presence': unknown, (: unknown) => {
+  describe('presence', () => {
     test('getParticipants returns empty before connect', () => {
       expect(bridge.getParticipants()).toEqual([]);
     });
 
-    test('participants have a color': unknown, async (: unknown) => {
+    test('participants have a color', async () => {
       await bridge.connect();
       const p = bridge.getParticipants();
       expect(p[0]!.color).toBeTruthy();
     });
 
-    test('updateIdleStatus runs without error': unknown, async (: unknown) => {
+    test('updateIdleStatus runs without error', async () => {
       await bridge.connect();
       bridge.updateIdleStatus();
     });
@@ -657,7 +657,7 @@ describe('CrdtBridge': unknown, (: unknown) => {
   // Undo / Redo
   // ---------------------------------------------------------------------------
 
-  describe('undo / redo': unknown, (: unknown) => {
+  describe('undo / redo', () => {
     test('undo reverts content changes', async () => {
       await bridge.connect();
       const handle = await bridge.openFile('src/main.ts');
@@ -671,7 +671,7 @@ describe('CrdtBridge': unknown, (: unknown) => {
       expect(handle.content.toString()).toBe('');
     });
 
-    test('redo restores undone changes': unknown, async (: unknown) => {
+    test('redo restores undone changes', async () => {
       await bridge.connect();
       const handle = await bridge.openFile('src/main.ts');
 
@@ -686,12 +686,12 @@ describe('CrdtBridge': unknown, (: unknown) => {
       expect(handle.content.toString()).toBe('hello');
     });
 
-    test('undo is a no-op for unopened file': unknown, async (: unknown) => {
+    test('undo is a no-op for unopened file', async () => {
       await bridge.connect();
       bridge.undo('nope.ts');
     });
 
-    test('redo is a no-op for unopened file': unknown, async (: unknown) => {
+    test('redo is a no-op for unopened file', async () => {
       await bridge.connect();
       bridge.redo('nope.ts');
     });
@@ -701,7 +701,7 @@ describe('CrdtBridge': unknown, (: unknown) => {
   // Peer UndoManager
   // ---------------------------------------------------------------------------
 
-  describe('createPeerUndoManager': unknown, (: unknown) => {
+  describe('createPeerUndoManager', () => {
     test('creates undo manager tracking specific peer', async () => {
       await bridge.connect();
       await bridge.openFile('src/main.ts');
@@ -709,7 +709,7 @@ describe('CrdtBridge': unknown, (: unknown) => {
       expect(peerUndo).not.toBeNull();
     });
 
-    test('returns null for unopened file': unknown, async (: unknown) => {
+    test('returns null for unopened file', async () => {
       await bridge.connect();
       expect(bridge.createPeerUndoManager('nope.ts', 999)).toBeNull();
     });
@@ -719,7 +719,7 @@ describe('CrdtBridge': unknown, (: unknown) => {
   // Status
   // ---------------------------------------------------------------------------
 
-  describe('getStatus': unknown, (: unknown) => {
+  describe('getStatus', () => {
     test('returns correct status before connect', () => {
       const status = bridge.getStatus();
       expect(status.workspaceId).toBe('test-workspace');
@@ -731,7 +731,7 @@ describe('CrdtBridge': unknown, (: unknown) => {
       expect(status.peerCount).toBe(0);
     });
 
-    test('returns correct status after connect': unknown, async (: unknown) => {
+    test('returns correct status after connect', async () => {
       await bridge.connect();
       await bridge.openFile('a.ts');
       await bridge.openFile('b.ts');
@@ -749,7 +749,7 @@ describe('CrdtBridge': unknown, (: unknown) => {
   // Peer Events
   // ---------------------------------------------------------------------------
 
-  describe('onPeerEvent': unknown, (: unknown) => {
+  describe('onPeerEvent', () => {
     test('registers peer event listener', async () => {
       const events: string[] = [];
       bridge.onPeerEvent((event) => events.push(event));

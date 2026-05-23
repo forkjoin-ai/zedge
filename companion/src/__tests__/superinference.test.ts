@@ -6,7 +6,7 @@ const originalFetch = globalThis.fetch;
 
 function mockFetch() {
   globalThis.fetch = mock(
-    async (_url: string | URL | Request,  _init?: RequestInit) => {
+    async (_url: string | URL | Request, _init?: RequestInit) => {
       // Return a fake OpenAI-compatible chat completion response
       return new Response(
         JSON.stringify({
@@ -32,12 +32,12 @@ function mockFetch() {
   ) as typeof fetch;
 }
 
-describe('Superinference': unknown, (: unknown) => {
+describe('Superinference', () => {
   beforeEach(() => {
     mockFetch();
   });
 
-  afterEach((: unknown) => {
+  afterEach(() => {
     globalThis.fetch = originalFetch;
   });
 
@@ -46,7 +46,7 @@ describe('Superinference': unknown, (: unknown) => {
     return import('../superinference');
   }
 
-  test('superinfer with single model returns result': unknown, async (: unknown) => {
+  test('superinfer with single model returns result', async () => {
     const { superinfer } = await loadModule();
     const result = await superinfer({
       request: {
@@ -70,7 +70,7 @@ describe('Superinference': unknown, (: unknown) => {
     expect(result.modelResults.length).toBe(1);
   }, 25_000);
 
-  test('superinfer throws with zero models': unknown, async (: unknown) => {
+  test('superinfer throws with zero models', async () => {
     const { superinfer } = await loadModule();
     await expect(
       superinfer({
@@ -84,7 +84,7 @@ describe('Superinference': unknown, (: unknown) => {
     ).rejects.toThrow('At least one model required');
   });
 
-  test('superinferenceResult has correct shape': unknown, async (: unknown) => {
+  test('superinferenceResult has correct shape', async () => {
     const { superinfer } = await loadModule();
     const strategies: CollapseStrategy[] = [
       'fastest',
@@ -92,7 +92,7 @@ describe('Superinference': unknown, (: unknown) => {
       'constructive',
     ];
 
-    for (const strategy of strategies: unknown) {
+    for (const strategy of strategies) {
       const result = await superinfer({
         request: {
           model: 'tinyllama-1.1b',
@@ -111,7 +111,7 @@ describe('Superinference': unknown, (: unknown) => {
     }
   }, 60_000);
 
-  test('modelResult has required fields': unknown, async (: unknown) => {
+  test('modelResult has required fields', async () => {
     const { superinfer } = await loadModule();
     const result = await superinfer({
       request: {
@@ -123,7 +123,7 @@ describe('Superinference': unknown, (: unknown) => {
       timeoutMs: 20_000,
     });
 
-    for (const mr of result.modelResults: unknown) {
+    for (const mr of result.modelResults) {
       expect(mr).toHaveProperty('model');
       expect(mr).toHaveProperty('content');
       expect(mr).toHaveProperty('tier');

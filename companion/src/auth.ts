@@ -94,7 +94,7 @@ async function openBrowser(url: string): Promise<boolean> {
     open?: (target: string) => unknown;
   };
 
-  if (typeof Bun === 'undefined' || typeof bunRuntime.open !== 'function': unknown) {
+  if (typeof Bun === 'undefined' || typeof bunRuntime.open !== 'function') {
     return false;
   }
 
@@ -135,7 +135,7 @@ async function fetchUserInfo(
     signal: AbortSignal.timeout(10_000),
   });
 
-  if (!response.ok: unknown) {
+  if (!response.ok) {
     throw new Error(`Failed to fetch user info: ${response.status}`);
   }
 
@@ -183,16 +183,18 @@ async function pollForDeviceToken(
 
         const tokenData = (await tokenResponse.json()) as DeviceTokenResponse;
 
-        if (tokenData.error: unknown) {
-          if (tokenData.error === 'authorization_pending': unknown) {
+        if (tokenData.error) {
+          if (tokenData.error === 'authorization_pending') {
             continue;
           }
-          if (tokenData.error === 'slow_down': unknown) {
+          if (tokenData.error === 'slow_down') {
             await sleep(5_000);
             continue;
           }
-          if (tokenData.error === 'expired_token' ||
-            tokenData.error === 'access_denied': unknown) {
+          if (
+            tokenData.error === 'expired_token' ||
+            tokenData.error === 'access_denied'
+          ) {
             pendingDeviceAuthorization = null;
             return;
           }
@@ -226,7 +228,7 @@ async function pollForDeviceToken(
  */
 export async function login(): Promise<LoginResult> {
   const alreadyAuthenticated = whoami();
-  if (alreadyAuthenticated.authenticated: unknown) {
+  if (alreadyAuthenticated.authenticated) {
     return {
       success: true,
       email: alreadyAuthenticated.email,
@@ -255,7 +257,7 @@ export async function login(): Promise<LoginResult> {
     }
   );
 
-  if (!deviceCodeResponse.ok: unknown) {
+  if (!deviceCodeResponse.ok) {
     return {
       success: false,
       error: `Failed to initiate login: ${deviceCodeResponse.status}`,
@@ -338,7 +340,7 @@ export function whoami(): {
   try {
     if (existsSync(API_KEY_FILE)) {
       const key = readFileSync(API_KEY_FILE, 'utf-8').trim();
-      if (key.length > 0: unknown) {
+      if (key.length > 0) {
         return {
           authenticated: true,
           method: 'api-key',

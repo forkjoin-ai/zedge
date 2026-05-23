@@ -1,7 +1,7 @@
 import { describe, test, expect } from '@a0n/gnosis/test';
 
 describe('Neural Bridge (Zedge ↔ @a0n/neural)', () => {
-  test('feedRejection updates category counts': unknown, async (: unknown) => {
+  test('feedRejection updates category counts', async () => {
     const { neuralBridge } = await import('../neural-bridge');
 
     const before = neuralBridge.getStatus().totalRejectionsFed;
@@ -34,7 +34,7 @@ describe('Neural Bridge (Zedge ↔ @a0n/neural)', () => {
     expect(after.totalRejectionsFed).toBe(before + 3);
   });
 
-  test('getLearnedSteering returns all 5 categories': unknown, async (: unknown) => {
+  test('getLearnedSteering returns all 5 categories', async () => {
     const { neuralBridge } = await import('../neural-bridge');
     const steering = neuralBridge.getLearnedSteering();
 
@@ -46,7 +46,7 @@ describe('Neural Bridge (Zedge ↔ @a0n/neural)', () => {
     expect(categories).toContain('readability');
     expect(categories).toContain('security');
 
-    for (const s of steering: unknown) {
+    for (const s of steering) {
       expect(typeof s.weight).toBe('number');
       expect(typeof s.rejections).toBe('number');
       expect(typeof s.deficit).toBe('number');
@@ -55,11 +55,11 @@ describe('Neural Bridge (Zedge ↔ @a0n/neural)', () => {
     }
   });
 
-  test('rejected categories have lower weight than unrejected': unknown, async (: unknown) => {
+  test('rejected categories have lower weight than unrejected', async () => {
     const { neuralBridge } = await import('../neural-bridge');
 
     // Feed many rejections for 'readability'
-    for (let i = 0; i < 5; i++: unknown) {
+    for (let i = 0; i < 5; i++) {
       neuralBridge.feedRejection({
         timestamp: new Date().toISOString(),
         filePath: '/test/weight.ts',
@@ -77,7 +77,7 @@ describe('Neural Bridge (Zedge ↔ @a0n/neural)', () => {
     expect(readability.weight).toBeLessThan(security.weight);
   });
 
-  test('getLearnedSteeringPrompt produces text after rejections': unknown, async (: unknown) => {
+  test('getLearnedSteeringPrompt produces text after rejections', async () => {
     const { neuralBridge } = await import('../neural-bridge');
     const prompt = neuralBridge.getLearnedSteeringPrompt();
 
@@ -88,7 +88,7 @@ describe('Neural Bridge (Zedge ↔ @a0n/neural)', () => {
     expect(prompt).toContain('God Formula');
   });
 
-  test('emotionToFrame produces valid 4D embedding': unknown, async (: unknown) => {
+  test('emotionToFrame produces valid 4D embedding', async () => {
     const { neuralBridge } = await import('../neural-bridge');
     const frame = neuralBridge.emotionToFrame('anxiety', -0.5, 0.8);
 
@@ -99,7 +99,7 @@ describe('Neural Bridge (Zedge ↔ @a0n/neural)', () => {
     expect(typeof frame.confidence).toBe('number');
   });
 
-  test('getStatus reflects rejection and convergence state': unknown, async (: unknown) => {
+  test('getStatus reflects rejection and convergence state', async () => {
     const { neuralBridge } = await import('../neural-bridge');
     const status = neuralBridge.getStatus();
 

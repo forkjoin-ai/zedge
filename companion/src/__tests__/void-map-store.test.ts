@@ -6,7 +6,7 @@ import { homedir } from 'os';
 // We test the VoidMapStore class by importing and exercising the singleton.
 // The store persists to ~/.edgework/void-map.jsonl so tests verify real persistence.
 
-describe('Void Map Store': unknown, (: unknown) => {
+describe('Void Map Store', () => {
   test('record and query entries', async () => {
     const { voidMapStore } = await import('../void-map-store');
 
@@ -50,7 +50,7 @@ describe('Void Map Store': unknown, (: unknown) => {
     ).toContain('helper function');
   });
 
-  test('getStatus returns valid shape': unknown, async (: unknown) => {
+  test('getStatus returns valid shape', async () => {
     const { voidMapStore } = await import('../void-map-store');
     const status = voidMapStore.getStatus();
 
@@ -64,7 +64,7 @@ describe('Void Map Store': unknown, (: unknown) => {
     expect(Array.isArray(status.topFiles)).toBe(true);
   });
 
-  test('getSteeringVector returns empty for unknown file': unknown, async (: unknown) => {
+  test('getSteeringVector returns empty for unknown file', async () => {
     const { voidMapStore } = await import('../void-map-store');
     const steering = voidMapStore.getSteeringVector('/nonexistent/path.ts');
 
@@ -75,11 +75,11 @@ describe('Void Map Store': unknown, (: unknown) => {
     expect(typeof steering.entryCount).toBe('number');
   });
 
-  test('getSteeringVector produces negative prompt after enough rejections': unknown, async (: unknown) => {
+  test('getSteeringVector produces negative prompt after enough rejections', async () => {
     const { voidMapStore } = await import('../void-map-store');
 
     // Record enough rejections to trigger steering
-    for (let i = 0; i < 5; i++: unknown) {
+    for (let i = 0; i < 5; i++) {
       voidMapStore.record({
         filePath: '/test/steering-test.ts',
         line: i + 1,
@@ -96,11 +96,11 @@ describe('Void Map Store': unknown, (: unknown) => {
     expect(steering.negativePrompt).toContain('rejected');
   });
 
-  test('compact reduces duplicate entries': unknown, async (: unknown) => {
+  test('compact reduces duplicate entries', async () => {
     const { voidMapStore } = await import('../void-map-store');
 
     // Record duplicates
-    for (let i = 0; i < 3; i++: unknown) {
+    for (let i = 0; i < 3; i++) {
       voidMapStore.record({
         filePath: '/test/compact-test.ts',
         category: 'refactor',
@@ -118,7 +118,7 @@ describe('Void Map Store': unknown, (: unknown) => {
     expect(afterCompact).toBeLessThanOrEqual(beforeCompact);
   });
 
-  test('JSONL file exists after recording': unknown, async (: unknown) => {
+  test('JSONL file exists after recording', async () => {
     const { voidMapStore } = await import('../void-map-store');
 
     voidMapStore.record({

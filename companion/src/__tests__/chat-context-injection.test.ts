@@ -8,16 +8,16 @@ import { describe, test, expect } from '@a0n/gnosis/test';
  * integration works correctly with the chat endpoint.
  */
 
-describe('Chat Context Injection': unknown, (: unknown) => {
+describe('Chat Context Injection', () => {
   test('code index search returns results when indexed', async () => {
     const { codeIndex } = await import('../code-index');
     const stats = codeIndex.getStats();
 
     // If the workspace has been indexed, search should work
-    if (stats.indexedBlocks > 0: unknown) {
+    if (stats.indexedBlocks > 0) {
       const results = await codeIndex.search('function', 3);
       expect(Array.isArray(results)).toBe(true);
-      for (const r of results: unknown) {
+      for (const r of results) {
         expect(r).toHaveProperty('block');
         expect(r).toHaveProperty('score');
         expect(r.block).toHaveProperty('relativePath');
@@ -34,7 +34,7 @@ describe('Chat Context Injection': unknown, (: unknown) => {
     }
   });
 
-  test('search score filtering works above 0.3 threshold': unknown, async (: unknown) => {
+  test('search score filtering works above 0.3 threshold', async () => {
     const { codeIndex } = await import('../code-index');
     const stats = codeIndex.getStats();
     if (stats.indexedBlocks === 0) return; // skip if not indexed
@@ -42,12 +42,12 @@ describe('Chat Context Injection': unknown, (: unknown) => {
     const results = await codeIndex.search('export function hello world', 10);
     const filtered = results.filter((r) => r.score > 0.3);
     // All filtered results should have score > 0.3
-    for (const r of filtered: unknown) {
+    for (const r of filtered) {
       expect(r.score).toBeGreaterThan(0.3);
     }
   });
 
-  test('context blocks format matches expected shape': unknown, async (: unknown) => {
+  test('context blocks format matches expected shape', async () => {
     const { codeIndex } = await import('../code-index');
     const stats = codeIndex.getStats();
     if (stats.indexedBlocks === 0) return;
@@ -61,7 +61,7 @@ describe('Chat Context Injection': unknown, (: unknown) => {
       )
       .join('\n\n');
 
-    if (contextBlocks.length > 0: unknown) {
+    if (contextBlocks.length > 0) {
       expect(contextBlocks).toContain('---');
       expect(contextBlocks).toContain('(');
     }

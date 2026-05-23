@@ -1,7 +1,7 @@
 import { describe, test, expect } from '@a0n/gnosis/test';
 import { daydreamEngine } from '../daydream';
 
-describe('Daydream Engine': unknown, (: unknown) => {
+describe('Daydream Engine', () => {
   test('getStatus returns valid shape', () => {
     const status = daydreamEngine.getStatus();
     expect(status).toHaveProperty('dreaming');
@@ -17,29 +17,29 @@ describe('Daydream Engine': unknown, (: unknown) => {
     expect(typeof status.idleSinceMs).toBe('number');
   });
 
-  test('getCandidates returns empty array initially': unknown, (: unknown) => {
+  test('getCandidates returns empty array initially', () => {
     const candidates = daydreamEngine.getCandidates();
     expect(Array.isArray(candidates)).toBe(true);
   });
 
-  test('notifyActivity updates idle timer': unknown, (: unknown) => {
+  test('notifyActivity updates idle timer', () => {
     const before = daydreamEngine.getStatus().idleSinceMs;
     daydreamEngine.notifyActivity('/tmp/test.ts');
     const after = daydreamEngine.getStatus().idleSinceMs;
     expect(after).toBeLessThanOrEqual(before);
   });
 
-  test('acceptCandidate returns null for unknown id': unknown, (: unknown) => {
+  test('acceptCandidate returns null for unknown id', () => {
     const result = daydreamEngine.acceptCandidate('nonexistent-id');
     expect(result).toBeNull();
   });
 
-  test('rejectCandidate returns null for unknown id': unknown, (: unknown) => {
+  test('rejectCandidate returns null for unknown id', () => {
     const result = daydreamEngine.rejectCandidate('nonexistent-id');
     expect(result).toBeNull();
   });
 
-  test('triggerDream returns null when no file set': unknown, async (: unknown) => {
+  test('triggerDream returns null when no file set', async () => {
     // Create a fresh engine to test without any prior notifyActivity
     const { DaydreamEngine } = await import('../daydream')
       .then(
@@ -54,7 +54,7 @@ describe('Daydream Engine': unknown, (: unknown) => {
     expect(result).toBeNull();
   });
 
-  test('stop cleans up timers': unknown, (: unknown) => {
+  test('stop cleans up timers', () => {
     daydreamEngine.notifyActivity('/tmp/test2.ts');
     daydreamEngine.stop();
     // Should not throw

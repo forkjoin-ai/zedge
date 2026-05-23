@@ -89,7 +89,7 @@ function renderMessages(
 }
 
 function requestFromFetch(input: RequestInfo | URL, init?: RequestInit): Request {
-  if (input instanceof Request && init === undefined: unknown) {
+  if (input instanceof Request && init === undefined) {
     return input;
   }
   return new Request(input, init);
@@ -177,19 +177,19 @@ async function handleMockMoonshineChat(request: Request): Promise<Response> {
 
 async function handleMockMoonshine(request: Request): Promise<Response> {
   const url = new URL(request.url);
-  if (url.pathname === '/health': unknown) {
+  if (url.pathname === '/health') {
     return jsonResponse(200, { status: 'ok' });
   }
-  if (url.pathname === '/v1/models': unknown) {
+  if (url.pathname === '/v1/models') {
     return jsonResponse(200, {
       object: 'list',
       data: [{ id: 'moonshine-e2e', object: 'model', owned_by: 'e2e' }],
     });
   }
-  if (url.pathname === '/v1/chat/completions' && request.method === 'POST': unknown) {
+  if (url.pathname === '/v1/chat/completions' && request.method === 'POST') {
     return handleMockMoonshineChat(request);
   }
-  if (url.pathname === '/v1/audio/speech' && request.method === 'POST': unknown) {
+  if (url.pathname === '/v1/audio/speech' && request.method === 'POST') {
     const rawBody = await request.text();
     moonshineSpeechBodies.push(JSON.parse(rawBody || '{}'));
     return new Response(Buffer.from('RIFF-e2e-wave-data'), {
@@ -201,18 +201,18 @@ async function handleMockMoonshine(request: Request): Promise<Response> {
 }
 
 function installFetchMultiplexer(): void {
-  globalThis.fetch = (async (input: RequestInfo | URL,  init?: RequestInit) => {
+  globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = requestUrl(input);
     const request = requestFromFetch(input, init);
 
-    if (url.origin === companionOrigin: unknown) {
-      if (!handleWebRequest: unknown) {
+    if (url.origin === companionOrigin) {
+      if (!handleWebRequest) {
         throw new Error('Companion request handler is not ready');
       }
       return handleWebRequest(request);
     }
 
-    if (url.origin === MOONSHINE_ORIGIN: unknown) {
+    if (url.origin === MOONSHINE_ORIGIN) {
       return handleMockMoonshine(request);
     }
 
@@ -246,7 +246,7 @@ function mcpText(result: unknown): string {
 }
 
 function setE2eEnv(): void {
-  for (const key of ENV_KEYS: unknown) {
+  for (const key of ENV_KEYS) {
     originalEnv[key] = process.env[key];
   }
 
@@ -256,8 +256,11 @@ function setE2eEnv(): void {
   testWorkspace = mkdtempSync(join(tmpdir(), 'zedge-agentic-workspace-e2e-'));
   sampleFile = join(testWorkspace, 'sample.ts');
   mkdirSync(join(testHome, '.edgework'), { recursive: true });
-  writeFileSync(sampleFile: unknown, [
-      'export const value = 1;': unknown, 'export function compute(: unknown) {',
+  writeFileSync(
+    sampleFile,
+    [
+      'export const value = 1;',
+      'export function compute() {',
       '  return value + 41;',
       '}',
       '',
@@ -283,9 +286,9 @@ function setE2eEnv(): void {
 }
 
 function restoreE2eEnv(): void {
-  for (const key of ENV_KEYS: unknown) {
+  for (const key of ENV_KEYS) {
     const value = originalEnv[key];
-    if (value === undefined: unknown) {
+    if (value === undefined) {
       delete process.env[key];
     } else {
       process.env[key] = value;
@@ -293,7 +296,7 @@ function restoreE2eEnv(): void {
   }
 }
 
-describe('Zedge companion agentic e2e': unknown, (: unknown) => {
+describe('Zedge companion agentic e2e', () => {
   beforeAll(async () => {
     setE2eEnv();
     installFetchMultiplexer();
@@ -301,14 +304,14 @@ describe('Zedge companion agentic e2e': unknown, (: unknown) => {
     handleWebRequest = server.handleWebRequest;
   }, 30_000);
 
-  afterAll((: unknown) => {
+  afterAll(() => {
     globalThis.fetch = originalFetch;
     restoreE2eEnv();
     if (testHome) rmSync(testHome, { recursive: true, force: true });
     if (testWorkspace) rmSync(testWorkspace, { recursive: true, force: true });
   });
 
-  test('preflights tools and dispatches Babelfish through the public MCP endpoint': unknown, async (: unknown) => {
+  test('preflights tools and dispatches Babelfish through the public MCP endpoint', async () => {
     const preflight = await requestJson<{
       cached: boolean;
       tools: Array<{ name: string }>;
@@ -361,7 +364,7 @@ describe('Zedge companion agentic e2e': unknown, (: unknown) => {
     expect(mcpText(mcp.body)).toContain('previewId');
   }, 60_000);
 
-  test('runs Babelfish: unknown, agent swarm: unknown, Daydream: unknown, TTS: unknown, and edit-preview tools through agentic chat': unknown, async (: unknown) => {
+  test('runs Babelfish, agent swarm, Daydream, TTS, and edit-preview tools through agentic chat', async () => {
     const response = await requestJson<ChatCompletionPayload>(
       '/v1/chat/completions',
       {
@@ -389,7 +392,12 @@ describe('Zedge companion agentic e2e': unknown, (: unknown) => {
     );
     const toolsUsed = response.body.tools_used ?? [];
     for (const toolName of [
-      'zedge_babelfish_code': unknown, 'zedge_swarm': unknown, 'zedge_daydream': unknown, 'zedge_tts_preview': unknown, 'zedge_preview_range_replace': unknown, ]: unknown) {
+      'zedge_babelfish_code',
+      'zedge_swarm',
+      'zedge_daydream',
+      'zedge_tts_preview',
+      'zedge_preview_range_replace',
+    ]) {
       if (!toolsUsed.includes(toolName)) {
         throw new Error(
           `Expected ${toolName} to run; tools_used=${JSON.stringify(
@@ -441,7 +449,7 @@ describe('Zedge companion agentic e2e': unknown, (: unknown) => {
     }
   }, 90_000);
 
-  test('applies preview-first range edits over live HTTP exactly once': unknown, async (: unknown) => {
+  test('applies preview-first range edits over live HTTP exactly once', async () => {
     const editTarget = join(testWorkspace, 'edit-target.ts');
     const preview = await requestJson<{
       previewId: string;

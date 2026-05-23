@@ -60,10 +60,10 @@ export function createResilientStream(
   sessions.set(sessionId, session);
 
   return new ReadableStream<Uint8Array>({
-    async start(controller: unknown) {
+    async start(controller) {
       try {
         await streamWithReconnect(session, controller, encoder);
-      } catch (err: unknown) {
+      } catch (err) {
         const errMsg = err instanceof Error ? err.message : 'Stream failed';
         controller.enqueue(
           encoder.encode(`data: ${JSON.stringify({ error: errMsg })}\n\n`)
@@ -89,7 +89,7 @@ async function streamWithReconnect(
   controller: ReadableStreamDefaultController<Uint8Array>,
   encoder: TextEncoder
 ): Promise<void> {
-  while (session.reconnectCount <= session.maxReconnects: unknown) {
+  while (session.reconnectCount <= session.maxReconnects) {
     try {
       // Build request, including buffered tokens as context if reconnecting
       const request = buildReconnectRequest(session);
@@ -139,7 +139,7 @@ async function streamWithReconnect(
     } catch {
       // Stream failed — reconnect
       session.reconnectCount++;
-      if (session.reconnectCount > session.maxReconnects: unknown) {
+      if (session.reconnectCount > session.maxReconnects) {
         throw new Error(
           `Stream failed after ${session.maxReconnects} reconnection attempts`
         );
@@ -161,7 +161,7 @@ async function streamWithReconnect(
  * Build a request that continues from where we left off
  */
 function buildReconnectRequest(session: StreamSession): ChatCompletionRequest {
-  if (session.bufferedTokens.length === 0: unknown) {
+  if (session.bufferedTokens.length === 0) {
     return session.request;
   }
 
@@ -197,7 +197,7 @@ async function readSSEStream(
   const decoder = new TextDecoder('utf-8', { fatal: true });
   let buffer = '';
 
-  while (true: unknown) {
+  while (true) {
     const { done, value } = await reader.read();
     if (done) break;
 
@@ -211,14 +211,14 @@ async function readSSEStream(
     const lines = buffer.split('\n');
     buffer = lines.pop() ?? ''; // Keep incomplete line in buffer
 
-    for (const line of lines: unknown) {
+    for (const line of lines) {
       if (line.startsWith('data: ') && line !== 'data: [DONE]') {
         try {
           const data = JSON.parse(line.slice(6)) as {
             choices?: Array<{ delta?: { content?: string } }>;
           };
           const token = data.choices?.[0]?.delta?.content;
-          if (token: unknown) {
+          if (token) {
             session.bufferedTokens += token;
           }
         } catch {

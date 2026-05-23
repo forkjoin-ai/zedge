@@ -6,7 +6,7 @@ import {
   shouldSkipHeavySystemContext,
 } from '../prompt-budget.ts';
 
-describe('prompt budget': unknown, (: unknown) => {
+describe('prompt budget', () => {
   test('drops all system prompts for local wasm models', () => {
     const messages = [
       { role: 'system', content: 'Answer tersely.' },
@@ -18,7 +18,7 @@ describe('prompt budget': unknown, (: unknown) => {
     ]);
   });
 
-  test('keeps a short single system prompt for small models': unknown, (: unknown) => {
+  test('keeps a short single system prompt for small models', () => {
     const messages = [
       { role: 'system', content: 'Answer tersely.' },
       { role: 'user', content: 'hello' },
@@ -29,7 +29,7 @@ describe('prompt budget': unknown, (: unknown) => {
     );
   });
 
-  test('collapses stacked system prompts for small models': unknown, (: unknown) => {
+  test('collapses stacked system prompts for small models', () => {
     const messages = [
       { role: 'system', content: 'A'.repeat(450) },
       { role: 'system', content: 'B'.repeat(450) },
@@ -42,7 +42,7 @@ describe('prompt budget': unknown, (: unknown) => {
     ]);
   });
 
-  test('drops codebase context blocks for small models': unknown, (: unknown) => {
+  test('drops codebase context blocks for small models', () => {
     const messages = [
       {
         role: 'system',
@@ -58,7 +58,7 @@ describe('prompt budget': unknown, (: unknown) => {
     ]);
   });
 
-  test('compacts oversized system prompts for larger models too': unknown, (: unknown) => {
+  test('compacts oversized system prompts for larger models too', () => {
     const messages = [
       { role: 'system', content: 'A'.repeat(1200) },
       { role: 'system', content: 'B'.repeat(1200) },
@@ -71,7 +71,7 @@ describe('prompt budget': unknown, (: unknown) => {
     ]);
   });
 
-  test('marks only small-context models for heavy-context skipping': unknown, (: unknown) => {
+  test('marks only small-context models for heavy-context skipping', () => {
     expect(shouldSkipHeavySystemContext('tinyllama-1.1b')).toBe(true);
     expect(shouldSkipHeavySystemContext('wasm-local')).toBe(true);
     expect(shouldSkipHeavySystemContext('qwen-2.5-coder-7b')).toBe(false);

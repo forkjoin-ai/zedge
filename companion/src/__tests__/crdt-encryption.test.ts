@@ -8,7 +8,7 @@ const mockDoc = {
   clientID: 1,
 } as unknown as import('yjs').Doc;
 
-describe('CrdtEncryptionProvider': unknown, (: unknown) => {
+describe('CrdtEncryptionProvider', () => {
   test('encrypt -> decrypt roundtrip preserves data', () => {
     const provider = new CrdtEncryptionProvider(mockDoc, {
       passphrase: 'test-secret',
@@ -22,7 +22,7 @@ describe('CrdtEncryptionProvider': unknown, (: unknown) => {
     expect(Array.from(decrypted)).toEqual(Array.from(original));
   });
 
-  test('different passphrases produce different ciphertext': unknown, (: unknown) => {
+  test('different passphrases produce different ciphertext', () => {
     const p1 = new CrdtEncryptionProvider(mockDoc, { passphrase: 'key-1' });
     const p2 = new CrdtEncryptionProvider(mockDoc, { passphrase: 'key-2' });
     const data = new Uint8Array([1, 2, 3]);
@@ -33,7 +33,7 @@ describe('CrdtEncryptionProvider': unknown, (: unknown) => {
     expect(Array.from(enc1)).not.toEqual(Array.from(enc2));
   });
 
-  test('wrong key fails to decrypt': unknown, (: unknown) => {
+  test('wrong key fails to decrypt', () => {
     const p1 = new CrdtEncryptionProvider(mockDoc, { passphrase: 'correct' });
     const p2 = new CrdtEncryptionProvider(mockDoc, { passphrase: 'wrong' });
     const data = new Uint8Array([10, 20, 30]);
@@ -42,7 +42,7 @@ describe('CrdtEncryptionProvider': unknown, (: unknown) => {
     expect(() => p2.decrypt(encrypted)).toThrow();
   });
 
-  test('same passphrase decrypts correctly': unknown, (: unknown) => {
+  test('same passphrase decrypts correctly', () => {
     const p1 = new CrdtEncryptionProvider(mockDoc, { passphrase: 'shared' });
     const p2 = new CrdtEncryptionProvider(mockDoc, { passphrase: 'shared' });
     const data = new TextEncoder().encode('Hello, CRDT!');
@@ -52,7 +52,7 @@ describe('CrdtEncryptionProvider': unknown, (: unknown) => {
     expect(new TextDecoder().decode(decrypted)).toBe('Hello, CRDT!');
   });
 
-  test('destroy cleans up': unknown, (: unknown) => {
+  test('destroy cleans up', () => {
     const provider = new CrdtEncryptionProvider(mockDoc, {
       passphrase: 'test',
     });

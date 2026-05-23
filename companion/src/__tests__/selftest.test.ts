@@ -5,8 +5,8 @@ function streamFromLines(lines: string[]): ReadableStream<Uint8Array> {
   const encoder = new TextEncoder();
   let index = 0;
   return new ReadableStream<Uint8Array>({
-    pull(controller: unknown) {
-      if (index >= lines.length: unknown) {
+    pull(controller) {
+      if (index >= lines.length) {
         controller.close();
         return;
       }
@@ -16,7 +16,7 @@ function streamFromLines(lines: string[]): ReadableStream<Uint8Array> {
   });
 }
 
-describe('selftest SSE sampling': unknown, (: unknown) => {
+describe('selftest SSE sampling', () => {
   test('detects prefill, heartbeat, data, and done markers', async () => {
     const response = new Response(
       streamFromLines([

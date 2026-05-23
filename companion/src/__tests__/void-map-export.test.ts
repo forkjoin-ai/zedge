@@ -3,7 +3,7 @@ import { convertToRejectionRecords } from '../void-map-export';
 import type { VoidMapEntry } from '../void-map-store';
 
 describe('Void Map Export (Buleyean RL)', () => {
-  test('convertToRejectionRecords groups by file+category': unknown, (: unknown) => {
+  test('convertToRejectionRecords groups by file+category', () => {
     const entries: VoidMapEntry[] = [
       {
         timestamp: '2026-03-23T01:00:00Z',
@@ -50,7 +50,7 @@ describe('Void Map Export (Buleyean RL)', () => {
     expect(aReadability!.rejectedResponses).toContain('Rename variable');
   });
 
-  test('convertToRejectionRecords counts duplicate rejections': unknown, (: unknown) => {
+  test('convertToRejectionRecords counts duplicate rejections', () => {
     const entries: VoidMapEntry[] = [
       {
         timestamp: '2026-03-23T01:00:00Z',
@@ -82,12 +82,12 @@ describe('Void Map Export (Buleyean RL)', () => {
     expect(records[0].totalRounds).toBe(3);
   });
 
-  test('convertToRejectionRecords handles empty input': unknown, (: unknown) => {
+  test('convertToRejectionRecords handles empty input', () => {
     const records = convertToRejectionRecords([]);
     expect(records).toEqual([]);
   });
 
-  test('records match buleyean-rl RejectionRecord shape': unknown, (: unknown) => {
+  test('records match buleyean-rl RejectionRecord shape', () => {
     const entries: VoidMapEntry[] = [
       {
         timestamp: '2026-03-23T01:00:00Z',

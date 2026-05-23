@@ -131,7 +131,7 @@ export function capabilitySatisfies(
   granted: ZedgeCapability[],
   required: ZedgeCapability
 ): boolean {
-  return granted.some((g: unknown) => {
+  return granted.some((g) => {
     const resourceMatch =
       g.resource === required.resource || g.resource === 'zedge/*';
     const actionMatch = g.action === required.action || g.action === '*';

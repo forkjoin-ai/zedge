@@ -3,6 +3,13 @@ export interface KnownZedgeModel {
   displayName: string;
   maxTokens: number;
   ownedBy: string;
+  /**
+   * Whether this model is served by the Forkjoin own-runtime distributed
+   * inference mesh (fat-station / knots / WASM worker). When true, the
+   * 'forkjoin' tier passes chat-completion requests through to the mesh's
+   * OpenAI-compatible endpoint before falling back to Moonshine / echo.
+   */
+  forkjoinTier?: boolean;
 }
 
 export interface ZedAvailableModel {
@@ -19,12 +26,14 @@ const KNOWN_ZEDGE_MODELS: KnownZedgeModel[] = [
     displayName: 'Gnosis Local (Moonshine)',
     maxTokens: 4096,
     ownedBy: 'gnosis',
+    forkjoinTier: true,
   },
   {
     id: 'tinyllama-1.1b',
     displayName: 'TinyLlama 1.1B (Moonshine)',
     maxTokens: 2048,
     ownedBy: 'gnosis',
+    forkjoinTier: true,
   },
   {
     // Coder model: route to completions/FIM, not chat (chat deflects).
@@ -33,12 +42,52 @@ const KNOWN_ZEDGE_MODELS: KnownZedgeModel[] = [
     displayName: 'Qwen Coder 7B (Moonshine)',
     maxTokens: 8192,
     ownedBy: 'gnosis',
+    forkjoinTier: true,
   },
   {
     id: 'gemma4-31b-it',
     displayName: 'Gemma4 31B Instruct (Moonshine RKNOT)',
     maxTokens: 8192,
     ownedBy: 'gnosis',
+    forkjoinTier: true,
+  },
+  // ── New mesh knots (dense .knot on R2; served by fat-station / the worker
+  //    via HTTP Range). Validated tensor counts; the 1-tensor falcon-mamba-7b
+  //    and gemma3-4b-it conversions are excluded until re-encoded. ──────────
+  {
+    id: 'smollm2-360m',
+    displayName: 'SmolLM2 360M (Moonshine)',
+    maxTokens: 2048,
+    ownedBy: 'gnosis',
+    forkjoinTier: true,
+  },
+  {
+    id: 'gemma3-1b-it',
+    displayName: 'Gemma3 1B Instruct (Moonshine)',
+    maxTokens: 8192,
+    ownedBy: 'gnosis',
+    forkjoinTier: true,
+  },
+  {
+    id: 'deepseek-r1-1.5b',
+    displayName: 'DeepSeek-R1 Distill Qwen 1.5B (Moonshine)',
+    maxTokens: 4096,
+    ownedBy: 'gnosis',
+    forkjoinTier: true,
+  },
+  {
+    id: 'phi-3.5-mini',
+    displayName: 'Phi-3.5 Mini (Moonshine)',
+    maxTokens: 8192,
+    ownedBy: 'gnosis',
+    forkjoinTier: true,
+  },
+  {
+    id: 'mamba-2.8b',
+    displayName: 'Mamba 2.8B (Moonshine SSM)',
+    maxTokens: 2048,
+    ownedBy: 'gnosis',
+    forkjoinTier: true,
   },
 ];
 
@@ -140,6 +189,27 @@ export function getKnownRemoteZedgeModels(): KnownZedgeModel[] {
 /** Finds metadata for a known fallback model id. */
 export function getKnownZedgeModel(id: string): KnownZedgeModel | undefined {
   return KNOWN_ZEDGE_MODELS_BY_ID.get(id);
+}
+
+/**
+ * Returns whether a model should be routed through the Forkjoin own-runtime
+ * distributed inference mesh ('forkjoin' tier). True for catalog models flagged
+ * `forkjoinTier`, and for explicit mesh/local naming conventions so live or
+ * uncataloged mesh models (e.g. gnosis-local variants) still passthrough.
+ */
+export function isForkjoinTierModel(modelId: string): boolean {
+  const known = getKnownZedgeModel(modelId);
+  if (known?.forkjoinTier === true) {
+    return true;
+  }
+
+  const normalized = modelId.trim().toLowerCase();
+  return (
+    normalized === 'gnosis-local' ||
+    normalized.startsWith('gnosis-local') ||
+    normalized.startsWith('qwen-coder') ||
+    normalized.startsWith('forkjoin')
+  );
 }
 
 /** Builds the model metadata shape that Zed expects in settings.json. */

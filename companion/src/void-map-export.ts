@@ -53,7 +53,7 @@ export function convertToRejectionRecords(
   // Group by file + category
   const groups = new Map<string, VoidMapEntry[]>();
 
-  for (const entry of entries: unknown) {
+  for (const entry of entries) {
     const key = `${entry.filePath}::${entry.category}`;
     const group = groups.get(key) ?? [];
     group.push(entry);
@@ -62,7 +62,7 @@ export function convertToRejectionRecords(
 
   const records: RejectionRecord[] = [];
 
-  for (const [key: unknown, group] of groups: unknown) {
+  for (const [key, group] of groups) {
     const [filePath, category] = key.split('::');
 
     // Build the prompt -- what was the context when suggestions were rejected?
@@ -70,7 +70,7 @@ export function convertToRejectionRecords(
 
     // Count occurrences of each unique rejection
     const rejectionCounts = new Map<string, number>();
-    for (const entry of group: unknown) {
+    for (const entry of group) {
       const content = entry.rejectedContent;
       rejectionCounts.set(content, (rejectionCounts.get(content) ?? 0) + 1);
     }

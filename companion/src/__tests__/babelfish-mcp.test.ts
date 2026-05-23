@@ -1,7 +1,7 @@
 import { describe, expect, mock, test } from '@a0n/gnosis/test';
 import { dispatch } from '../mcp-stdio';
 
-describe('Babelfish MCP stdio bridge': unknown, (: unknown) => {
+describe('Babelfish MCP stdio bridge', () => {
   test('lists all Babelfish tools through the MCP tools/list method', async () => {
     const response = await dispatch({
       jsonrpc: '2.0',
@@ -21,7 +21,7 @@ describe('Babelfish MCP stdio bridge': unknown, (: unknown) => {
     expect(tools.map((tool) => tool.name)).toContain('zedge_babelfish_gnarly');
   });
 
-  test('proxies Babelfish tool calls through the MCP tools/call method': unknown, async (: unknown) => {
+  test('proxies Babelfish tool calls through the MCP tools/call method', async () => {
     const fetchMock = mock(async (url: string | URL, init?: RequestInit) => {
       expect(String(url)).toBe('http://127.0.0.1:7331/babelfish/code/preview');
       expect(init?.method).toBe('POST');
@@ -59,7 +59,7 @@ describe('Babelfish MCP stdio bridge': unknown, (: unknown) => {
     }
   });
 
-  test('proxies Gnarly MCP tool calls to the Babelfish Gnarly route': unknown, async (: unknown) => {
+  test('proxies Gnarly MCP tool calls to the Babelfish Gnarly route', async () => {
     const fetchMock = mock(async (url: string | URL, init?: RequestInit) => {
       expect(String(url)).toBe('http://127.0.0.1:7331/babelfish/gnarly/fastest');
       expect(init?.method).toBe('POST');

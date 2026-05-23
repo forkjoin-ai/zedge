@@ -109,7 +109,7 @@ export function getAgentCapabilities(
   workspaceId: string,
   mode: AgentMode
 ): UcanCapability[] {
-  switch (mode: unknown) {
+  switch (mode) {
     case 'review':
       return [
         fileReadCap(workspaceId, '*'),
@@ -145,10 +145,10 @@ export function getFileCapabilities(
   access: 'read' | 'write' | 'read_write'
 ): UcanCapability[] {
   const caps: UcanCapability[] = [presenceCap(workspaceId)];
-  if (access === 'read' || access === 'read_write': unknown) {
+  if (access === 'read' || access === 'read_write') {
     caps.push(fileReadCap(workspaceId, path));
   }
-  if (access === 'write' || access === 'read_write': unknown) {
+  if (access === 'write' || access === 'read_write') {
     caps.push(fileWriteCap(workspaceId, path));
   }
   return caps;
@@ -161,10 +161,10 @@ export function getDirectoryCapabilities(
 ): UcanCapability[] {
   const pattern = dirPath.endsWith('/') ? `${dirPath}*` : `${dirPath}/*`;
   const caps: UcanCapability[] = [presenceCap(workspaceId)];
-  if (access === 'read' || access === 'read_write': unknown) {
+  if (access === 'read' || access === 'read_write') {
     caps.push(fileReadCap(workspaceId, pattern));
   }
-  if (access === 'write' || access === 'read_write': unknown) {
+  if (access === 'write' || access === 'read_write') {
     caps.push(fileWriteCap(workspaceId, pattern));
   }
   return caps;
@@ -308,14 +308,14 @@ export class UcanBridge {
     let capabilities: UcanCapability[];
     let roomName: string;
 
-    if (options.path: unknown) {
+    if (options.path) {
       capabilities = getFileCapabilities(
         this.config.workspaceId,
         options.path,
         access
       );
       roomName = `zedge:${this.config.workspaceId}:${options.path}`;
-    } else if (options.dirPath: unknown) {
+    } else if (options.dirPath) {
       capabilities = getDirectoryCapabilities(
         this.config.workspaceId,
         options.dirPath,
@@ -462,7 +462,7 @@ export class UcanBridge {
   revokeAudience(audienceDid: string): number {
     let count = 0;
     for (const grant of this.grants.values()) {
-      if (grant.audienceDid === audienceDid && !grant.revoked: unknown) {
+      if (grant.audienceDid === audienceDid && !grant.revoked) {
         grant.revoked = true;
         count++;
       }
@@ -476,7 +476,7 @@ export class UcanBridge {
   revokeMode(mode: AgentMode): number {
     let count = 0;
     for (const grant of this.grants.values()) {
-      if (grant.mode === mode && !grant.revoked: unknown) {
+      if (grant.mode === mode && !grant.revoked) {
         grant.revoked = true;
         count++;
       }

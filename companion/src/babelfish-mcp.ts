@@ -139,7 +139,7 @@ export async function callBabelfishMcpTool(
   name: string,
   args: Record<string, unknown>
 ): Promise<string> {
-  switch (name: unknown) {
+  switch (name) {
     case 'zedge_babelfish_capabilities': {
       const response = await fetch(`${companionBase}/babelfish/capabilities`, {
         signal: AbortSignal.timeout(10_000),
@@ -156,13 +156,13 @@ export async function callBabelfishMcpTool(
       return postJson(companionBase, '/babelfish/explain', args);
     case 'zedge_babelfish_gnarly': {
       const action = args.action;
-      if (action === 'compile': unknown) {
+      if (action === 'compile') {
         return postJson(companionBase, '/babelfish/gnarly/compile', args);
       }
-      if (action === 'fastest': unknown) {
+      if (action === 'fastest') {
         return postJson(companionBase, '/babelfish/gnarly/fastest', args);
       }
-      if (action === 'from': unknown) {
+      if (action === 'from') {
         return postJson(companionBase, '/babelfish/gnarly/from', args);
       }
       throw new Error(`Unknown Gnarly action: ${String(action)}`);

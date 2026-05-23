@@ -37,12 +37,12 @@ function testConfig(
   };
 }
 
-describe('LSP Babelfish helpers': unknown, (: unknown) => {
+describe('LSP Babelfish helpers', () => {
   beforeEach(() => {
     resetGnosisLspStateForTest();
   });
 
-  test('detects supported languages from file URIs': unknown, (: unknown) => {
+  test('detects supported languages from file URIs', () => {
     expect(detectBabelfishLanguageForUri('file:///tmp/example.ts')).toBe(
       'typescript'
     );
@@ -55,14 +55,14 @@ describe('LSP Babelfish helpers': unknown, (: unknown) => {
     expect(detectBabelfishLanguageForUri('file:///tmp/example.txt')).toBeNull();
   });
 
-  test('builds non-mutating ambient hint diagnostics for supported files': unknown, (: unknown) => {
+  test('builds non-mutating ambient hint diagnostics for supported files', () => {
     const diagnostic = buildBabelfishHintDiagnostic('file:///tmp/example.ts');
     expect(diagnostic?.severity).toBe(4);
     expect(diagnostic?.message).toContain('Babelfish available');
     expect(buildBabelfishHintDiagnostic('file:///tmp/example.txt')).toBeNull();
   });
 
-  test('builds code actions for supported files': unknown, (: unknown) => {
+  test('builds code actions for supported files', () => {
     const actions = buildBabelfishCodeActions('file:///tmp/example.ts', 'en');
     expect(actions).toHaveLength(3);
     expect(actions.map((action) => action.title)).toEqual([
@@ -72,7 +72,7 @@ describe('LSP Babelfish helpers': unknown, (: unknown) => {
     ]);
   });
 
-  test('builds Gnarly code actions for .gnarly files': unknown, (: unknown) => {
+  test('builds Gnarly code actions for .gnarly files', () => {
     const actions = buildBabelfishCodeActions(
       'file:///tmp/example.gnarly',
       'en'
@@ -85,7 +85,7 @@ describe('LSP Babelfish helpers': unknown, (: unknown) => {
     ]);
   });
 
-  test('executes Gnarly LSP commands against open .gnarly documents': unknown, async (: unknown) => {
+  test('executes Gnarly LSP commands against open .gnarly documents', async () => {
     setGnosisLspSendForTest(() => {
       // The command assertions do not need published diagnostics.
     });
@@ -140,7 +140,7 @@ gnarly "hello" {
     expect(Array.isArray(fastestResult.speedDiagnostics)).toBe(true);
   });
 
-  test('publishes Babelfish hint diagnostics only when ambient suggestions are enabled': unknown, async (: unknown) => {
+  test('publishes Babelfish hint diagnostics only when ambient suggestions are enabled', async () => {
     const sentMessages: unknown[] = [];
     setGnosisLspSendForTest((message) => {
       sentMessages.push(message);
@@ -197,7 +197,7 @@ gnarly "hello" {
     ).toBe(false);
   });
 
-  test('publishes Gnarly speed hints as LSP hint diagnostics': unknown, async (: unknown) => {
+  test('publishes Gnarly speed hints as LSP hint diagnostics', async () => {
     const sentMessages: unknown[] = [];
     setGnosisLspSendForTest((message) => {
       sentMessages.push(message);
@@ -236,7 +236,7 @@ gnarly "speed" {
     ).toBe(true);
   });
 
-  test('returns Babelfish code actions for supported files and none for unsupported or disabled files': unknown, async (: unknown) => {
+  test('returns Babelfish code actions for supported files and none for unsupported or disabled files', async () => {
     setGnosisLspConfigGetterForTest(() =>
       testConfig({ enabled: true, defaultHumanLanguage: 'fr' })
     );

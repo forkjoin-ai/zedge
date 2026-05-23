@@ -68,7 +68,7 @@ export async function connectVoidSyncRoom(
   // send through DashRelay. For now, this is the integration point --
   // the actual DashRelay WebSocket connection is handled by crdt-bridge.
   federatedVoidSync.enable({
-    roomId, 
+    roomId,
     broadcast: (msg: DeficitExchange) => {
       // In production, this sends through DashRelay Y.Map:
       // crdtBridge.getDoc(roomId).getMap('deficits').set(msg.deviceId, msg)
@@ -153,10 +153,10 @@ export function getFileDeficitMap(
   if (maxLine === 0) return [];
 
   const deficits: LineScopedDeficit[] = [];
-  for (let start = 1; start <= maxLine; start += chunkSize: unknown) {
+  for (let start = 1; start <= maxLine; start += chunkSize) {
     const end = Math.min(start + chunkSize - 1, maxLine);
     const deficit = computeLineScopedDeficit(filePath, [start, end]);
-    if (deficit.rounds > 0: unknown) {
+    if (deficit.rounds > 0) {
       deficits.push(deficit);
     }
   }

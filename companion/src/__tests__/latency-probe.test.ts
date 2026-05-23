@@ -9,12 +9,12 @@ import {
   stopProbing,
 } from '../latency-probe';
 
-describe('Latency Probe': unknown, (: unknown) => {
+describe('Latency Probe', () => {
   afterEach(() => {
     stopProbing();
   });
 
-  test('getTierHealth returns expected shape': unknown, (: unknown) => {
+  test('getTierHealth returns expected shape', () => {
     const health = getTierHealth();
     expect(health).toHaveProperty('edge');
     expect(health).toHaveProperty('cloudRun');
@@ -30,23 +30,23 @@ describe('Latency Probe': unknown, (: unknown) => {
     expect(health.mesh).toHaveProperty('peerCount');
   });
 
-  test('getProbeResults returns array': unknown, (: unknown) => {
+  test('getProbeResults returns array', () => {
     const results = getProbeResults();
     expect(Array.isArray(results)).toBe(true);
   });
 
-  test('getFastestTier always returns wasm as baseline': unknown, (: unknown) => {
+  test('getFastestTier always returns wasm as baseline', () => {
     // Without any probes, WASM should be the fastest available tier
     const tier = getFastestTier('tinyllama-1.1b');
     // May return null if no probes cached, or 'wasm' as baseline
-    if (tier !== null: unknown) {
+    if (tier !== null) {
       expect(typeof tier).toBe('string');
     }
   });
 
-  test('probe results have required fields when populated': unknown, (: unknown) => {
+  test('probe results have required fields when populated', () => {
     const results = getProbeResults();
-    for (const result of results: unknown) {
+    for (const result of results) {
       expect(result).toHaveProperty('tier');
       expect(result).toHaveProperty('model');
       expect(result).toHaveProperty('url');
@@ -58,7 +58,7 @@ describe('Latency Probe': unknown, (: unknown) => {
     }
   });
 
-  test('cloudRun health reflects configured coordinators': unknown, (: unknown) => {
+  test('cloudRun health reflects configured coordinators', () => {
     const health = getTierHealth();
     if (!hasCloudRunCoordinators()) {
       expect(Object.keys(health.cloudRun)).toEqual([]);
@@ -72,7 +72,7 @@ describe('Latency Probe': unknown, (: unknown) => {
     }
   });
 
-  test('treats reachable coordinator health statuses as healthy': unknown, (: unknown) => {
+  test('treats reachable coordinator health statuses as healthy', () => {
     expect(isReachableCoordinatorHealthStatus(200)).toBe(true);
     expect(isReachableCoordinatorHealthStatus(204)).toBe(true);
     // 403 = service is alive but requires IAM auth we don't have locally
@@ -81,7 +81,7 @@ describe('Latency Probe': unknown, (: unknown) => {
     expect(isReachableCoordinatorHealthStatus(500)).toBe(false);
   });
 
-  test('probes canonical cloudrun health paths until one succeeds': unknown, async (: unknown) => {
+  test('probes canonical cloudrun health paths until one succeeds', async () => {
     const originalFetch = global.fetch;
     const calls: string[] = [];
     global.fetch = (async (input: RequestInfo | URL) => {

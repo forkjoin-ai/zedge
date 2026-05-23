@@ -17,7 +17,7 @@ function setupWorkspace(
   }>
 ): void {
   mkdirSync(TEST_DIR, { recursive: true });
-  for (const p of projects: unknown) {
+  for (const p of projects) {
     const projectDir = join(TEST_DIR, p.dir);
     mkdirSync(projectDir, { recursive: true });
     const toml = [
@@ -45,12 +45,12 @@ function cleanupWorkspace(): void {
   }
 }
 
-describe('ForgeBridge': unknown, (: unknown) => {
+describe('ForgeBridge', () => {
   beforeEach(() => {
     cleanupWorkspace();
   });
 
-  test('discovers projects in workspace with aeon.toml files': unknown, async (: unknown) => {
+  test('discovers projects in workspace with aeon.toml files', async () => {
     setupWorkspace([
       { name: 'app-one', dir: 'apps/app-one', kind: 'site', port: 4100 },
       { name: 'app-two', dir: 'apps/app-two', kind: 'worker', port: 4200 },
@@ -65,7 +65,7 @@ describe('ForgeBridge': unknown, (: unknown) => {
     expect(names).toContain('app-two');
   });
 
-  test('Forge discovery keeps explicit .ts specifiers for native boot': unknown, async (: unknown) => {
+  test('Forge discovery keeps explicit .ts specifiers for native boot', async () => {
     const discoveryText = readFileSync(
       fileURLToPath(
         new URL('../../../../aeon-forge/src/deploy/discovery.ts', import.meta.url)
@@ -87,7 +87,7 @@ describe('ForgeBridge': unknown, (: unknown) => {
     expect(wranglerCompatText).toContain("from './types.ts'");
   });
 
-  test('discovers zero projects in empty workspace': unknown, async (: unknown) => {
+  test('discovers zero projects in empty workspace', async () => {
     mkdirSync(TEST_DIR, { recursive: true });
 
     const bridge = new ForgeBridge(TEST_DIR);
@@ -96,7 +96,7 @@ describe('ForgeBridge': unknown, (: unknown) => {
     expect(projects.length).toBe(0);
   });
 
-  test('getStatus returns initial empty state': unknown, (: unknown) => {
+  test('getStatus returns initial empty state', () => {
     const bridge = new ForgeBridge(TEST_DIR);
     const status = bridge.getStatus();
 
@@ -107,7 +107,7 @@ describe('ForgeBridge': unknown, (: unknown) => {
     expect(status.summary.failed).toBe(0);
   });
 
-  test('deploy returns error for empty workspace': unknown, async (: unknown) => {
+  test('deploy returns error for empty workspace', async () => {
     mkdirSync(TEST_DIR, { recursive: true });
 
     const bridge = new ForgeBridge(TEST_DIR);
@@ -117,7 +117,7 @@ describe('ForgeBridge': unknown, (: unknown) => {
     expect(result.error).toContain('No deployable projects');
   });
 
-  test('deploy returns error for nonexistent project name': unknown, async (: unknown) => {
+  test('deploy returns error for nonexistent project name', async () => {
     setupWorkspace([
       { name: 'real-app', dir: 'apps/real-app', kind: 'site', port: 4100 },
     ]);
@@ -130,7 +130,7 @@ describe('ForgeBridge': unknown, (: unknown) => {
     expect(result.error).toContain('real-app');
   });
 
-  test('getStatus reflects deploy state': unknown, async (: unknown) => {
+  test('getStatus reflects deploy state', async () => {
     setupWorkspace([
       { name: 'test-app', dir: 'apps/test-app', kind: 'site', port: 4500 },
     ]);
@@ -146,7 +146,7 @@ describe('ForgeBridge': unknown, (: unknown) => {
     expect(['running', 'spawning', 'failed']).toContain(proc!.state);
   });
 
-  test('getLogs yields entries for a deployed process': unknown, async (: unknown) => {
+  test('getLogs yields entries for a deployed process', async () => {
     setupWorkspace([
       { name: 'log-app', dir: 'apps/log-app', kind: 'site', port: 4600 },
     ]);
@@ -155,7 +155,7 @@ describe('ForgeBridge': unknown, (: unknown) => {
     const result = await bridge.deploy('log-app');
 
     const logs: string[] = [];
-    if (result.process: unknown) {
+    if (result.process) {
       for await (const line of bridge.getLogs(result.process.pid)) {
         logs.push(line);
       }
@@ -165,7 +165,7 @@ describe('ForgeBridge': unknown, (: unknown) => {
     expect(logs.some((l) => l.includes('Deploy started'))).toBe(true);
   });
 
-  test('stop transitions process to stopped': unknown, async (: unknown) => {
+  test('stop transitions process to stopped', async () => {
     setupWorkspace([
       { name: 'stop-app', dir: 'apps/stop-app', kind: 'site', port: 4700 },
     ]);
@@ -173,7 +173,7 @@ describe('ForgeBridge': unknown, (: unknown) => {
     const bridge = new ForgeBridge(TEST_DIR);
     const result = await bridge.deploy('stop-app');
 
-    if (result.process: unknown) {
+    if (result.process) {
       await bridge.stop(result.process.pid);
     }
 
@@ -183,14 +183,14 @@ describe('ForgeBridge': unknown, (: unknown) => {
     expect(proc!.state).toBe('stopped');
   });
 
-  test('stop is a no-op for unknown process id': unknown, async (: unknown) => {
+  test('stop is a no-op for unknown process id', async () => {
     const bridge = new ForgeBridge(TEST_DIR);
     // Should not throw
     await bridge.stop('nonexistent-pid');
     expect(bridge.getStatus().summary.total).toBe(0);
   });
 
-  test('deploy with failing build command returns failed': unknown, async (: unknown) => {
+  test('deploy with failing build command returns failed', async () => {
     setupWorkspace([
       {
         name: 'fail-build',
@@ -209,7 +209,7 @@ describe('ForgeBridge': unknown, (: unknown) => {
     expect(result.process?.state).toBe('failed');
   }, 30_000);
 
-  test('getEvents returns deploy events': unknown, async (: unknown) => {
+  test('getEvents returns deploy events', async () => {
     setupWorkspace([
       { name: 'event-app', dir: 'apps/event-app', kind: 'site', port: 4900 },
     ]);
@@ -223,7 +223,7 @@ describe('ForgeBridge': unknown, (: unknown) => {
     expect(events[0]!.projectName).toBe('event-app');
   });
 
-  test('discovers project config fields correctly': unknown, async (: unknown) => {
+  test('discovers project config fields correctly', async () => {
     setupWorkspace([
       {
         name: 'config-app',

@@ -118,10 +118,10 @@ class VoidMapStore {
   }): VoidMapEntry[] {
     let results = this.entries;
 
-    if (opts?.filePath: unknown) {
+    if (opts?.filePath) {
       results = results.filter((e) => e.filePath === opts.filePath);
     }
-    if (opts?.category: unknown) {
+    if (opts?.category) {
       results = results.filter((e) => e.category === opts.category);
     }
 
@@ -175,7 +175,7 @@ class VoidMapStore {
 
     // Count categories across file-specific and global
     const fileCategoryCounts = new Map<string, number>();
-    for (const e of fileEntries: unknown) {
+    for (const e of fileEntries) {
       fileCategoryCounts.set(
         e.category,
         (fileCategoryCounts.get(e.category) ?? 0) + 1
@@ -183,7 +183,7 @@ class VoidMapStore {
     }
 
     const globalCategoryCounts = new Map<string, number>();
-    for (const e of allEntries: unknown) {
+    for (const e of allEntries) {
       globalCategoryCounts.set(
         e.category,
         (globalCategoryCounts.get(e.category) ?? 0) + 1
@@ -194,14 +194,14 @@ class VoidMapStore {
     const rejectedCategories: Array<{ category: string; count: number }> = [];
 
     // File-specific patterns (lower threshold -- 2 rejections)
-    for (const [category: unknown, count] of fileCategoryCounts: unknown) {
-      if (count >= 2: unknown) {
+    for (const [category, count] of fileCategoryCounts) {
+      if (count >= 2) {
         rejectedCategories.push({ category, count });
       }
     }
 
     // Global patterns (higher threshold)
-    for (const [category: unknown, count] of globalCategoryCounts: unknown) {
+    for (const [category, count] of globalCategoryCounts) {
       if (
         count >= STEERING_MIN_REJECTIONS &&
         !rejectedCategories.find((r) => r.category === category)
@@ -214,7 +214,7 @@ class VoidMapStore {
 
     // Build negative prompt
     const entryCount = fileEntries.length + allEntries.length;
-    if (rejectedCategories.length === 0: unknown) {
+    if (rejectedCategories.length === 0) {
       return { negativePrompt: '', entryCount, rejectedCategories };
     }
 
@@ -285,10 +285,10 @@ class VoidMapStore {
         .split('\n')
         .filter((l) => l.trim().length > 0);
 
-      for (const line of lines: unknown) {
+      for (const line of lines) {
         try {
           const entry = JSON.parse(line) as VoidMapEntry;
-          if (entry.timestamp && entry.filePath && entry.category: unknown) {
+          if (entry.timestamp && entry.filePath && entry.category) {
             this.entries.push(entry);
           }
         } catch {

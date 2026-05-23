@@ -3,10 +3,10 @@ import { existsSync, rmSync } from 'fs';
 import { join } from 'path';
 import { tmpdir } from 'os';
 
-describe('Engram Store': unknown, (: unknown) => {
+describe('Engram Store', () => {
   const testWorkspace = join(tmpdir(), `engram-test-${Date.now()}`);
 
-  test('remember and recall by keyword': unknown, async (: unknown) => {
+  test('remember and recall by keyword', async () => {
     const { EngramStore } = await import('../engram-store');
     const store = new EngramStore(testWorkspace);
 
@@ -28,7 +28,7 @@ describe('Engram Store': unknown, (: unknown) => {
     expect(results[0].score).toBeGreaterThan(0);
   });
 
-  test('getStatus returns valid shape': unknown, async (: unknown) => {
+  test('getStatus returns valid shape', async () => {
     const { EngramStore } = await import('../engram-store');
     const store = new EngramStore(testWorkspace);
 
@@ -44,7 +44,7 @@ describe('Engram Store': unknown, (: unknown) => {
     expect(status.byType).toHaveProperty('file-relationship');
   });
 
-  test('forget removes engram by ID': unknown, async (: unknown) => {
+  test('forget removes engram by ID', async () => {
     const { EngramStore } = await import('../engram-store');
     const store = new EngramStore(
       join(tmpdir(), `engram-forget-${Date.now()}`)
@@ -62,7 +62,7 @@ describe('Engram Store': unknown, (: unknown) => {
     expect(store.size).toBe(0);
   });
 
-  test('forgetBefore removes old engrams': unknown, async (: unknown) => {
+  test('forgetBefore removes old engrams', async () => {
     const { EngramStore } = await import('../engram-store');
     const store = new EngramStore(
       join(tmpdir(), `engram-forget-before-${Date.now()}`)
@@ -89,7 +89,7 @@ describe('Engram Store': unknown, (: unknown) => {
     expect(store.getAll()[0].content).toContain('New pattern');
   });
 
-  test('persistence -- JSONL file created': unknown, async (: unknown) => {
+  test('persistence -- JSONL file created', async () => {
     const { EngramStore } = await import('../engram-store');
     const workspace = join(tmpdir(), `engram-persist-${Date.now()}`);
     const store = new EngramStore(workspace);
@@ -105,7 +105,7 @@ describe('Engram Store': unknown, (: unknown) => {
     expect(existsSync(store.getStatus().storePath)).toBe(true);
   });
 
-  test('getEngramStore returns singleton per workspace': unknown, async (: unknown) => {
+  test('getEngramStore returns singleton per workspace', async () => {
     const { getEngramStore } = await import('../engram-store');
     const store1 = getEngramStore('/fake/workspace');
     const store2 = getEngramStore('/fake/workspace');

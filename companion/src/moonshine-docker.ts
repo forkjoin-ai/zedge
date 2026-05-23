@@ -166,6 +166,22 @@ interface LocalMoonshineModelSpec {
   defaultLayers?: string;
 }
 
+// Base for dense .knot files on R2 (served by fat-station / the worker via HTTP
+// Range). New mesh knots follow the regular key models/<id>.knot, so a single
+// helper wires them: local cache path if present, else stream the R2 fallback.
+// Layers are intentionally NOT pinned -- resolveMoonshineLayerRange reads the
+// count from the knot metadata (0..<metadataLayerCount>), so each arch self-sizes.
+const R2_DENSE_KNOT_BASE =
+  process.env.ZEDGE_R2_KNOT_BASE?.trim() ??
+  'https://edgework.ai/api/v1/r2/distributed-inference/models';
+function meshKnotSpec(id: string): LocalMoonshineModelSpec {
+  return {
+    modelName: id,
+    knotPath: join(homedir(), '.edgework', 'models', `${id}.knot`),
+    denseFallbackUrl: `${R2_DENSE_KNOT_BASE}/${id}.knot`,
+  };
+}
+
 const LOCAL_MOONSHINE_MODELS: Record<string, LocalMoonshineModelSpec> = {
   [DEFAULT_MOONSHINE_MODEL]: {
     modelName: DEFAULT_MOONSHINE_MODEL,
@@ -188,6 +204,27 @@ const LOCAL_MOONSHINE_MODELS: Record<string, LocalMoonshineModelSpec> = {
     // ZEDGE_MOONSHINE_LAYER_RANGE=0..60 for profiling and quality runs.
     defaultLayers: '0..1',
   },
+  // New mesh knots (dense, on R2; layers auto-detected from knot metadata).
+  // The 1-tensor falcon-mamba-7b / gemma3-4b-it are excluded until re-encoded.
+  'smollm2-360m': meshKnotSpec('smollm2-360m'),
+  'gemma3-1b-it': meshKnotSpec('gemma3-1b-it'),
+  'deepseek-r1-1.5b': meshKnotSpec('deepseek-r1-1.5b'),
+  'phi-3.5-mini': meshKnotSpec('phi-3.5-mini'),
+  'mamba-2.8b': meshKnotSpec('mamba-2.8b'),
+  // ── Exotic (non-transformer) knots — runtime arches are wired (rwkv7 ->
+  //    model_rwkv7.rs, jamba -> model_hybrid.rs) and the encode-ssm-models.py
+  //    converter round-trip is audited GREEN (tensor names + arch + config all
+  //    match). Pending cloud build + R2 upload (currently 404); uncomment each
+  //    the moment its <id>.knot returns 200 on R2. Build cmds:
+  //      encode-ssm-models.py --model RWKV/RWKV7-Goose-World3-2.9B-HF \
+  //        --output rknots/rwkv7-2.9b.knot
+  //      encode-ssm-models.py --model ai21labs/AI21-Jamba-1.5-Mini \
+  //        --output rknots/jamba-1.5-mini.knot
+  //    falcon-h1r-7b is blocked: upstream ships fused QKV; the converter now
+  //    refuses it (needs a fused->split q/k/v step) rather than shipping zeroed
+  //    attention.
+  // 'rwkv7-2.9b': meshKnotSpec('rwkv7-2.9b'),
+  // 'jamba-1.5-mini': meshKnotSpec('jamba-1.5-mini'),
 };
 
 interface MoonshineProbeResult {
@@ -805,13 +842,19 @@ async function launchFatStation(
   console.log(
     `[moonshine] Birthing guarded fat-station subagent ` +
       `(id=${GUARDED_SUBAGENT_ID}, node=${GUARDED_SUBAGENT_NODE}, ` +
-      `caste=breeder, caps=net, lease=${GUARDED_SUBAGENT_LEASE_SECS}s, ` +
+      `caste=scout, caps=net, lease=${GUARDED_SUBAGENT_LEASE_SECS}s, ` +
       `${moonshineSourceLabel(config)}, layers=${layerRange})`
   );
+  // caste=scout (not breeder): this is a single editor-owned model host the
+  // companion births and reaps on its own lifecycle. A breeder is protected by
+  // the AntColony two-queen floor (the last breeder cannot be reaped), which
+  // would make shutdown/model-switch reap fail and leak the lease-renewed node.
+  // A scout reaps cleanly; "persistent during the session" is the editor keeping
+  // it alive, not the swarm-survival invariant.
   const result = await guardedSubagentCreate(guarded.env, {
     node: GUARDED_SUBAGENT_NODE,
     id: GUARDED_SUBAGENT_ID,
-    caste: 'breeder',
+    caste: 'scout',
     caps: ['net'],
     leaseSecs: GUARDED_SUBAGENT_LEASE_SECS,
     grantTtlSecs: GUARDED_SUBAGENT_GRANT_TTL_SECS,

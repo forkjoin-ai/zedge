@@ -17,12 +17,12 @@ import type {
   TensorDescriptor,
 } from '../binary-protocol';
 
-describe('Binary Protocol v2': unknown, (: unknown) => {
+describe('Binary Protocol v2', () => {
   test('CONTENT_TYPE is application/x-infer2', () => {
     expect(CONTENT_TYPE).toBe('application/x-infer2');
   });
 
-  test('encode/decode roundtrip with single f32 tensor': unknown, (: unknown) => {
+  test('encode/decode roundtrip with single f32 tensor', () => {
     const data = new Float32Array([1.0, 2.0, 3.0, 4.0]);
     const tensor = fromFloat32(
       data,
@@ -51,7 +51,7 @@ describe('Binary Protocol v2': unknown, (: unknown) => {
     expect(result[3]).toBeCloseTo(4.0);
   });
 
-  test('encode/decode with multiple tensors': unknown, (: unknown) => {
+  test('encode/decode with multiple tensors', () => {
     const t1 = fromFloat32(
       new Float32Array([1, 2, 3]),
       ArchType.Transformer,
@@ -82,7 +82,7 @@ describe('Binary Protocol v2': unknown, (: unknown) => {
     expect(r2[3]).toBeCloseTo(7);
   });
 
-  test('encode/decode with 2D dimensions': unknown, (: unknown) => {
+  test('encode/decode with 2D dimensions', () => {
     const data = new Float32Array(12); // 3x4 matrix
     for (let i = 0; i < 12; i++) data[i] = i * 0.5;
 
@@ -102,7 +102,7 @@ describe('Binary Protocol v2': unknown, (: unknown) => {
     expect(toFloat32(decoded.tensors[0]).length).toBe(12);
   });
 
-  test('encode/decode with 4D dimensions': unknown, (: unknown) => {
+  test('encode/decode with 4D dimensions', () => {
     const data = new Float32Array(24); // 2x3x2x2
     const tensor = fromFloat32(
       data,
@@ -115,7 +115,7 @@ describe('Binary Protocol v2': unknown, (: unknown) => {
     expect(decoded.tensors[0].descriptor.dimensions).toEqual([2, 3, 2, 2]);
   });
 
-  test('all architecture types encode/decode': unknown, (: unknown) => {
+  test('all architecture types encode/decode', () => {
     const archTypes = [
       ArchType.Transformer,
       ArchType.SSM,
@@ -124,7 +124,7 @@ describe('Binary Protocol v2': unknown, (: unknown) => {
       ArchType.Hybrid,
     ];
 
-    for (const arch of archTypes: unknown) {
+    for (const arch of archTypes) {
       const tensor = fromFloat32(
         new Float32Array([1]),
         arch,
@@ -136,7 +136,7 @@ describe('Binary Protocol v2': unknown, (: unknown) => {
     }
   });
 
-  test('all tensor types encode/decode': unknown, (: unknown) => {
+  test('all tensor types encode/decode', () => {
     const tensorTypes = [
       TensorType.HiddenStates,
       TensorType.KV_K,
@@ -153,7 +153,7 @@ describe('Binary Protocol v2': unknown, (: unknown) => {
       TensorType.Attention,
     ];
 
-    for (const tt of tensorTypes: unknown) {
+    for (const tt of tensorTypes) {
       const tensor = fromFloat32(
         new Float32Array([42]),
         ArchType.Transformer,
@@ -165,13 +165,13 @@ describe('Binary Protocol v2': unknown, (: unknown) => {
     }
   });
 
-  test('empty frame encodes/decodes': unknown, (: unknown) => {
+  test('empty frame encodes/decodes', () => {
     const frame: InferenceFrame = { tensors: [] };
     const decoded = decode(encode(frame));
     expect(decoded.tensors.length).toBe(0);
   });
 
-  test('isValidFrame detects valid frames': unknown, (: unknown) => {
+  test('isValidFrame detects valid frames', () => {
     const tensor = fromFloat32(
       new Float32Array([1]),
       ArchType.Transformer,
@@ -182,7 +182,7 @@ describe('Binary Protocol v2': unknown, (: unknown) => {
     expect(isValidFrame(encoded)).toBe(true);
   });
 
-  test('isValidFrame rejects invalid data': unknown, (: unknown) => {
+  test('isValidFrame rejects invalid data', () => {
     expect(isValidFrame(new ArrayBuffer(0))).toBe(false);
     expect(isValidFrame(new ArrayBuffer(4))).toBe(false);
     expect(isValidFrame(new Uint8Array([0, 0, 0, 0, 0, 0, 0, 0]).buffer)).toBe(
@@ -190,7 +190,7 @@ describe('Binary Protocol v2': unknown, (: unknown) => {
     );
   });
 
-  test('decode rejects wrong magic': unknown, (: unknown) => {
+  test('decode rejects wrong magic', () => {
     const buf = new ArrayBuffer(8);
     const view = new DataView(buf);
     view.setUint32(0, 0xdeadbeef, false);
@@ -200,7 +200,7 @@ describe('Binary Protocol v2': unknown, (: unknown) => {
     expect(() => decode(buf)).toThrow('Invalid magic');
   });
 
-  test('decode rejects wrong version': unknown, (: unknown) => {
+  test('decode rejects wrong version', () => {
     const buf = new ArrayBuffer(8);
     const view = new DataView(buf);
     view.setUint32(0, 0x494e4632, false); // "INF2"
@@ -210,7 +210,7 @@ describe('Binary Protocol v2': unknown, (: unknown) => {
     expect(() => decode(buf)).toThrow('Unsupported protocol version');
   });
 
-  test('tensorByteSize calculates correctly': unknown, (: unknown) => {
+  test('tensorByteSize calculates correctly', () => {
     const f32Desc: TensorDescriptor = {
       archType: ArchType.Transformer,
       tensorType: TensorType.HiddenStates,
@@ -228,7 +228,7 @@ describe('Binary Protocol v2': unknown, (: unknown) => {
     expect(tensorByteSize(f16Desc)).toBe(32 * 128 * 2);
   });
 
-  test('toFloat32 rejects non-f32 tensors': unknown, (: unknown) => {
+  test('toFloat32 rejects non-f32 tensors', () => {
     const tensor: Tensor = {
       descriptor: {
         archType: ArchType.Transformer,
@@ -241,10 +241,10 @@ describe('Binary Protocol v2': unknown, (: unknown) => {
     expect(() => toFloat32(tensor)).toThrow('Cannot convert');
   });
 
-  test('large tensor roundtrip preserves precision': unknown, (: unknown) => {
+  test('large tensor roundtrip preserves precision', () => {
     const size = 4096;
     const data = new Float32Array(size);
-    for (let i = 0; i < size; i++: unknown) {
+    for (let i = 0; i < size; i++) {
       data[i] = Math.sin(i * 0.01) * 100;
     }
 
@@ -258,7 +258,7 @@ describe('Binary Protocol v2': unknown, (: unknown) => {
     const result = toFloat32(decoded.tensors[0]);
 
     expect(result.length).toBe(size);
-    for (let i = 0; i < size; i++: unknown) {
+    for (let i = 0; i < size; i++) {
       expect(result[i]).toBeCloseTo(data[i], 5);
     }
   });

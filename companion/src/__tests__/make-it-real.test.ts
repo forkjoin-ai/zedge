@@ -1,6 +1,6 @@
 import { describe, test, expect } from '@a0n/gnosis/test';
 
-describe('Make It Real -- Breeding: unknown, Sync: unknown, Observatory History': unknown, (: unknown) => {
+describe('Make It Real -- Breeding, Sync, Observatory History', () => {
   // Path 1: Breeding generates REAL topology source and compiles with Betty
   describe('Real Breeding', () => {
     test('breeding cycle generates actual .gg topology source', async () => {
@@ -17,28 +17,28 @@ describe('Make It Real -- Breeding: unknown, Sync: unknown, Observatory History'
       const cycle = await agentBreeding.runCycle();
 
       // Candidates should have real topology source, not just comments
-      for (const candidate of cycle.candidates: unknown) {
+      for (const candidate of cycle.candidates) {
         expect(candidate.topologySource.length).toBeGreaterThan(20);
         // Every real topology has node declarations
         expect(candidate.topologySource).toContain('(input');
         expect(candidate.topologySource).toContain('(output');
         // Strategy determines structure
-        if (candidate.strategy === 'restructure': unknown) {
+        if (candidate.strategy === 'restructure') {
           expect(candidate.topologySource).toContain('FORK');
           expect(candidate.topologySource).toContain('RACE');
         }
-        if (candidate.strategy === 'rewrite': unknown) {
+        if (candidate.strategy === 'rewrite') {
           expect(candidate.topologySource).toContain('VENT');
         }
       }
     });
 
-    test('breeding reads system void boundary': unknown, async (: unknown) => {
+    test('breeding reads system void boundary', async () => {
       const { agentBreeding } = await import('../agent-breeding');
       const cycle = await agentBreeding.runCycle();
 
       expect(cycle.systemVoidBoundary).toBeDefined();
-      if (cycle.systemVoidBoundary: unknown) {
+      if (cycle.systemVoidBoundary) {
         expect(cycle.systemVoidBoundary).toHaveProperty('healthScore');
         expect(cycle.systemVoidBoundary).toHaveProperty('weakPoints');
         expect(cycle.systemVoidBoundary).toHaveProperty('improvementRate');
@@ -46,7 +46,7 @@ describe('Make It Real -- Breeding: unknown, Sync: unknown, Observatory History'
       }
     });
 
-    test('constitutional protection blocks architect mutation': unknown, async (: unknown) => {
+    test('constitutional protection blocks architect mutation', async () => {
       const { agentBreeding } = await import('../agent-breeding');
       // The breeding engine should never mutate protected agents
       const status = agentBreeding.getStatus();
@@ -56,7 +56,7 @@ describe('Make It Real -- Breeding: unknown, Sync: unknown, Observatory History'
   });
 
   // Path 2: DashRelay transport wired to federated sync
-  describe('Real Sync': unknown, (: unknown) => {
+  describe('Real Sync', () => {
     test('connectVoidSyncRoom wires federated sync broadcast', async () => {
       const { connectVoidSyncRoom, disconnectVoidSyncRoom, getRoomStatus } =
         await import('../void-sync-transport');
@@ -74,7 +74,7 @@ describe('Make It Real -- Breeding: unknown, Sync: unknown, Observatory History'
       disconnectVoidSyncRoom();
     });
 
-    test('line-scoped deficit updates with new rejections': unknown, async (: unknown) => {
+    test('line-scoped deficit updates with new rejections', async () => {
       const { voidMapStore } = await import('../void-map-store');
       const { computeLineScopedDeficit } = await import(
         '../void-sync-transport'
@@ -104,7 +104,7 @@ describe('Make It Real -- Breeding: unknown, Sync: unknown, Observatory History'
   });
 
   // Path 3: Observatory history tracks trends over time
-  describe('Real Observatory History': unknown, (: unknown) => {
+  describe('Real Observatory History', () => {
     test('recordSnapshot persists entries', async () => {
       const { recordSnapshot, getHistory, getHistorySize } = await import(
         '../observatory-history'
@@ -146,13 +146,13 @@ describe('Make It Real -- Breeding: unknown, Sync: unknown, Observatory History'
       expect(getHistory(1)[0]?.timestamp).toBe(timestamp);
     });
 
-    test('computeTrends returns time-windowed analysis': unknown, async (: unknown) => {
+    test('computeTrends returns time-windowed analysis', async () => {
       const { computeTrends } = await import('../observatory-history');
       const trends = computeTrends();
 
       // May be empty if not enough history, but shape should be valid
       expect(Array.isArray(trends)).toBe(true);
-      for (const trend of trends: unknown) {
+      for (const trend of trends) {
         expect(trend).toHaveProperty('window');
         expect(trend).toHaveProperty('rejections');
         expect(trend).toHaveProperty('rejectionDelta');
@@ -162,7 +162,7 @@ describe('Make It Real -- Breeding: unknown, Sync: unknown, Observatory History'
       }
     });
 
-    test('computeSystemVoidBoundary returns meta-rejection-surface': unknown, async (: unknown) => {
+    test('computeSystemVoidBoundary returns meta-rejection-surface', async () => {
       const { computeSystemVoidBoundary } = await import(
         '../observatory-history'
       );
@@ -179,7 +179,7 @@ describe('Make It Real -- Breeding: unknown, Sync: unknown, Observatory History'
       expect(Array.isArray(boundary.weakPoints)).toBe(true);
     });
 
-    test('observatory snapshot auto-persists to history': unknown, async (: unknown) => {
+    test('observatory snapshot auto-persists to history', async () => {
       const { getObservatorySnapshot } = await import('../observatory');
       const { getHistory, getHistorySize } = await import(
         '../observatory-history'

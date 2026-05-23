@@ -5,7 +5,7 @@ import { mkdtempSync, writeFileSync, mkdirSync, rmSync } from 'fs';
 import { join } from 'path';
 import { tmpdir } from 'os';
 
-describe('ACP Agent': unknown, (: unknown) => {
+describe('ACP Agent', () => {
   let testDir: string;
 
   function setupTestWorkspace(): string {
@@ -13,7 +13,7 @@ describe('ACP Agent': unknown, (: unknown) => {
     writeFileSync(join(testDir, 'main.ts'), 'console.log("hello");');
     writeFileSync(
       join(testDir, 'utils.ts'),
-      'export const add = (a: number,  b: number) => a + b;'
+      'export const add = (a: number, b: number) => a + b;'
     );
     mkdirSync(join(testDir, 'src'));
     writeFileSync(
@@ -23,8 +23,8 @@ describe('ACP Agent': unknown, (: unknown) => {
     return testDir;
   }
 
-  afterEach((: unknown) => {
-    if (testDir: unknown) {
+  afterEach(() => {
+    if (testDir) {
       try {
         rmSync(testDir, { recursive: true });
       } catch {
@@ -33,7 +33,7 @@ describe('ACP Agent': unknown, (: unknown) => {
     }
   });
 
-  test('createSession returns valid session': unknown, (: unknown) => {
+  test('createSession returns valid session', () => {
     const workspace = setupTestWorkspace();
     const capabilities: AgentCapabilities = {
       processExec: ['bun test *'],
@@ -61,7 +61,7 @@ describe('ACP Agent': unknown, (: unknown) => {
     expect(session.createdAt).toBeGreaterThan(0);
   });
 
-  test('getSession retrieves existing session': unknown, (: unknown) => {
+  test('getSession retrieves existing session', () => {
     const workspace = setupTestWorkspace();
     const session = createSession(workspace, {
       processExec: [],
@@ -76,12 +76,12 @@ describe('ACP Agent': unknown, (: unknown) => {
     expect(retrieved!.workspacePath).toBe(workspace);
   });
 
-  test('getSession returns null for nonexistent session': unknown, (: unknown) => {
+  test('getSession returns null for nonexistent session', () => {
     const retrieved = getSession('nonexistent-id');
     expect(retrieved).toBeNull();
   });
 
-  test('deleteSession removes session': unknown, (: unknown) => {
+  test('deleteSession removes session', () => {
     const workspace = setupTestWorkspace();
     const session = createSession(workspace, {
       processExec: [],
@@ -95,13 +95,13 @@ describe('ACP Agent': unknown, (: unknown) => {
     expect(getSession(session.id)).toBeNull();
   });
 
-  test('deleteSession is idempotent': unknown, (: unknown) => {
+  test('deleteSession is idempotent', () => {
     deleteSession('already-deleted');
     deleteSession('already-deleted');
     // No error thrown
   });
 
-  test('multiple sessions are independent': unknown, (: unknown) => {
+  test('multiple sessions are independent', () => {
     const workspace1 = setupTestWorkspace();
     const workspace2 = mkdtempSync(join(tmpdir(), 'zedge-test2-'));
 
@@ -135,7 +135,7 @@ describe('ACP Agent': unknown, (: unknown) => {
     }
   });
 
-  test('session contextCache initializes empty': unknown, (: unknown) => {
+  test('session contextCache initializes empty', () => {
     const workspace = setupTestWorkspace();
     const session = createSession(workspace, {
       processExec: [],

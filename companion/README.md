@@ -37,6 +37,36 @@ touching the OpenAI-compatible chat path.
 `POST /tts/preview` returns the generated file without playback, and
 `GET /tts/voices` exposes the voice IDs used by the companion MCP tools.
 
+## Inference Tiers
+
+`infer()` in `src/inference-bridge.ts` runs an ordered tier chain. Each tier is
+tried in turn; on failure (HTTP error, timeout, or exception) the request falls
+through to the next tier rather than failing the whole call:
+
+```
+forkjoin (primary) -> moonshine (fallback) -> echo (guaranteed last)
+```
+
+- `forkjoin` — first-class passthrough to the Forkjoin OWN distributed-inference
+  mesh (fat-station / knots / WASM worker via `@a0n/distributed-inference-host`),
+  OpenAI `/v1/chat/completions` shape. No third-party and no paid inference: it
+  is the project's own runtime. Config:
+  - `ZEDGE_FORKJOIN_ENABLED` — master switch, default on. When off, the chain
+    reverts to `moonshine -> echo`.
+  - `ZEDGE_FORKJOIN_URL` — the OWN-mesh OpenAI-compatible base URL (loopback for
+    local; the guarded UCAN / monster-resident surface in production).
+  - forkjoin timeout — per-attempt deadline; on expiry the tier falls through to
+    Moonshine. (Exact env name/default: to confirm in reconciliation.)
+- `moonshine` — local Moonshine OpenAI-compatible container on `127.0.0.1:8080`.
+- `echo` — guaranteed local response so the editor always gets a reply when the
+  upper tiers are unavailable.
+
+The tier actually used is reported on the `X-Zedge-Tier` response header and in
+the `attempts[]` chain. See
+`open-source/gnosis/distributed-inference-host/ZEDGE_CONSUMER_MAP.md` (section 5)
+for the full passthrough contract and how it composes with the guarded,
+UCAN-leased mesh node lifecycle.
+
 ## What It Helps You Do
 
 - run the local Zedge companion service

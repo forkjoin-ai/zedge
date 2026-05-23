@@ -4,7 +4,7 @@ import {
   updateZedSettingsModelCatalog,
 } from '../zed-settings.ts';
 
-describe('Zed settings model sync': unknown, (: unknown) => {
+describe('Zed settings model sync', () => {
   test('updates localhost Zedge catalogs from live model IDs', () => {
     const settingsText = `{
       "language_models": {
@@ -55,7 +55,7 @@ describe('Zed settings model sync': unknown, (: unknown) => {
     expect(defaultModel.model).toBe('gnosis-local');
   });
 
-  test('rewrites localhost:7331 to 127.0.0.1 so Zed does not hit ::1', (: unknown) => {
+  test('rewrites localhost:7331 to 127.0.0.1 so Zed does not hit ::1', () => {
     const settingsText = JSON.stringify({
       language_models: {
         openai_compatible: {
@@ -91,7 +91,7 @@ describe('Zed settings model sync': unknown, (: unknown) => {
     expect(copilot.api_url).toBe('http://127.0.0.1:7331/v1/completions');
   });
 
-  test('does not inject wasm-local for remote-only Zedge catalogs': unknown, (: unknown) => {
+  test('does not inject wasm-local for remote-only Zedge catalogs', () => {
     const settingsText = JSON.stringify({
       language_models: {
         openai_compatible: {

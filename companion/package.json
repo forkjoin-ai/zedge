@@ -35,6 +35,7 @@
     "onnxruntime-node": "^1.23.2"
   },
   "devDependencies": {
+    "esbuild": "^0.27.7",
     "typescript": "^5.9.0"
   },
   "author": "AFFECTIVELY <support@affectively.ai>",

@@ -36,7 +36,7 @@ async function initLsp(): Promise<void> {
   });
 }
 
-describe('Gnosis LSP Navigation': unknown, (: unknown) => {
+describe('Gnosis LSP Navigation', () => {
   test('initialize reports definition and references providers', async () => {
     const result = (await dispatchRequest({
       jsonrpc: '2.0',
@@ -49,7 +49,7 @@ describe('Gnosis LSP Navigation': unknown, (: unknown) => {
     expect(caps.referencesProvider).toBe(true);
   });
 
-  test('textDocument/definition finds node declaration': unknown, async (: unknown) => {
+  test('textDocument/definition finds node declaration', async () => {
     await initLsp();
 
     // "filter" appears on line 2 (declaration) and line 5/6 (edges)
@@ -65,7 +65,7 @@ describe('Gnosis LSP Navigation': unknown, (: unknown) => {
     });
 
     expect(result).not.toBeNull();
-    if (result: unknown) {
+    if (result) {
       const loc = result as { uri: string; range: { start: { line: number } } };
       expect(loc.uri).toBe('file:///test/topology.gg');
       // Should point to first declaration of "start"
@@ -73,7 +73,7 @@ describe('Gnosis LSP Navigation': unknown, (: unknown) => {
     }
   });
 
-  test('textDocument/definition returns null for unknown token': unknown, async (: unknown) => {
+  test('textDocument/definition returns null for unknown token', async () => {
     await initLsp();
     const result = await dispatchRequest({
       jsonrpc: '2.0',
@@ -87,7 +87,7 @@ describe('Gnosis LSP Navigation': unknown, (: unknown) => {
     expect(result).toBeNull();
   });
 
-  test('textDocument/references finds all occurrences of a node': unknown, async (: unknown) => {
+  test('textDocument/references finds all occurrences of a node', async () => {
     await initLsp();
 
     // "filter" appears on line 2 (decl), line 5, line 6, line 7
@@ -110,7 +110,7 @@ describe('Gnosis LSP Navigation': unknown, (: unknown) => {
     expect(refs.length).toBeGreaterThanOrEqual(3);
   });
 
-  test('textDocument/references returns empty for unknown token': unknown, async (: unknown) => {
+  test('textDocument/references returns empty for unknown token', async () => {
     await initLsp();
     const result = await dispatchRequest({
       jsonrpc: '2.0',
@@ -125,7 +125,7 @@ describe('Gnosis LSP Navigation': unknown, (: unknown) => {
     expect((result as unknown[]).length).toBe(0);
   });
 
-  test('hover still works for keywords': unknown, async (: unknown) => {
+  test('hover still works for keywords', async () => {
     await initLsp();
     const result = await dispatchRequest({
       jsonrpc: '2.0',
@@ -137,7 +137,7 @@ describe('Gnosis LSP Navigation': unknown, (: unknown) => {
       },
     });
     expect(result).not.toBeNull();
-    if (result: unknown) {
+    if (result) {
       const hover = result as { contents: { value: string } };
       expect(hover.contents.value).toContain('FORK');
     }

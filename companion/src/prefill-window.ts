@@ -16,9 +16,9 @@ export function extractPrefillWindowId(
 ): string | undefined {
   const headerValue = headers.get(ZEDGE_PREFILL_WINDOW_HEADER);
   if (headerValue?.trim()) return headerValue.trim();
-  if (body && typeof body === 'object': unknown) {
+  if (body && typeof body === 'object') {
     const zedge = (body as { _zedge?: { prefill_window_id?: unknown } })._zedge;
-    if (typeof zedge?.prefill_window_id === 'string': unknown) {
+    if (typeof zedge?.prefill_window_id === 'string') {
       const value = zedge.prefill_window_id.trim();
       return value || undefined;
     }
@@ -50,7 +50,7 @@ export function zedgePrefillTelemetryHeaders(
     ['x-moonshine-prefill-saved-ms', 'X-Zedge-Prefill-Saved-Ms'],
     ['x-moonshine-prefill-miss-reason', 'X-Zedge-Prefill-Miss-Reason'],
   ];
-  for (const [source: unknown, target] of mappings: unknown) {
+  for (const [source, target] of mappings) {
     const value = headers.get(source);
     if (value !== null) out[target] = value;
   }

@@ -14,7 +14,7 @@ import type {
   ChatCompletionResponse,
 } from '../inference-bridge';
 
-describe('Inference Bridge': unknown, (: unknown) => {
+describe('Inference Bridge', () => {
   test('getModels falls back to the Moonshine catalog when the live catalog hangs', async () => {
     const originalFetch = global.fetch;
     global.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -27,12 +27,14 @@ describe('Inference Bridge': unknown, (: unknown) => {
               new DOMException('The operation was aborted', 'AbortError')
             );
           }, 10);
-          if (signal?.aborted: unknown) {
+          if (signal?.aborted) {
             clearTimeout(fallbackTimeout);
             reject(new DOMException('The operation was aborted', 'AbortError'));
             return;
           }
-          signal?.addEventListener('abort': unknown, (: unknown) => {
+          signal?.addEventListener(
+            'abort',
+            () => {
               clearTimeout(fallbackTimeout);
               reject(
                 new DOMException('The operation was aborted', 'AbortError')
@@ -50,15 +52,15 @@ describe('Inference Bridge': unknown, (: unknown) => {
       const modelIds = models.map((model) => model.id);
       expect(modelIds).toContain('gnosis-local');
       expect(modelIds).toContain('tinyllama-1.1b');
-      expect(modelIds).toContain('qwen2.5-0.5b-instruct');
+      expect(modelIds).toContain('qwen-coder-7b');
       expect(modelIds).not.toContain('wasm-local');
-      expect(modelIds).not.toContain('qwen-2.5-coder-7b');
+      expect(modelIds).not.toContain('qwen2.5-0.5b-instruct');
     } finally {
       global.fetch = originalFetch;
     }
   });
 
-  test('getModels uses live Moonshine models when the catalog responds': unknown, async (: unknown) => {
+  test('getModels uses live Moonshine models when the catalog responds', async () => {
     const originalFetch = global.fetch;
     global.fetch = (async (input: RequestInfo | URL) => {
       const url = String(input);
@@ -88,7 +90,7 @@ describe('Inference Bridge': unknown, (: unknown) => {
     }
   });
 
-  test('runtime health detects stale OpenAI shim fingerprints': unknown, async (: unknown) => {
+  test('runtime health detects stale OpenAI shim fingerprints', async () => {
     const originalFetch = global.fetch;
     global.fetch = (async (input: RequestInfo | URL) => {
       const url = String(input);
@@ -140,13 +142,16 @@ describe('Inference Bridge': unknown, (: unknown) => {
     }
   });
 
-  test('InferenceTier type covers the Moonshine-era chat tiers': unknown, (: unknown) => {
-    const tiers: InferenceTier[] = ['moonshine', 'echo'];
-    expect(tiers.length).toBe(2);
+  test('InferenceTier type covers the Forkjoin + Moonshine chat tiers', () => {
+    const tiers: InferenceTier[] = ['forkjoin', 'moonshine', 'echo'];
+    expect(tiers.length).toBe(3);
   });
 
-  test('infer preserves streaming and honors requested Moonshine token budgets': unknown, async (: unknown) => {
+  test('infer preserves streaming and honors requested Moonshine token budgets', async () => {
     const originalFetch = global.fetch;
+    const previousForkjoinEnabled = process.env.ZEDGE_FORKJOIN_ENABLED;
+    // Exercise the Moonshine tier directly (forkjoin is primary by default).
+    process.env.ZEDGE_FORKJOIN_ENABLED = '0';
     const requestBodies: Array<Record<string, unknown>> = [];
     const requestHeaders: Headers[] = [];
 
@@ -204,11 +209,16 @@ describe('Inference Bridge': unknown, (: unknown) => {
       expect(data.choices[0]?.message.content).toBe('hi from moonshine');
     } finally {
       global.fetch = originalFetch;
+      if (previousForkjoinEnabled === undefined)
+        delete process.env.ZEDGE_FORKJOIN_ENABLED;
+      else process.env.ZEDGE_FORKJOIN_ENABLED = previousForkjoinEnabled;
     }
   });
 
-  test('infer forwards Moonshine prefill telemetry as Zedge headers': unknown, async (: unknown) => {
+  test('infer forwards Moonshine prefill telemetry as Zedge headers', async () => {
     const originalFetch = global.fetch;
+    const previousForkjoinEnabled = process.env.ZEDGE_FORKJOIN_ENABLED;
+    process.env.ZEDGE_FORKJOIN_ENABLED = '0';
     global.fetch = (async (input: RequestInfo | URL) => {
       const url = String(input);
       if (url.endsWith('/v1/chat/completions')) {
@@ -257,10 +267,13 @@ describe('Inference Bridge': unknown, (: unknown) => {
       expect(result.upstreamHeaders['X-Zedge-Prefill-Saved-Ms']).toBe('17');
     } finally {
       global.fetch = originalFetch;
+      if (previousForkjoinEnabled === undefined)
+        delete process.env.ZEDGE_FORKJOIN_ENABLED;
+      else process.env.ZEDGE_FORKJOIN_ENABLED = previousForkjoinEnabled;
     }
   });
 
-  test('infer caps Moonshine token requests at the model catalog limit': unknown, async (: unknown) => {
+  test('infer caps Moonshine token requests at the model catalog limit', async () => {
     const originalFetch = global.fetch;
     const requestBodies: Array<Record<string, unknown>> = [];
 
@@ -309,8 +322,10 @@ describe('Inference Bridge': unknown, (: unknown) => {
     }
   });
 
-  test('infer compacts prior Zedge artifact turns before Moonshine': unknown, async (: unknown) => {
+  test('infer compacts prior Zedge artifact turns before Moonshine', async () => {
     const originalFetch = global.fetch;
+    const previousForkjoinEnabled = process.env.ZEDGE_FORKJOIN_ENABLED;
+    process.env.ZEDGE_FORKJOIN_ENABLED = '0';
     const requestBodies: Array<Record<string, unknown>> = [];
 
     global.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -380,11 +395,16 @@ describe('Inference Bridge': unknown, (: unknown) => {
       ]);
     } finally {
       global.fetch = originalFetch;
+      if (previousForkjoinEnabled === undefined)
+        delete process.env.ZEDGE_FORKJOIN_ENABLED;
+      else process.env.ZEDGE_FORKJOIN_ENABLED = previousForkjoinEnabled;
     }
   });
 
-  test('infer falls back to echo when Moonshine is unavailable': unknown, async (: unknown) => {
+  test('infer falls back to echo when Moonshine is unavailable', async () => {
     const originalFetch = global.fetch;
+    const previousForkjoinEnabled = process.env.ZEDGE_FORKJOIN_ENABLED;
+    process.env.ZEDGE_FORKJOIN_ENABLED = '0';
     global.fetch = (async (input: RequestInfo | URL) => {
       const url = String(input);
       if (url.endsWith('/v1/chat/completions')) {
@@ -401,16 +421,22 @@ describe('Inference Bridge': unknown, (: unknown) => {
       });
 
       expect(result.tier).toBe('echo');
-      expect(result.attempts[0]?.tier).toBe('moonshine');
-      expect(result.attempts[0]?.status).toBe('http_error');
+      // Forkjoin is disabled here, so it records a skipped attempt first.
+      expect(result.attempts[0]?.tier).toBe('forkjoin');
+      expect(result.attempts[0]?.status).toBe('skipped');
+      expect(result.attempts[1]?.tier).toBe('moonshine');
+      expect(result.attempts[1]?.status).toBe('http_error');
       const data = (await result.response.json()) as ChatCompletionResponse;
       expect(data.choices[0]?.message.content).toContain('Moonshine');
     } finally {
       global.fetch = originalFetch;
+      if (previousForkjoinEnabled === undefined)
+        delete process.env.ZEDGE_FORKJOIN_ENABLED;
+      else process.env.ZEDGE_FORKJOIN_ENABLED = previousForkjoinEnabled;
     }
   });
 
-  test('embed with local fallback returns embedding': unknown, async (: unknown) => {
+  test('embed with local fallback returns embedding', async () => {
     const resp = await embed('test text for embedding', 'nonexistent-model');
     const data = (await resp.json()) as {
       object: string;
@@ -428,7 +454,7 @@ describe('Inference Bridge': unknown, (: unknown) => {
     expect(magnitude).toBeCloseTo(1.0, 1);
   }, 15_000);
 
-  test('embed with array input returns multiple embeddings': unknown, async (: unknown) => {
+  test('embed with array input returns multiple embeddings', async () => {
     const resp = await embed(
       ['first text', 'second text'],
       'nonexistent-model'
@@ -446,7 +472,7 @@ describe('Inference Bridge': unknown, (: unknown) => {
     const e1 = data.data[0].embedding;
     const e2 = data.data[1].embedding;
     let identical = true;
-    for (let i = 0; i < e1.length; i += 1: unknown) {
+    for (let i = 0; i < e1.length; i += 1) {
       if (Math.abs(e1[i] - e2[i]) > 0.001) {
         identical = false;
         break;
@@ -455,7 +481,205 @@ describe('Inference Bridge': unknown, (: unknown) => {
     expect(identical).toBe(false);
   }, 15_000);
 
-  test('clearLogs truncates the configured inference log file': unknown, (: unknown) => {
+  test('infer routes to the Forkjoin mesh first and passes the request through', async () => {
+    const originalFetch = global.fetch;
+    const previousUrl = process.env.ZEDGE_FORKJOIN_URL;
+    const previousEnabled = process.env.ZEDGE_FORKJOIN_ENABLED;
+    // Distinct base so the mock can tell forkjoin apart from Moonshine
+    // (both POST /v1/chat/completions, default to :8080).
+    process.env.ZEDGE_FORKJOIN_URL = 'http://127.0.0.1:9099';
+    delete process.env.ZEDGE_FORKJOIN_ENABLED;
+
+    const forkjoinBodies: Array<Record<string, unknown>> = [];
+    const forkjoinHeaders: Headers[] = [];
+    let moonshineCalled = false;
+
+    global.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url === 'http://127.0.0.1:9099/v1/chat/completions') {
+        forkjoinHeaders.push(new Headers(init?.headers));
+        forkjoinBodies.push(
+          JSON.parse(String(init?.body ?? '{}')) as Record<string, unknown>
+        );
+        return new Response(
+          JSON.stringify({
+            id: 'chatcmpl-forkjoin-test',
+            object: 'chat.completion',
+            created: 1000,
+            model: 'gnosis-local',
+            choices: [
+              {
+                index: 0,
+                message: { role: 'assistant', content: 'hi from forkjoin' },
+                finish_reason: 'stop',
+              },
+            ],
+            usage: { prompt_tokens: 1, completion_tokens: 3, total_tokens: 4 },
+          }),
+          { headers: { 'Content-Type': 'application/json' } }
+        );
+      }
+      if (url.endsWith('/v1/chat/completions')) {
+        moonshineCalled = true;
+        return new Response('moonshine should not be reached', { status: 500 });
+      }
+      return new Response('unexpected', { status: 500 });
+    }) as typeof fetch;
+
+    try {
+      const result = await infer({
+        model: 'gnosis-local',
+        messages: [{ role: 'user', content: 'hello' }],
+        stream: true,
+        max_tokens: 256,
+        prefillWindowId: 'forkjoin-prefill',
+      });
+
+      expect(result.tier).toBe('forkjoin');
+      expect(result.attempts[0]?.tier).toBe('forkjoin');
+      expect(result.attempts[0]?.status).toBe('ok');
+      expect(moonshineCalled).toBe(false);
+      expect(forkjoinBodies).toHaveLength(1);
+      expect(forkjoinBodies[0]?.model).toBe('gnosis-local');
+      expect(forkjoinBodies[0]?.stream).toBe(true);
+      expect(forkjoinBodies[0]?.max_tokens).toBe(256);
+      expect(forkjoinHeaders[0]?.get('X-Moonshine-Prefill-Window')).toBe(
+        'forkjoin-prefill'
+      );
+
+      const data = (await result.response.json()) as ChatCompletionResponse;
+      expect(data.choices[0]?.message.content).toBe('hi from forkjoin');
+    } finally {
+      global.fetch = originalFetch;
+      if (previousUrl === undefined) delete process.env.ZEDGE_FORKJOIN_URL;
+      else process.env.ZEDGE_FORKJOIN_URL = previousUrl;
+      if (previousEnabled === undefined)
+        delete process.env.ZEDGE_FORKJOIN_ENABLED;
+      else process.env.ZEDGE_FORKJOIN_ENABLED = previousEnabled;
+    }
+  });
+
+  test('infer falls through from Forkjoin to Moonshine on mesh failure', async () => {
+    const originalFetch = global.fetch;
+    const previousUrl = process.env.ZEDGE_FORKJOIN_URL;
+    const previousEnabled = process.env.ZEDGE_FORKJOIN_ENABLED;
+    process.env.ZEDGE_FORKJOIN_URL = 'http://127.0.0.1:9099';
+    delete process.env.ZEDGE_FORKJOIN_ENABLED;
+
+    global.fetch = (async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url === 'http://127.0.0.1:9099/v1/chat/completions') {
+        return new Response('mesh unavailable', { status: 503 });
+      }
+      if (url.endsWith('/v1/chat/completions')) {
+        return new Response(
+          JSON.stringify({
+            id: 'chatcmpl-moonshine-fallback',
+            object: 'chat.completion',
+            created: 1000,
+            model: 'gnosis-local',
+            choices: [
+              {
+                index: 0,
+                message: { role: 'assistant', content: 'moonshine rescued it' },
+                finish_reason: 'stop',
+              },
+            ],
+            usage: { prompt_tokens: 1, completion_tokens: 3, total_tokens: 4 },
+          }),
+          { headers: { 'Content-Type': 'application/json' } }
+        );
+      }
+      return new Response('unexpected', { status: 500 });
+    }) as typeof fetch;
+
+    try {
+      const result = await infer({
+        model: 'gnosis-local',
+        messages: [{ role: 'user', content: 'fall through please' }],
+        max_tokens: 16,
+      });
+
+      expect(result.tier).toBe('moonshine');
+      expect(result.attempts[0]?.tier).toBe('forkjoin');
+      expect(result.attempts[0]?.status).toBe('http_error');
+      expect(result.attempts[0]?.detail).toContain('503');
+      expect(result.attempts[1]?.tier).toBe('moonshine');
+      expect(result.attempts[1]?.status).toBe('ok');
+
+      const data = (await result.response.json()) as ChatCompletionResponse;
+      expect(data.choices[0]?.message.content).toBe('moonshine rescued it');
+    } finally {
+      global.fetch = originalFetch;
+      if (previousUrl === undefined) delete process.env.ZEDGE_FORKJOIN_URL;
+      else process.env.ZEDGE_FORKJOIN_URL = previousUrl;
+      if (previousEnabled === undefined)
+        delete process.env.ZEDGE_FORKJOIN_ENABLED;
+      else process.env.ZEDGE_FORKJOIN_ENABLED = previousEnabled;
+    }
+  });
+
+  test('infer skips the Forkjoin tier when ZEDGE_FORKJOIN_ENABLED=0', async () => {
+    const originalFetch = global.fetch;
+    const previousUrl = process.env.ZEDGE_FORKJOIN_URL;
+    const previousEnabled = process.env.ZEDGE_FORKJOIN_ENABLED;
+    process.env.ZEDGE_FORKJOIN_URL = 'http://127.0.0.1:9099';
+    process.env.ZEDGE_FORKJOIN_ENABLED = '0';
+
+    let forkjoinCalled = false;
+
+    global.fetch = (async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url === 'http://127.0.0.1:9099/v1/chat/completions') {
+        forkjoinCalled = true;
+        return new Response('forkjoin should be skipped', { status: 500 });
+      }
+      if (url.endsWith('/v1/chat/completions')) {
+        return new Response(
+          JSON.stringify({
+            id: 'chatcmpl-moonshine-direct',
+            object: 'chat.completion',
+            created: 1000,
+            model: 'gnosis-local',
+            choices: [
+              {
+                index: 0,
+                message: { role: 'assistant', content: 'straight to moonshine' },
+                finish_reason: 'stop',
+              },
+            ],
+            usage: { prompt_tokens: 1, completion_tokens: 3, total_tokens: 4 },
+          }),
+          { headers: { 'Content-Type': 'application/json' } }
+        );
+      }
+      return new Response('unexpected', { status: 500 });
+    }) as typeof fetch;
+
+    try {
+      const result = await infer({
+        model: 'gnosis-local',
+        messages: [{ role: 'user', content: 'no mesh please' }],
+        max_tokens: 16,
+      });
+
+      expect(forkjoinCalled).toBe(false);
+      expect(result.tier).toBe('moonshine');
+      expect(result.attempts[0]?.tier).toBe('forkjoin');
+      expect(result.attempts[0]?.status).toBe('skipped');
+      expect(result.attempts[1]?.tier).toBe('moonshine');
+      expect(result.attempts[1]?.status).toBe('ok');
+    } finally {
+      global.fetch = originalFetch;
+      if (previousUrl === undefined) delete process.env.ZEDGE_FORKJOIN_URL;
+      else process.env.ZEDGE_FORKJOIN_URL = previousUrl;
+      if (previousEnabled === undefined)
+        delete process.env.ZEDGE_FORKJOIN_ENABLED;
+      else process.env.ZEDGE_FORKJOIN_ENABLED = previousEnabled;
+    }
+  });
+
+  test('clearLogs truncates the configured inference log file', () => {
     const tempDir = mkdtempSync(join(tmpdir(), 'zedge-inference-log-'));
     const logFile = join(tempDir, 'inference.log');
     const previousLogFile = process.env.ZEDGE_INFERENCE_LOG_FILE;
@@ -467,7 +691,7 @@ describe('Inference Bridge': unknown, (: unknown) => {
       clearLogs();
       expect(readFileSync(logFile, 'utf-8')).toBe('');
     } finally {
-      if (previousLogFile === undefined: unknown) {
+      if (previousLogFile === undefined) {
         delete process.env.ZEDGE_INFERENCE_LOG_FILE;
       } else {
         process.env.ZEDGE_INFERENCE_LOG_FILE = previousLogFile;

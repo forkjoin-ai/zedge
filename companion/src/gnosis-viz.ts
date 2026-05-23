@@ -216,7 +216,7 @@ function buildVisualizationHtml(filePath: string): string {
     function clearScene() {
       while (nodeGroup.children.length > 0) nodeGroup.remove(nodeGroup.children[0]);
       while (edgeGroup.children.length > 0) edgeGroup.remove(edgeGroup.children[0]);
-      while (labelGroup.children.length > 0: unknown) {
+      while (labelGroup.children.length > 0) {
         const child = labelGroup.children[0];
         if (child.element) child.element.remove();
         labelGroup.remove(child);
@@ -225,12 +225,12 @@ function buildVisualizationHtml(filePath: string): string {
       nodeDataMap.clear();
     }
 
-    function renderTopology(data: unknown) {
+    function renderTopology(data) {
       clearScene();
       const { nodes, edges, metrics } = data;
 
       // Update HUD
-      if (metrics: unknown) {
+      if (metrics) {
         document.getElementById('m-buley').textContent = metrics.buleyNumber ?? '—';
         document.getElementById('m-wallace').textContent = metrics.wallaceNumber ?? '—';
         const regimeEl = document.getElementById('m-regime');
@@ -249,7 +249,7 @@ function buildVisualizationHtml(filePath: string): string {
       const nodePositions = new Map();
 
       // Create nodes
-      for (const node of nodes: unknown) {
+      for (const node of nodes) {
         const color = NODE_COLORS[node.kind] ?? 0x888888;
         const geometry = new THREE.SphereGeometry(0.3, 32, 32);
         const material = new THREE.MeshStandardMaterial({
@@ -276,7 +276,7 @@ function buildVisualizationHtml(filePath: string): string {
       }
 
       // Create edges
-      for (const edge of edges: unknown) {
+      for (const edge of edges) {
         const from = nodePositions.get(edge.from);
         const to = nodePositions.get(edge.to);
         if (!from || !to) continue;
@@ -296,21 +296,21 @@ function buildVisualizationHtml(filePath: string): string {
     const raycaster = new THREE.Raycaster();
     const mouse = new THREE.Vector2();
 
-    renderer.domElement.addEventListener('mousemove': unknown, (event: unknown) => {
+    renderer.domElement.addEventListener('mousemove', (event) => {
       mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
       mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
 
       raycaster.setFromCamera(mouse, camera);
       const intersects = raycaster.intersectObjects(nodeMeshes);
 
-      if (intersects.length > 0: unknown) {
+      if (intersects.length > 0) {
         const node = nodeDataMap.get(intersects[0].object);
-        if (node: unknown) {
+        if (node) {
           tooltip.style.display = 'block';
           tooltip.style.left = (event.clientX + 12) + 'px';
           tooltip.style.top = (event.clientY + 12) + 'px';
           let html = '<strong>' + node.id + '</strong> (' + node.kind + ')';
-          if (node.sourceLocation: unknown) {
+          if (node.sourceLocation) {
             html += '<br/>Line ' + node.sourceLocation.line + ':' + node.sourceLocation.column;
           }
           tooltip.innerHTML = html;
@@ -321,19 +321,19 @@ function buildVisualizationHtml(filePath: string): string {
     });
 
     // Click to navigate
-    renderer.domElement.addEventListener('click': unknown, (: unknown) => {
+    renderer.domElement.addEventListener('click', () => {
       raycaster.setFromCamera(mouse, camera);
       const intersects = raycaster.intersectObjects(nodeMeshes);
-      if (intersects.length > 0: unknown) {
+      if (intersects.length > 0) {
         const node = nodeDataMap.get(intersects[0].object);
-        if (node && node.sourceLocation: unknown) {
+        if (node && node.sourceLocation) {
           console.log('[gnosis-viz] Navigate to:', node.sourceLocation);
         }
       }
     });
 
     // Analyze button
-    document.getElementById('analyze-btn').addEventListener('click': unknown, async (: unknown) => {
+    document.getElementById('analyze-btn').addEventListener('click', async () => {
       const sourceText = document.getElementById('source-text').value;
       if (!sourceText.trim()) return;
 
@@ -346,17 +346,17 @@ function buildVisualizationHtml(filePath: string): string {
         });
         const data = await response.json();
         renderTopology(data);
-      } catch (err: unknown) {
+      } catch (err) {
         document.getElementById('status').textContent = 'Error: ' + err.message;
       }
     });
 
     // SSE for live updates
     const evtSource = new EventSource('/gnosis/viz/events');
-    evtSource.onmessage = (e: any) => {
+    evtSource.onmessage = (event) => {
       try {
         const data = JSON.parse(event.data);
-        if (data.type === 'topology-update': unknown) {
+        if (data.type === 'topology-update') {
           renderTopology(data);
         }
       } catch {}
@@ -364,7 +364,7 @@ function buildVisualizationHtml(filePath: string): string {
 
     // Load initial file if specified
     const filePath = ${JSON.stringify(filePath)};
-    if (filePath: unknown) {
+    if (filePath) {
       document.getElementById('status').textContent = 'Loading ' + filePath + '...';
     }
 
@@ -375,7 +375,7 @@ function buildVisualizationHtml(filePath: string): string {
 
       // Gentle node pulsing
       const t = Date.now() * 0.001;
-      for (const mesh of nodeMeshes: unknown) {
+      for (const mesh of nodeMeshes) {
         const scale = 1 + Math.sin(t * 2 + mesh.position.x) * 0.05;
         mesh.scale.setScalar(scale);
       }
@@ -386,7 +386,7 @@ function buildVisualizationHtml(filePath: string): string {
     animate();
 
     // Resize handling
-    window.addEventListener('resize': unknown, (: unknown) => {
+    window.addEventListener('resize', () => {
       camera.aspect = window.innerWidth / window.innerHeight;
       camera.updateProjectionMatrix();
       renderer.setSize(window.innerWidth, window.innerHeight);

@@ -45,9 +45,9 @@ let trainerAvailable = false;
 const simpleTokenizer = {
   encode: (text: string): number[] => {
     // Simple word-level tokenization for void map entries
-    return text.split(/\s+/).map((word: unknown) => {
+    return text.split(/\s+/).map((word) => {
       let hash = 0;
-      for (let i = 0; i < word.length; i++: unknown) {
+      for (let i = 0; i < word.length; i++) {
         hash = ((hash << 5) - hash + word.charCodeAt(i)) | 0;
       }
       return Math.abs(hash) % 32000; // Map to vocab range
@@ -93,7 +93,7 @@ export async function wirePhase3(): Promise<Phase3Status> {
     voidMapStore.onRecord((entry: VoidMapEntry) => {
       // Feed BuleyeanTrainer (edgework-sdk)
       const records = convertToRejectionRecords([entry]);
-      for (const record of records: unknown) {
+      for (const record of records) {
         trainer.ingestRejectionRecord(record, simpleTokenizer).catch(() => {});
       }
       // Feed neural bridge (God Formula complement distribution)
@@ -123,7 +123,7 @@ export async function wirePhase3(): Promise<Phase3Status> {
           }
       )
       .catch(() => ({ computeEmbedding: null }));
-    if (computeEmbedding: unknown) {
+    if (computeEmbedding) {
       store.setEmbedFunction(computeEmbedding);
     }
   } catch {
@@ -164,7 +164,7 @@ function createMemoryStorage() {
   const data = new Map<string, string>();
   return {
     get: async (key: string) => data.get(key) ?? null,
-    set: async (key: string,  value: string) => {
+    set: async (key: string, value: string) => {
       data.set(key, value);
     },
     delete: async (key: string) => {

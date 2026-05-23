@@ -2,7 +2,7 @@ export function shouldStreamChatCompletion(
   stream: boolean | undefined,
   acceptHeader: string | null
 ): boolean {
-  if (typeof stream === 'boolean': unknown) {
+  if (typeof stream === 'boolean') {
     return stream;
   }
 

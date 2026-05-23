@@ -122,7 +122,7 @@ function hslToHex(h: number, s: number, l: number): string {
     return p;
   };
 
-  if (s === 0: unknown) {
+  if (s === 0) {
     const v = Math.round(l * 255);
     return `#${v.toString(16).padStart(2, '0')}${v
       .toString(16)
@@ -157,7 +157,7 @@ function applyMoodShift(profile: EmotionalProfile): ThemePalette {
 
   const { dominantEmotion, avgValence, avgArousal } = profile;
 
-  if (dominantEmotion === 'confidence' || avgValence > 0.3: unknown) {
+  if (dominantEmotion === 'confidence' || avgValence > 0.3) {
     // Warmer -- shift blue toward teal (reduce hue by 15-20 degrees)
     palette.mood = 'confident';
     palette.accent.primary = shiftHue(BASE_PALETTE.accent.primary, -15, 0.05);
@@ -177,7 +177,7 @@ function applyMoodShift(profile: EmotionalProfile): ThemePalette {
     );
     palette.accent.hover = shiftHue(BASE_PALETTE.accent.hover, 10, -0.1, -0.03);
     palette.accent.text = shiftHue(BASE_PALETTE.accent.text, 10, -0.1);
-  } else if (dominantEmotion === 'frustration' || avgValence < -0.3: unknown) {
+  } else if (dominantEmotion === 'frustration' || avgValence < -0.3) {
     // Slightly muted -- reduce saturation, warmer undertone
     palette.mood = 'frustrated';
     palette.accent.primary = shiftHue(BASE_PALETTE.accent.primary, -5, -0.08);

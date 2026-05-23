@@ -134,8 +134,8 @@ export function configureTtsRelay(
   const request =
     body && typeof body === 'object' ? (body as Record<string, unknown>) : {};
 
-  if ('enabled' in request: unknown) {
-    if (typeof request.enabled !== 'boolean': unknown) {
+  if ('enabled' in request) {
+    if (typeof request.enabled !== 'boolean') {
       return {
         status: 400,
         result: {
@@ -148,8 +148,8 @@ export function configureTtsRelay(
     env['ZEDGE_TTS_ENABLED'] = request.enabled ? '1' : '0';
   }
 
-  if ('mode' in request: unknown) {
-    if (typeof request.mode !== 'string': unknown) {
+  if ('mode' in request) {
+    if (typeof request.mode !== 'string') {
       return {
         status: 400,
         result: {
@@ -201,14 +201,14 @@ function writeAudioFile(bytes: Uint8Array, outputDir?: string): string {
 }
 
 function defaultRunCommand(command: string, args: string[]): Promise<boolean> {
-  return new Promise((resolve: unknown) => {
+  return new Promise((resolve) => {
     const child = spawn(command, args, { stdio: 'ignore' });
     const timer = setTimeout(() => child.kill('SIGTERM'), 15_000);
-    child.on('close': unknown, (code: unknown) => {
+    child.on('close', (code) => {
       clearTimeout(timer);
       resolve(code === 0);
     });
-    child.on('error': unknown, (: unknown) => {
+    child.on('error', () => {
       clearTimeout(timer);
       resolve(false);
     });
@@ -268,7 +268,7 @@ export async function handleTtsSpeakRequest(
   if (typeof request.input !== 'string' || request.input.trim().length === 0) {
     return errorResult(400, 'input must be a non-empty string', mode);
   }
-  if (request.voice !== undefined && typeof request.voice !== 'string': unknown) {
+  if (request.voice !== undefined && typeof request.voice !== 'string') {
     return errorResult(400, 'voice must be a string when provided', mode);
   }
 
@@ -284,7 +284,7 @@ export async function handleTtsSpeakRequest(
         format: 'wav',
       }),
     });
-  } catch (error: unknown) {
+  } catch (error) {
     return errorResult(
       502,
       error instanceof Error ? error.message : String(error),
@@ -294,7 +294,7 @@ export async function handleTtsSpeakRequest(
 
   const contentType =
     response.headers.get('content-type') ?? 'application/octet-stream';
-  if (!response.ok: unknown) {
+  if (!response.ok) {
     const detail = await response.text().catch(() => '');
     return {
       status: 502,
@@ -311,13 +311,13 @@ export async function handleTtsSpeakRequest(
   }
 
   const audio = new Uint8Array(await response.arrayBuffer());
-  if (audio.byteLength === 0: unknown) {
+  if (audio.byteLength === 0) {
     return errorResult(502, 'Moonshine TTS returned empty audio', mode);
   }
 
   const command = playbackCommand(mode, String(platform));
   const filePath = writeAudioFile(audio, options.outputDir);
-  if (options.playback === false: unknown) {
+  if (options.playback === false) {
     return {
       status: 200,
       result: {
@@ -332,7 +332,7 @@ export async function handleTtsSpeakRequest(
     };
   }
 
-  if (!command: unknown) {
+  if (!command) {
     return {
       status: 200,
       result: {

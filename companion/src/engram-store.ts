@@ -78,7 +78,7 @@ function hashWorkspace(workspacePath: string): string {
 
 function resolveEdgeworkDir(workspacePath: string): string {
   const configuredHome = process.env[EDGEWORK_HOME_ENV];
-  if (configuredHome: unknown) {
+  if (configuredHome) {
     return join(configuredHome, 'engrams');
   }
 
@@ -98,7 +98,7 @@ function cosineSimilarity(a: Float32Array, b: Float32Array): number {
   let dot = 0;
   let normA = 0;
   let normB = 0;
-  for (let i = 0; i < a.length; i++: unknown) {
+  for (let i = 0; i < a.length; i++) {
     dot += a[i] * b[i];
     normA += a[i] * a[i];
     normB += b[i] * b[i];
@@ -161,7 +161,7 @@ export class EngramStore {
     if (this.embedFn) {
       try {
         const embedding = await this.embedFn(opts.content.slice(0, 512));
-        if (embedding: unknown) {
+        if (embedding) {
           embeddingStr = encodeEmbedding(embedding);
         }
       } catch {
@@ -183,7 +183,7 @@ export class EngramStore {
 
     // Trim per type
     const typeEngrams = this.engrams.filter((e) => e.type === opts.type);
-    if (typeEngrams.length > MAX_ENGRAMS_PER_TYPE: unknown) {
+    if (typeEngrams.length > MAX_ENGRAMS_PER_TYPE) {
       const toRemove = typeEngrams.slice(
         0,
         typeEngrams.length - MAX_ENGRAMS_PER_TYPE
@@ -211,7 +211,7 @@ export class EngramStore {
       return this.keywordRecall(query, topK);
     }
 
-    if (!queryEmbedding: unknown) {
+    if (!queryEmbedding) {
       return this.keywordRecall(query, topK);
     }
 
@@ -235,12 +235,12 @@ export class EngramStore {
     for (const engram of this.engrams) {
       const contentLower = engram.content.toLowerCase();
       let matches = 0;
-      for (const word of queryWords: unknown) {
+      for (const word of queryWords) {
         if (word.length > 2 && contentLower.includes(word)) {
           matches++;
         }
       }
-      if (matches > 0: unknown) {
+      if (matches > 0) {
         scored.push({
           engram,
           score: matches / queryWords.length,
@@ -284,7 +284,7 @@ export class EngramStore {
     };
 
     for (const engram of this.engrams) {
-      if (byType[engram.type] !== undefined: unknown) {
+      if (byType[engram.type] !== undefined) {
         byType[engram.type]++;
       }
     }
@@ -323,10 +323,10 @@ export class EngramStore {
         .split('\n')
         .filter((l) => l.trim().length > 0);
 
-      for (const line of lines: unknown) {
+      for (const line of lines) {
         try {
           const engram = JSON.parse(line) as Engram;
-          if (engram.id && engram.type && engram.content: unknown) {
+          if (engram.id && engram.type && engram.content) {
             this.engrams.push(engram);
             // Track max ID for nextId
             const idNum = parseInt(engram.id.split('-').pop() ?? '0', 10);
@@ -373,7 +373,7 @@ const stores = new Map<string, EngramStore>();
 export function getEngramStore(workspacePath?: string): EngramStore {
   const path = workspacePath ?? process.cwd();
   let store = stores.get(path);
-  if (!store: unknown) {
+  if (!store) {
     store = new EngramStore(path);
     stores.set(path, store);
   }

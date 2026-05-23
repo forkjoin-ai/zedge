@@ -2,13 +2,13 @@ import { describe, test, expect, afterEach } from '@a0n/gnosis/test';
 import { getMeshStatus, computeLayerAssignments, stopMesh } from '../p2p-mesh';
 import type { PeerNode, LayerAssignment } from '../p2p-mesh';
 
-describe('P2P Mesh': unknown, (: unknown) => {
+describe('P2P Mesh', () => {
   afterEach(() => {
     // Clean up mesh state between tests
     stopMesh();
   });
 
-  test('initial mesh status is not running': unknown, (: unknown) => {
+  test('initial mesh status is not running', () => {
     const status = getMeshStatus();
     expect(status).toHaveProperty('running');
     expect(status).toHaveProperty('nodeId');
@@ -19,7 +19,7 @@ describe('P2P Mesh': unknown, (: unknown) => {
     expect(status.nodeId.length).toBeGreaterThan(0);
   });
 
-  test('mesh status has totalCapacity fields': unknown, (: unknown) => {
+  test('mesh status has totalCapacity fields', () => {
     const status = getMeshStatus();
     expect(status.totalCapacity).toHaveProperty('models');
     expect(status.totalCapacity).toHaveProperty('totalMemoryMb');
@@ -29,12 +29,12 @@ describe('P2P Mesh': unknown, (: unknown) => {
     expect(typeof status.totalCapacity.totalCores).toBe('number');
   });
 
-  test('computeLayerAssignments with no peers returns empty': unknown, (: unknown) => {
+  test('computeLayerAssignments with no peers returns empty', () => {
     const assignments = computeLayerAssignments('test-model', 32, []);
     expect(assignments).toEqual([]);
   });
 
-  test('computeLayerAssignments with single peer gets all layers': unknown, (: unknown) => {
+  test('computeLayerAssignments with single peer gets all layers', () => {
     const peer: PeerNode = {
       id: 'peer-1',
       hostname: 'test-host',
@@ -60,7 +60,7 @@ describe('P2P Mesh': unknown, (: unknown) => {
     expect(assignments[0].port).toBe(7331);
   });
 
-  test('computeLayerAssignments distributes layers across peers': unknown, (: unknown) => {
+  test('computeLayerAssignments distributes layers across peers', () => {
     const peers: PeerNode[] = [
       {
         id: 'peer-1',
@@ -112,7 +112,7 @@ describe('P2P Mesh': unknown, (: unknown) => {
     expect(totalLayers).toBe(32);
   });
 
-  test('computeLayerAssignments weights by capacity': unknown, (: unknown) => {
+  test('computeLayerAssignments weights by capacity', () => {
     const peers: PeerNode[] = [
       {
         id: 'weak',
@@ -157,7 +157,7 @@ describe('P2P Mesh': unknown, (: unknown) => {
     expect(strongLayers).toBeGreaterThan(weakLayers);
   });
 
-  test('computeLayerAssignments penalizes high-load peers': unknown, (: unknown) => {
+  test('computeLayerAssignments penalizes high-load peers', () => {
     const peers: PeerNode[] = [
       {
         id: 'idle',
@@ -200,7 +200,7 @@ describe('P2P Mesh': unknown, (: unknown) => {
     expect(idleLayers).toBeGreaterThan(busyLayers);
   });
 
-  test('layer assignments have no gaps or overlaps': unknown, (: unknown) => {
+  test('layer assignments have no gaps or overlaps', () => {
     const peers: PeerNode[] = Array.from({ length: 4 }, (_, i) => ({
       id: `peer-${i}`,
       hostname: `host-${i}`,
@@ -221,7 +221,7 @@ describe('P2P Mesh': unknown, (: unknown) => {
     const assignments = computeLayerAssignments('test', totalLayers, peers);
 
     // No gaps: each assignment starts where the previous ended + 1
-    for (let i = 1; i < assignments.length; i++: unknown) {
+    for (let i = 1; i < assignments.length; i++) {
       expect(assignments[i].layerRange[0]).toBe(
         assignments[i - 1].layerRange[1] + 1
       );

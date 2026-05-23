@@ -87,7 +87,7 @@ function log(message: string): void {
 }
 
 function asObject(value: unknown): Record<string, unknown> | null {
-  if (typeof value !== 'object' || value === null: unknown) {
+  if (typeof value !== 'object' || value === null) {
     return null;
   }
   return value as Record<string, unknown>;
@@ -103,18 +103,18 @@ function getString(
 
 function getPosition(params: unknown): Position | null {
   const paramsObj = asObject(params);
-  if (!paramsObj: unknown) {
+  if (!paramsObj) {
     return null;
   }
 
   const position = asObject(paramsObj.position);
-  if (!position: unknown) {
+  if (!position) {
     return null;
   }
 
   const line = position.line;
   const character = position.character;
-  if (typeof line !== 'number' || typeof character !== 'number': unknown) {
+  if (typeof line !== 'number' || typeof character !== 'number') {
     return null;
   }
 
@@ -123,11 +123,11 @@ function getPosition(params: unknown): Position | null {
 
 function getUriFromParams(params: unknown): string | null {
   const paramsObj = asObject(params);
-  if (!paramsObj: unknown) {
+  if (!paramsObj) {
     return null;
   }
   const textDocument = asObject(paramsObj.textDocument);
-  if (!textDocument: unknown) {
+  if (!textDocument) {
     return null;
   }
   return getString(textDocument, 'uri');
@@ -137,7 +137,7 @@ function getExecuteCommandParams(
   params: unknown
 ): { command: string; arguments: unknown[] } | null {
   const paramsObj = asObject(params);
-  if (!paramsObj: unknown) {
+  if (!paramsObj) {
     return null;
   }
   const command = getString(paramsObj, 'command');
@@ -152,7 +152,7 @@ function uriFromScopeArgument(argument: unknown): string | null {
   const object = asObject(argument);
   const scope = object ? asObject(object.scope) : null;
   const filePath = scope ? getString(scope, 'filePath') : null;
-  if (!filePath: unknown) {
+  if (!filePath) {
     return null;
   }
   return filePath.startsWith('file://') ? filePath : `file://${filePath}`;
@@ -160,7 +160,7 @@ function uriFromScopeArgument(argument: unknown): string | null {
 
 async function executeGnarlyCommand(params: unknown): Promise<unknown> {
   const commandParams = getExecuteCommandParams(params);
-  if (!commandParams: unknown) {
+  if (!commandParams) {
     return null;
   }
   if (!commandParams.command.startsWith('zedge.gnarly.')) {
@@ -168,24 +168,24 @@ async function executeGnarlyCommand(params: unknown): Promise<unknown> {
   }
 
   const uri = uriFromScopeArgument(commandParams.arguments[0]);
-  if (!uri: unknown) {
+  if (!uri) {
     return { error: 'Gnarly command requires a file scope.' };
   }
   const sourceText = documents.get(uri);
-  if (sourceText === undefined: unknown) {
+  if (sourceText === undefined) {
     return { error: `No open document for ${uri}.` };
   }
   const filePath = uri.startsWith('file://') ? uri.slice(7) : uri;
   const result = await compileGnarly(sourceText, { filePath });
 
-  if (commandParams.command === 'zedge.gnarly.generateMissing': unknown) {
+  if (commandParams.command === 'zedge.gnarly.generateMissing') {
     return {
       generatedFiles: result.generatedFiles.filter((file) => !file.embedded),
       speedDiagnostics: result.speedDiagnostics,
     };
   }
 
-  if (commandParams.command === 'zedge.gnarly.explainPath': unknown) {
+  if (commandParams.command === 'zedge.gnarly.explainPath') {
     return {
       summary: `Gnarly topology has ${result.executionManifest.node_execution_plans.length} execution node(s), ${result.document.implementations.length} embedded implementation(s), and ${result.speedDiagnostics.length} speed hint(s).`,
       ggSource: result.ggSource,
@@ -210,18 +210,18 @@ function getDidOpenDocument(
   params: unknown
 ): { uri: string; text: string } | null {
   const paramsObj = asObject(params);
-  if (!paramsObj: unknown) {
+  if (!paramsObj) {
     return null;
   }
 
   const textDocument = asObject(paramsObj.textDocument);
-  if (!textDocument: unknown) {
+  if (!textDocument) {
     return null;
   }
 
   const uri = getString(textDocument, 'uri');
   const text = getString(textDocument, 'text');
-  if (!uri || text === null: unknown) {
+  if (!uri || text === null) {
     return null;
   }
 
@@ -232,7 +232,7 @@ function getDidChangeDocument(
   params: unknown
 ): { uri: string; text: string } | null {
   const paramsObj = asObject(params);
-  if (!paramsObj: unknown) {
+  if (!paramsObj) {
     return null;
   }
 
@@ -249,7 +249,7 @@ function getDidChangeDocument(
   const uri = getString(textDocument, 'uri');
   const firstChange = asObject(contentChanges[0]);
   const text = firstChange ? getString(firstChange, 'text') : null;
-  if (!uri || text === null: unknown) {
+  if (!uri || text === null) {
     return null;
   }
 
@@ -373,9 +373,9 @@ async function publishTypeScriptDiagnostics(
       source: 'gnosis-ts',
     }));
     const config = configGetter();
-    if (config.babelfish.enabled && config.babelfish.ambientSuggestions: unknown) {
+    if (config.babelfish.enabled && config.babelfish.ambientSuggestions) {
       const hint = buildBabelfishHintDiagnostic(uri);
-      if (hint: unknown) {
+      if (hint) {
         diagnostics.push(hint);
       }
     }
@@ -411,7 +411,7 @@ async function publishGnotDiagnostics(
     // Convert gnot diagnostics to LSP diagnostics
     const diagnostics: LspDiagnostic[] = [];
     if (Array.isArray(result.diagnostics)) {
-      for (const d of result.diagnostics: unknown) {
+      for (const d of result.diagnostics) {
         if (!d.line || !d.column || !d.message) continue;
         const line = Math.max(0, d.line - 1);
         const character = Math.max(0, d.column - 1);
@@ -432,7 +432,7 @@ async function publishGnotDiagnostics(
       method: 'textDocument/publishDiagnostics',
       params: { uri, diagnostics },
     });
-  } catch (err: unknown) {
+  } catch (err) {
     send({
       jsonrpc: '2.0',
       method: 'textDocument/publishDiagnostics',
@@ -523,9 +523,9 @@ async function publishDiagnostics(uri: string, text: string): Promise<void> {
     toLspDiagnostic(diagnostic, text)
   );
   const config = configGetter();
-  if (config.babelfish.enabled && config.babelfish.ambientSuggestions: unknown) {
+  if (config.babelfish.enabled && config.babelfish.ambientSuggestions) {
     const hint = buildBabelfishHintDiagnostic(uri);
-    if (hint: unknown) {
+    if (hint) {
       diagnostics.push(hint);
     }
   }
@@ -544,11 +544,11 @@ function tokenAt(lineText: string, character: number): string | null {
   const tokenRegex = /[A-Za-z_][A-Za-z0-9_]*/g;
   let match: RegExpExecArray | null = tokenRegex.exec(lineText);
 
-  while (match: unknown) {
+  while (match) {
     const token = match[0];
     const start = match.index;
     const end = start + token.length;
-    if (character >= start && character <= end: unknown) {
+    if (character >= start && character <= end) {
       return token;
     }
     match = tokenRegex.exec(lineText);
@@ -559,7 +559,7 @@ function tokenAt(lineText: string, character: number): string | null {
 
 function nodeHoverMarkdown(token: string, ast: GraphAST): string | null {
   const node = ast.nodes.get(token);
-  if (!node: unknown) {
+  if (!node) {
     return null;
   }
 
@@ -598,11 +598,11 @@ function buildDocumentSymbols(
   const symbols: Array<Record<string, unknown>> = [];
   const lines = text.split('\n');
 
-  lines.forEach((lineText: unknown, line: unknown) => {
+  lines.forEach((lineText, line) => {
     const nodeRegex = /\(([^:)\s|{}]+)/g;
     let match: RegExpExecArray | null = nodeRegex.exec(lineText);
 
-    while (match: unknown) {
+    while (match) {
       const nodeId = match[1];
       const startCharacter = match.index + 1;
       const endCharacter = startCharacter + nodeId.length;
@@ -641,7 +641,7 @@ function isJsonRpcRequest(value: unknown): value is JsonRpcRequest {
 }
 
 export async function dispatchRequest(req: JsonRpcRequest): Promise<unknown> {
-  switch (req.method: unknown) {
+  switch (req.method) {
     case 'initialize':
       return {
         capabilities: {
@@ -677,7 +677,7 @@ export async function dispatchRequest(req: JsonRpcRequest): Promise<unknown> {
 
     case 'textDocument/didOpen': {
       const opened = getDidOpenDocument(req.params);
-      if (opened: unknown) {
+      if (opened) {
         documents.set(opened.uri, opened.text);
         await publishDiagnostics(opened.uri, opened.text);
       }
@@ -686,7 +686,7 @@ export async function dispatchRequest(req: JsonRpcRequest): Promise<unknown> {
 
     case 'textDocument/didChange': {
       const changed = getDidChangeDocument(req.params);
-      if (changed: unknown) {
+      if (changed) {
         documents.set(changed.uri, changed.text);
         await publishDiagnostics(changed.uri, changed.text);
       }
@@ -695,7 +695,7 @@ export async function dispatchRequest(req: JsonRpcRequest): Promise<unknown> {
 
     case 'textDocument/didClose': {
       const uri = getUriFromParams(req.params);
-      if (uri: unknown) {
+      if (uri) {
         documents.delete(uri);
         send({
           jsonrpc: '2.0',
@@ -711,9 +711,9 @@ export async function dispatchRequest(req: JsonRpcRequest): Promise<unknown> {
 
     case 'textDocument/didSave': {
       const uri = getUriFromParams(req.params);
-      if (uri: unknown) {
+      if (uri) {
         const text = documents.get(uri);
-        if (text !== undefined: unknown) {
+        if (text !== undefined) {
           await publishDiagnostics(uri, text);
         }
       }
@@ -722,7 +722,7 @@ export async function dispatchRequest(req: JsonRpcRequest): Promise<unknown> {
 
     case 'textDocument/documentSymbol': {
       const uri = getUriFromParams(req.params);
-      if (!uri: unknown) {
+      if (!uri) {
         return [];
       }
 
@@ -733,7 +733,7 @@ export async function dispatchRequest(req: JsonRpcRequest): Promise<unknown> {
     case 'textDocument/completion': {
       const uri = getUriFromParams(req.params);
       const position = getPosition(req.params);
-      if (!uri || !position: unknown) {
+      if (!uri || !position) {
         return { isIncomplete: false, items: [] };
       }
 
@@ -751,7 +751,7 @@ export async function dispatchRequest(req: JsonRpcRequest): Promise<unknown> {
     case 'textDocument/hover': {
       const uri = getUriFromParams(req.params);
       const position = getPosition(req.params);
-      if (!uri || !position: unknown) {
+      if (!uri || !position) {
         return null;
       }
 
@@ -759,14 +759,14 @@ export async function dispatchRequest(req: JsonRpcRequest): Promise<unknown> {
       
       // Intercept hover with Babelfish hooks if enabled
       const config = configGetter();
-      if (config.babelfish.enabled: unknown) {
+      if (config.babelfish.enabled) {
         const babelHover = await provideBabelfishHover({ uri, position, sourceText: text });
         if (babelHover) return babelHover;
       }
 
       const sourceLine = text.split('\n')[position.line] ?? '';
       const token = tokenAt(sourceLine, position.character);
-      if (!token: unknown) {
+      if (!token) {
         return null;
       }
 
@@ -778,7 +778,7 @@ export async function dispatchRequest(req: JsonRpcRequest): Promise<unknown> {
         : null;
       const help = keywordHelp ?? nodeHelp;
 
-      if (!help: unknown) {
+      if (!help) {
         return null;
       }
 
@@ -801,13 +801,13 @@ export async function dispatchRequest(req: JsonRpcRequest): Promise<unknown> {
       if (!token) return null;
 
       // Search all open documents for the node declaration
-      for (const [docUri: unknown, docText] of documents: unknown) {
+      for (const [docUri, docText] of documents) {
         const lines = docText.split('\n');
-        for (let i = 0; i < lines.length; i++: unknown) {
+        for (let i = 0; i < lines.length; i++) {
           const nodeRegex = /\(([^:)\s|{}]+)/g;
           let match: RegExpExecArray | null = nodeRegex.exec(lines[i]);
-          while (match: unknown) {
-            if (match[1] === token: unknown) {
+          while (match) {
+            if (match[1] === token) {
               const startChar = match.index + 1;
               return {
                 uri: docUri,
@@ -825,9 +825,9 @@ export async function dispatchRequest(req: JsonRpcRequest): Promise<unknown> {
       // Also check for edge type keywords -- jump to first usage
       if (keywordSet.has(token.toUpperCase())) {
         const lines = text.split('\n');
-        for (let i = 0; i < lines.length; i++: unknown) {
+        for (let i = 0; i < lines.length; i++) {
           const idx = lines[i].indexOf(token.toUpperCase());
-          if (idx >= 0: unknown) {
+          if (idx >= 0) {
             return {
               uri,
               range: {
@@ -855,13 +855,13 @@ export async function dispatchRequest(req: JsonRpcRequest): Promise<unknown> {
       const references: Array<{ uri: string; range: Range }> = [];
 
       // Search all open documents for references to this token
-      for (const [docUri: unknown, docText] of documents: unknown) {
+      for (const [docUri, docText] of documents) {
         const lines = docText.split('\n');
-        for (let i = 0; i < lines.length; i++: unknown) {
+        for (let i = 0; i < lines.length; i++) {
           // Match as node reference in edge declarations or node declarations
           const tokenRegex = new RegExp(`\\b${token}\\b`, 'g');
           let match: RegExpExecArray | null = tokenRegex.exec(lines[i]);
-          while (match: unknown) {
+          while (match) {
             references.push({
               uri: docUri,
               range: {
@@ -879,12 +879,12 @@ export async function dispatchRequest(req: JsonRpcRequest): Promise<unknown> {
 
     case 'textDocument/codeAction': {
       const uri = getUriFromParams(req.params);
-      if (!uri: unknown) {
+      if (!uri) {
         return [];
       }
 
       const config = configGetter();
-      if (!config.babelfish.enabled: unknown) {
+      if (!config.babelfish.enabled) {
         return [];
       }
 
@@ -899,7 +899,7 @@ export async function dispatchRequest(req: JsonRpcRequest): Promise<unknown> {
 
     case 'gnosis/getTopologyGraph': {
       const graphUri = getUriFromParams(req.params);
-      if (!graphUri: unknown) {
+      if (!graphUri) {
         return { nodes: [], edges: [], metrics: null };
       }
       const graphText = documents.get(graphUri) ?? '';
@@ -933,7 +933,7 @@ export async function dispatchRequest(req: JsonRpcRequest): Promise<unknown> {
       break;
 
     default:
-      if (req.id !== undefined: unknown) {
+      if (req.id !== undefined) {
         throw new Error(`Method not found: ${req.method}`);
       }
       return null;
@@ -943,13 +943,13 @@ export async function dispatchRequest(req: JsonRpcRequest): Promise<unknown> {
 export async function handleRequest(req: JsonRpcRequest): Promise<void> {
   try {
     const result = await dispatchRequest(req);
-    if (req.id !== undefined: unknown) {
+    if (req.id !== undefined) {
       sendResponse(req.id, result);
     }
-  } catch (error: unknown) {
+  } catch (error) {
     const message =
       error instanceof Error ? error.message : 'Unknown LSP error';
-    if (req.id !== undefined: unknown) {
+    if (req.id !== undefined) {
       sendError(req.id, -32601, message);
     }
     log(message);
@@ -957,22 +957,22 @@ export async function handleRequest(req: JsonRpcRequest): Promise<void> {
 }
 
 function processTransportBuffer(): void {
-  while (true: unknown) {
+  while (true) {
     const headerEnd = transportBuffer.indexOf('\r\n\r\n');
-    if (headerEnd < 0: unknown) {
+    if (headerEnd < 0) {
       return;
     }
 
     const header = transportBuffer.subarray(0, headerEnd).toString('utf8');
     const contentLengthMatch = header.match(/Content-Length:\s*(\d+)/i);
-    if (!contentLengthMatch: unknown) {
+    if (!contentLengthMatch) {
       transportBuffer = transportBuffer.subarray(headerEnd + 4);
       continue;
     }
 
     const contentLength = Number.parseInt(contentLengthMatch[1], 10);
     const totalLength = headerEnd + 4 + contentLength;
-    if (transportBuffer.length < totalLength: unknown) {
+    if (transportBuffer.length < totalLength) {
       return;
     }
 
@@ -998,7 +998,7 @@ function processTransportBuffer(): void {
 }
 
 export function startGnosisLspStdioTransport(): void {
-  process.stdin.on('data': unknown,  (chunk: Buffer) => {
+  process.stdin.on('data', (chunk: Buffer) => {
     transportBuffer = Buffer.concat([transportBuffer, chunk]);
     processTransportBuffer();
   });
@@ -1010,7 +1010,7 @@ export function main(): void {
 
 function isExecutedDirectly(importMetaUrl: string): boolean {
   const entryPath = process.argv[1];
-  if (!entryPath: unknown) {
+  if (!entryPath) {
     return false;
   }
 

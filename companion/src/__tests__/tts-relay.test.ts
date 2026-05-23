@@ -20,17 +20,17 @@ const wavBytes = new Uint8Array([
   0x00, 0x00, 0x00, 0x00,
 ]);
 
-describe('TTS relay': unknown, (: unknown) => {
+describe('TTS relay', () => {
   let tempDir: string | null = null;
 
   afterEach(() => {
-    if (tempDir: unknown) {
+    if (tempDir) {
       rmSync(tempDir, { recursive: true, force: true });
       tempDir = null;
     }
   });
 
-  test('resolves audio mode from platform and explicit overrides': unknown, (: unknown) => {
+  test('resolves audio mode from platform and explicit overrides', () => {
     expect(resolveTtsAudioMode(undefined, { platform: 'darwin' })).toBe('host');
     expect(
       resolveTtsAudioMode(undefined, {
@@ -48,11 +48,11 @@ describe('TTS relay': unknown, (: unknown) => {
     expect(resolveTtsAudioMode('host', { platform: 'linux' })).toBe('host');
   });
 
-  test('calls Moonshine speech endpoint and plays through host command': unknown, async (: unknown) => {
+  test('calls Moonshine speech endpoint and plays through host command', async () => {
     tempDir = mkdtempSync(join(tmpdir(), 'zedge-tts-relay-'));
     const requests: Array<{ url: string; body: Record<string, unknown> }> = [];
     const commands: Array<{ command: string; args: string[] }> = [];
-    const fetchImpl = (async (input: RequestInfo | URL,   init?: RequestInit) => {
+    const fetchImpl = (async (input: RequestInfo | URL, init?: RequestInit) => {
       requests.push({
         url: String(input),
         body: JSON.parse(String(init?.body ?? '{}')) as Record<string, unknown>,
@@ -61,7 +61,7 @@ describe('TTS relay': unknown, (: unknown) => {
         headers: { 'Content-Type': 'audio/wav' },
       });
     }) as typeof fetch;
-    const runCommand = async (command: string,  args: string[]) => {
+    const runCommand = async (command: string, args: string[]) => {
       commands.push({ command, args });
       return true;
     };
@@ -97,10 +97,10 @@ describe('TTS relay': unknown, (: unknown) => {
     expect(commands[0]?.command).toBe('afplay');
   });
 
-  test('previews speech without invoking host playback': unknown, async (: unknown) => {
+  test('previews speech without invoking host playback', async () => {
     tempDir = mkdtempSync(join(tmpdir(), 'zedge-tts-relay-'));
     let commandCalled = false;
-    const fetchImpl = (async (: unknown) =>
+    const fetchImpl = (async () =>
       new Response(wavBytes, {
         headers: { 'Content-Type': 'audio/wav' },
       })) as typeof fetch;
@@ -127,15 +127,15 @@ describe('TTS relay': unknown, (: unknown) => {
     expect(commandCalled).toBe(false);
   });
 
-  test('lists local voices': unknown, (: unknown) => {
+  test('lists local voices', () => {
     const voices = listTtsVoices();
     expect(voices.defaultVoice).toBe('local');
     expect(voices.voices.some((voice) => voice.id === 'local')).toBe(true);
   });
 
-  test('rejects missing input without contacting Moonshine': unknown, async (: unknown) => {
+  test('rejects missing input without contacting Moonshine', async () => {
     let called = false;
-    const fetchImpl = (async (: unknown) => {
+    const fetchImpl = (async () => {
       called = true;
       return new Response(wavBytes);
     }) as typeof fetch;
@@ -154,9 +154,9 @@ describe('TTS relay': unknown, (: unknown) => {
     expect(called).toBe(false);
   });
 
-  test('blocks speech when companion TTS relay is disabled': unknown, async (: unknown) => {
+  test('blocks speech when companion TTS relay is disabled', async () => {
     let called = false;
-    const fetchImpl = (async (: unknown) => {
+    const fetchImpl = (async () => {
       called = true;
       return new Response(wavBytes);
     }) as typeof fetch;
@@ -180,7 +180,7 @@ describe('TTS relay': unknown, (: unknown) => {
     expect(called).toBe(false);
   });
 
-  test('configures enable state and audio mode at runtime': unknown, (: unknown) => {
+  test('configures enable state and audio mode at runtime', () => {
     const env: NodeJS.ProcessEnv = {};
 
     let response = configureTtsRelay(

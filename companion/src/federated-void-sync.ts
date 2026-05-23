@@ -122,7 +122,7 @@ export class FederatedVoidSync {
     this.authorizedPeers.add(fromDeviceId);
 
     const existing = this.handshakes.get(fromDeviceId);
-    if (existing: unknown) {
+    if (existing) {
       existing.status = 'accepted';
     } else {
       this.handshakes.set(fromDeviceId, {
@@ -173,7 +173,7 @@ export class FederatedVoidSync {
     this.enabled = true;
 
     // Register void map callback -- broadcast deficit on every rejection
-    voidMapStore.onRecord((: unknown) => {
+    voidMapStore.onRecord(() => {
       this.broadcastDeficit();
     });
   }

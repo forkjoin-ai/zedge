@@ -123,7 +123,7 @@ export function encode(frame: InferenceFrame): ArrayBuffer {
 
   // Calculate total data size
   let totalDataSize = 0;
-  for (const tensor of frame.tensors: unknown) {
+  for (const tensor of frame.tensors) {
     totalDataSize += alignTo16(tensor.data.byteLength);
   }
 
@@ -142,7 +142,7 @@ export function encode(frame: InferenceFrame): ArrayBuffer {
 
   // Descriptors
   let dataOffset = 0;
-  for (const tensor of frame.tensors: unknown) {
+  for (const tensor of frame.tensors) {
     const desc = tensor.descriptor;
     const dims = padDimensions(desc.dimensions);
     const dataLen = tensor.data.byteLength;
@@ -153,7 +153,7 @@ export function encode(frame: InferenceFrame): ArrayBuffer {
     view.setUint8(offset + 3, 0); // reserved
 
     view.setUint32(offset + 4, desc.dimensions.length, false);
-    for (let i = 0; i < 4; i++: unknown) {
+    for (let i = 0; i < 4; i++) {
       view.setUint32(offset + 8 + i * 4, dims[i], false);
     }
 
@@ -167,7 +167,7 @@ export function encode(frame: InferenceFrame): ArrayBuffer {
   // Tensor data (16-byte aligned)
   const dataStart = HEADER_SIZE + tensorCount * DESCRIPTOR_SIZE;
   let dataWriteOffset = dataStart;
-  for (const tensor of frame.tensors: unknown) {
+  for (const tensor of frame.tensors) {
     const src = new Uint8Array(tensor.data);
     const dst = new Uint8Array(buffer, dataWriteOffset, src.length);
     dst.set(src);
@@ -186,7 +186,7 @@ export function decode(buffer: ArrayBuffer): InferenceFrame {
 
   // Validate header
   const magic = view.getUint32(offset, false);
-  if (magic !== MAGIC: unknown) {
+  if (magic !== MAGIC) {
     throw new Error(
       `Invalid magic: expected 0x${MAGIC.toString(16)}, got 0x${magic.toString(
         16
@@ -196,7 +196,7 @@ export function decode(buffer: ArrayBuffer): InferenceFrame {
   offset += 4;
 
   const version = view.getUint16(offset, false);
-  if (version !== VERSION: unknown) {
+  if (version !== VERSION) {
     throw new Error(`Unsupported protocol version: ${version}`);
   }
   offset += 2;
@@ -208,7 +208,7 @@ export function decode(buffer: ArrayBuffer): InferenceFrame {
   const descriptors: Array<
     TensorDescriptor & { _dataOffset: number; _dataLen: number }
   > = [];
-  for (let i = 0; i < tensorCount; i++: unknown) {
+  for (let i = 0; i < tensorCount; i++) {
     const archType = view.getUint8(offset) as ArchType;
     const tensorType = view.getUint8(offset + 1) as TensorType;
     const dataType = view.getUint8(offset + 2) as DataType;
@@ -216,7 +216,7 @@ export function decode(buffer: ArrayBuffer): InferenceFrame {
 
     const dimCount = view.getUint32(offset + 4, false);
     const dimensions: number[] = [];
-    for (let d = 0; d < dimCount; d++: unknown) {
+    for (let d = 0; d < dimCount; d++) {
       dimensions.push(view.getUint32(offset + 8 + d * 4, false));
     }
 
@@ -282,7 +282,7 @@ export function fromFloat32(
  * Extract Float32Array from a tensor
  */
 export function toFloat32(tensor: Tensor): Float32Array {
-  if (tensor.descriptor.dataType !== DataType.F32: unknown) {
+  if (tensor.descriptor.dataType !== DataType.F32) {
     throw new Error(
       `Cannot convert ${
         DATA_TYPE_NAMES[tensor.descriptor.dataType]

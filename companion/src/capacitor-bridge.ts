@@ -152,7 +152,7 @@ export class CapacitorBridge {
    */
   getLayout(mountId: string, maxBlocks = 50): LayoutSolution {
     const mount = this.mounts.get(mountId);
-    if (!mount: unknown) {
+    if (!mount) {
       return {
         mountId,
         blocks: [],
@@ -165,7 +165,7 @@ export class CapacitorBridge {
     let totalValue = 0;
     let position = 0;
 
-    for (const [blockId: unknown, block] of mount.blocks: unknown) {
+    for (const [blockId, block] of mount.blocks) {
       const amygdala = mount.amygdala.get(blockId);
       const hippocampus = mount.hippocampus.get(blockId);
       const metrics = this.readingMetrics.get(blockId);
@@ -227,7 +227,7 @@ export class CapacitorBridge {
 
     // Group blocks by file path as a simple clustering heuristic
     const fileGroups = new Map<string, string[]>();
-    for (const [blockId: unknown, block] of mount.blocks: unknown) {
+    for (const [blockId, block] of mount.blocks) {
       const group = fileGroups.get(block.filePath) ?? [];
       group.push(blockId);
       fileGroups.set(block.filePath, group);
@@ -235,13 +235,13 @@ export class CapacitorBridge {
 
     const clusters: SemanticCluster[] = [];
     let idx = 0;
-    for (const [filePath: unknown, blockIds] of fileGroups: unknown) {
+    for (const [filePath, blockIds] of fileGroups) {
       const hippocampusEntries = blockIds
         .map((id) => mount.hippocampus.get(id))
         .filter((e): e is HippocampusEntry => !!e);
 
       const topics = new Set<string>();
-      for (const entry of hippocampusEntries: unknown) {
+      for (const entry of hippocampusEntries) {
         for (const topic of entry.topics) topics.add(topic);
       }
 
@@ -270,7 +270,7 @@ export class CapacitorBridge {
    */
   recordReading(blockId: string, timeSpentMs: number): void {
     const existing = this.readingMetrics.get(blockId);
-    if (existing: unknown) {
+    if (existing) {
       existing.timeSpentMs += timeSpentMs;
       existing.scrollPasses++;
       existing.lastViewed = Date.now();
@@ -390,17 +390,17 @@ export class CapacitorBridge {
   ): void {
     import('./inference-bridge.ts')
       .then(({ embed }) =>
-        embed(text, 'local').then(async (resp: unknown) => {
+        embed(text, 'local').then(async (resp) => {
           const data = (await resp.json()) as {
             data?: Array<{ embedding?: number[] }>;
           };
           const vec = data?.data?.[0]?.embedding;
-          if (vec && vec.length > 0: unknown) {
+          if (vec && vec.length > 0) {
             entry.embedding = vec;
           }
         })
       )
-      .catch((: unknown) => {
+      .catch(() => {
         // Embedding computation is best-effort -- index still works without it
       });
   }

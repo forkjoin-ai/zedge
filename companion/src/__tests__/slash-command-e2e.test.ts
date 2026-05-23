@@ -64,7 +64,7 @@ function isLoopbackListenDenied(error: unknown): boolean {
 
 function appendLogChunk(chunk: Buffer | string): void {
   companionLogs = `${companionLogs}${chunk.toString()}`;
-  if (companionLogs.length > 16_000: unknown) {
+  if (companionLogs.length > 16_000) {
     companionLogs = companionLogs.slice(-16_000);
   }
 }
@@ -74,13 +74,13 @@ function getLogTail(): string {
 }
 
 async function getJson<T>(url: string, timeoutMs = 5_000): Promise<T> {
-  return await new Promise<T>((resolveJson: unknown, reject: unknown) => {
+  return await new Promise<T>((resolveJson, reject) => {
     const request = get(
       url,
       {
         timeout: timeoutMs,
       },
-      (response: unknown) => {
+      (response) => {
         if (
           (response.statusCode ?? 500) < 200 ||
           (response.statusCode ?? 500) >= 300
@@ -92,19 +92,19 @@ async function getJson<T>(url: string, timeoutMs = 5_000): Promise<T> {
 
         let body = '';
         response.setEncoding('utf8');
-        response.on('data': unknown, (chunk: unknown) => {
+        response.on('data', (chunk) => {
           body += chunk;
         });
-        response.once('end': unknown, (: unknown) => {
+        response.once('end', () => {
           try {
             resolveJson(JSON.parse(body) as T);
-          } catch (error: unknown) {
+          } catch (error) {
             reject(error);
           }
         });
       }
     );
-    request.once('timeout': unknown, (: unknown) => {
+    request.once('timeout', () => {
       request.destroy(new Error(`Timed out waiting for ${url}`));
     });
     request.once('error', reject);
@@ -112,20 +112,20 @@ async function getJson<T>(url: string, timeoutMs = 5_000): Promise<T> {
 }
 
 async function reservePort(): Promise<number> {
-  return new Promise((resolvePort: unknown, reject: unknown) => {
+  return new Promise((resolvePort, reject) => {
     const server = createServer();
     server.once('error', reject);
     server.listen(0, '127.0.0.1', () => {
       const address = server.address();
-      if (!address || typeof address === 'string': unknown) {
+      if (!address || typeof address === 'string') {
         server.close();
         reject(new Error('Could not determine reserved port'));
         return;
       }
 
       const { port } = address;
-      server.close((error: unknown) => {
-        if (error: unknown) {
+      server.close((error) => {
+        if (error) {
           reject(error);
           return;
         }
@@ -143,8 +143,10 @@ async function waitForCompanionHealth(
   const deadline = Date.now() + timeoutMs;
 
   while (Date.now() < deadline) {
-    if (companionProcess?.exitCode !== null &&
-      companionProcess?.exitCode !== undefined: unknown) {
+    if (
+      companionProcess?.exitCode !== null &&
+      companionProcess?.exitCode !== undefined
+    ) {
       throw new Error(
         `Companion exited early with code ${
           companionProcess.exitCode
@@ -173,9 +175,11 @@ async function fetchCompanionHealth(
   const payload = (await getJson<Partial<CompanionHealthPayload>>(
     `http://127.0.0.1:${port}/health`
   )) as Partial<CompanionHealthPayload>;
-  if (typeof payload.preferredModel !== 'string' ||
+  if (
+    typeof payload.preferredModel !== 'string' ||
     typeof payload.runtime?.hostRuntime !== 'string' ||
-    typeof payload.inference?.localRuntime?.pid !== 'number': unknown) {
+    typeof payload.inference?.localRuntime?.pid !== 'number'
+  ) {
     throw new Error(
       `Companion health payload missing runtime data\n${JSON.stringify(
         payload,
@@ -191,11 +195,11 @@ async function stopCompanion(): Promise<void> {
   const child = companionProcess;
   companionProcess = null;
 
-  if (!child || child.exitCode !== null || child.killed: unknown) {
+  if (!child || child.exitCode !== null || child.killed) {
     return;
   }
 
-  await new Promise<void>((resolveStop: unknown) => {
+  await new Promise<void>((resolveStop) => {
     let settled = false;
     const finish = () => {
       if (settled) return;
@@ -206,7 +210,7 @@ async function stopCompanion(): Promise<void> {
     };
     const sendSignal = (signal: NodeJS.Signals) => {
       try {
-        if (child.pid !== undefined: unknown) {
+        if (child.pid !== undefined) {
           process.kill(-child.pid, signal);
           return;
         }
@@ -219,10 +223,10 @@ async function stopCompanion(): Promise<void> {
         // Best-effort cleanup only.
       }
     };
-    const forceKillTimer = setTimeout((: unknown) => {
+    const forceKillTimer = setTimeout(() => {
       sendSignal('SIGKILL');
     }, 2_000);
-    const resolveTimer = setTimeout((: unknown) => {
+    const resolveTimer = setTimeout(() => {
       finish();
     }, 7_000);
 
@@ -299,7 +303,7 @@ async function runMcpToolInSubprocess(
       timeout: 15_000,
     }
   );
-  if (result.status !== 0: unknown) {
+  if (result.status !== 0) {
     throw new Error(
       `Node runner failed for ${command} with code ${result.status}\nstdout=${
         result.stdout ?? ''
@@ -316,21 +320,21 @@ async function runMcpToolInSubprocess(
   const stdout = runnerResult.stdout;
   const stderr = runnerResult.stderr;
   const exitCode = runnerResult.status;
-  if (exitCode !== 0: unknown) {
+  if (exitCode !== 0) {
     throw new Error(
       `MCP subprocess failed for ${command} with code ${exitCode}\nstdout=${stdout}\nstderr=${stderr}\n${getLogTail()}`
     );
   }
 
   const headerEnd = stdout.indexOf('\r\n\r\n');
-  if (headerEnd === -1: unknown) {
+  if (headerEnd === -1) {
     throw new Error(
       `MCP subprocess produced no framed response for ${command}\nstdout=${stdout}\nstderr=${stderr}\n${getLogTail()}`
     );
   }
   const headerBlock = stdout.slice(0, headerEnd);
   const lengthMatch = headerBlock.match(/Content-Length:\s*(\d+)/i);
-  if (!lengthMatch: unknown) {
+  if (!lengthMatch) {
     throw new Error(
       `MCP subprocess response missing Content-Length for ${command}\nstdout=${stdout}\nstderr=${stderr}\n${getLogTail()}`
     );
@@ -346,7 +350,7 @@ async function runMcpToolInSubprocess(
     error?: { message?: string };
   };
 
-  if (response.error: unknown) {
+  if (response.error) {
     throw new Error(
       `MCP tool call failed for ${command}: ${
         response.error.message ?? 'unknown error'
@@ -363,7 +367,7 @@ async function callZedgeCommand(
 ): Promise<string> {
   const result = await runMcpToolInSubprocess(command, args);
   const text = result.content[0]?.text;
-  if (result.isError || typeof text !== 'string': unknown) {
+  if (result.isError || typeof text !== 'string') {
     throw new Error(
       `Slash command ${command} returned an error result\n${JSON.stringify(
         result,
@@ -376,7 +380,7 @@ async function callZedgeCommand(
   return text;
 }
 
-describe('Zedge slash commands end to end': unknown, (: unknown) => {
+describe('Zedge slash commands end to end', () => {
   beforeAll(async () => {
     try {
       companionPort = await reservePort();
@@ -406,7 +410,7 @@ describe('Zedge slash commands end to end': unknown, (: unknown) => {
       companionProcess.stderr?.on('data', appendLogChunk);
 
       await waitForCompanionHealth(companionPort);
-    } catch (error: unknown) {
+    } catch (error) {
       if (isLoopbackListenDenied(error)) {
         skipReason = error.message;
         return;
@@ -415,12 +419,12 @@ describe('Zedge slash commands end to end': unknown, (: unknown) => {
     }
   }, 45_000);
 
-  afterAll(async (: unknown) => {
+  afterAll(async () => {
     await stopCompanion();
   });
 
-  test('companion launches through gnode': unknown, async (: unknown) => {
-    if (skipReason !== null: unknown) {
+  test('companion launches through gnode', async () => {
+    if (skipReason !== null) {
       return;
     }
 
@@ -430,8 +434,8 @@ describe('Zedge slash commands end to end': unknown, (: unknown) => {
     expect(health.inference.localRuntime.pid).toBeGreaterThan(0);
   }, 20_000);
 
-  test('zedge-models returns the local wasm model through the live companion': unknown, async (: unknown) => {
-    if (skipReason !== null: unknown) {
+  test('zedge-models returns the local wasm model through the live companion', async () => {
+    if (skipReason !== null) {
       return;
     }
 
@@ -440,8 +444,8 @@ describe('Zedge slash commands end to end': unknown, (: unknown) => {
     expect(text).toContain('"owned_by": "edgework-wasm"');
   }, 20_000);
 
-  test('zedge-selftest reaches the local inference path through the live command surface': unknown, async (: unknown) => {
-    if (skipReason !== null: unknown) {
+  test('zedge-selftest reaches the local inference path through the live command surface', async () => {
+    if (skipReason !== null) {
       return;
     }
 

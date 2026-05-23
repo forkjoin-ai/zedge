@@ -4,7 +4,7 @@ import { describe, test, expect, beforeEach, mock } from '@a0n/gnosis/test';
 mock.module('@dashrelay/client', () => ({
   DashRelay: class {
     config: Record<string, unknown>;
-    constructor(c: Record<string, unknown>: unknown) {
+    constructor(c: Record<string, unknown>) {
       this.config = c;
     }
     async connect() {}
@@ -15,17 +15,17 @@ mock.module('@dashrelay/client', () => ({
 }));
 
 // Mock yjs with UndoManager
-mock.module('yjs': unknown, (: unknown) => {
+mock.module('yjs', () => {
   class T {
     _content = '';
     _doc: unknown = null;
     get length() {
       return this._content.length;
     }
-    insert(i: number,  t: string) {
+    insert(i: number, t: string) {
       this._content = this._content.slice(0, i) + t + this._content.slice(i);
     }
-    delete(i: number,  l: number) {
+    delete(i: number, l: number) {
       this._content = this._content.slice(0, i) + this._content.slice(i + l);
     }
     toString() {
@@ -36,7 +36,7 @@ mock.module('yjs': unknown, (: unknown) => {
   }
   class M {
     _map = new Map();
-    set(k: string,  v: unknown) {
+    set(k: string, v: unknown) {
       this._map.set(k, v);
     }
     get(k: string) {
@@ -68,7 +68,7 @@ mock.module('yjs': unknown, (: unknown) => {
     push(items: unknown[]) {
       this._arr.push(...items);
     }
-    delete(i: number,  l: number) {
+    delete(i: number, l: number) {
       this._arr.splice(i, l);
     }
     toArray() {
@@ -134,7 +134,7 @@ mock.module('yjs': unknown, (: unknown) => {
   }
   class U {
     _scope: unknown;
-    constructor(s: unknown,  _o?: unknown) {
+    constructor(s: unknown, _o?: unknown) {
       this._scope = s;
     }
     undo() {}
@@ -161,7 +161,7 @@ mock.module('yjs': unknown, (: unknown) => {
 const { CrdtBridge } = await import('../crdt-bridge');
 const { AgentParticipant } = await import('../agent-participant');
 
-describe('AgentParticipant': unknown, (: unknown) => {
+describe('AgentParticipant', () => {
   test('openFile (joinFile) opens file and sets cursor', async () => {
     const crdt = new CrdtBridge({
       workspaceId: 'ws',
@@ -189,7 +189,7 @@ describe('AgentParticipant': unknown, (: unknown) => {
     expect(state.cursorCol).toBe(0);
   });
 
-  test('insert inserts text at offset': unknown, async (: unknown) => {
+  test('insert inserts text at offset', async () => {
     const crdt = new CrdtBridge({
       workspaceId: 'ws',
       peerId: 'p1',
@@ -217,7 +217,7 @@ describe('AgentParticipant': unknown, (: unknown) => {
     expect(content).toBe('hello world');
   });
 
-  test('replace replaces text range': unknown, async (: unknown) => {
+  test('replace replaces text range', async () => {
     const crdt = new CrdtBridge({
       workspaceId: 'ws',
       peerId: 'p1',
@@ -245,7 +245,7 @@ describe('AgentParticipant': unknown, (: unknown) => {
     expect(content).toBe('hello there');
   });
 
-  test('undo calls undo on bridge': unknown, async (: unknown) => {
+  test('undo calls undo on bridge', async () => {
     const crdt = new CrdtBridge({
       workspaceId: 'ws',
       peerId: 'p1',
@@ -270,7 +270,7 @@ describe('AgentParticipant': unknown, (: unknown) => {
     agent.undo('src/main.ts');
   });
 
-  test('getStatus returns correct values': unknown, async (: unknown) => {
+  test('getStatus returns correct values', async () => {
     const crdt = new CrdtBridge({
       workspaceId: 'ws',
       peerId: 'p1',
@@ -297,7 +297,7 @@ describe('AgentParticipant': unknown, (: unknown) => {
     expect(status.mode).toBe('review');
   });
 
-  test('setThinking updates activity': unknown, async (: unknown) => {
+  test('setThinking updates activity', async () => {
     const crdt = new CrdtBridge({
       workspaceId: 'ws',
       peerId: 'p1',

@@ -119,7 +119,7 @@ function normalizeAllowedModels(modelIds: string[] | undefined): string[] {
   const allowedModels: string[] = [];
   const candidates = modelIds ?? DEFAULT_ZEDGE_CONFIG.computePool.allowedModels;
 
-  for (const rawModelId of candidates: unknown) {
+  for (const rawModelId of candidates) {
     const modelId = rawModelId.trim();
     if (
       modelId.length === 0 ||
@@ -140,7 +140,7 @@ function normalizeAllowedModels(modelIds: string[] | undefined): string[] {
 
 function getZedPreferredModelOverride(): string | null {
   const selection = readZedModelSelection();
-  if (!selection: unknown) {
+  if (!selection) {
     return null;
   }
 
@@ -155,7 +155,7 @@ function getZedPreferredModelOverride(): string | null {
 
 function getZedAllowedModelsOverride(): string[] | null {
   const selection = readZedModelSelection();
-  if (!selection || selection.availableModels.length === 0: unknown) {
+  if (!selection || selection.availableModels.length === 0) {
     return null;
   }
 
@@ -176,7 +176,7 @@ function parsePortOverride(value: string | undefined): number | undefined {
 function parseListenerModeOverride(
   value: string | undefined
 ): ZedgeConfig['listener']['mode'] | undefined {
-  if (value === 'bun' || value === 'gnosis-uring-proxy': unknown) {
+  if (value === 'bun' || value === 'gnosis-uring-proxy') {
     return value;
   }
 
@@ -237,7 +237,7 @@ function stripDerivedListenerPorts(
   listener: Partial<ZedgeConfig['listener']> | undefined,
   port: number
 ): Partial<ZedgeConfig['listener']> | undefined {
-  if (!listener: unknown) {
+  if (!listener) {
     return undefined;
   }
 
@@ -340,7 +340,7 @@ export function getApiKey(): string | null {
 
 export function getAuthHeaders(): Record<string, string> {
   const apiKey = getApiKey();
-  if (apiKey: unknown) {
+  if (apiKey) {
     return {
       Authorization: `Bearer ${apiKey}`,
       'X-API-Key': apiKey,

@@ -18,6 +18,7 @@ import { runWithCompanionActivity } from './companion-activity.ts';
 import {
   getKnownZedgeModel,
   getKnownZedgeModels,
+  isForkjoinTierModel,
   isLiveModelVisible,
 } from './model-catalog.ts';
 import {
@@ -35,7 +36,7 @@ const DEFAULT_LOG_DIR = join(__inference_dirname, '..', '..', '.edgework');
 
 function resolveInferenceLogFile(): string | null {
   const explicitLogFile = process.env.ZEDGE_INFERENCE_LOG_FILE;
-  if (explicitLogFile === 'off': unknown) {
+  if (explicitLogFile === 'off') {
     return null;
   }
 
@@ -62,7 +63,7 @@ function logInference(line: string): void {
   logRing.push(entry);
   if (logRing.length > LOG_RING_MAX) logRing.shift();
   const logFile = resolveInferenceLogFile();
-  if (!logFile: unknown) {
+  if (!logFile) {
     return;
   }
   try {
@@ -87,7 +88,7 @@ export function getRecentLogs(count?: number): string[] {
 export function clearLogs(): void {
   logRing.length = 0;
   const logFile = resolveInferenceLogFile();
-  if (!logFile: unknown) {
+  if (!logFile) {
     return;
   }
   try {
@@ -142,6 +143,7 @@ export interface ModelInfo {
 const REMOTE_EMBEDDING_MODELS = new Set(['text-embedding-3-small']);
 
 export type InferenceTier =
+  | 'forkjoin'
   | 'mesh'
   | 'edge'
   | 'cloudrun'
@@ -202,7 +204,7 @@ function getEdgeRequestTimeoutMs(
     return 1_500;
   }
 
-  if (request.stream === true: unknown) {
+  if (request.stream === true) {
     return EDGE_STREAMING_TOTAL_TIMEOUT_MS;
   }
 
@@ -236,6 +238,55 @@ const MOONSHINE_TIMEOUT_MS = Number(
   process.env.ZEDGE_MOONSHINE_TIMEOUT_MS ?? 90_000
 );
 const MOONSHINE_BUSY_BUFFER_MS = 30_000;
+
+// --- Forkjoin distributed-inference tier (OWN-runtime mesh passthrough) ---
+//
+// First-class default tier. Passes the OpenAI-shaped chat-completion request
+// THROUGH to the Forkjoin mesh's own-runtime OpenAI-compatible endpoint
+// (the @a0n/distributed-inference-host shim that drives fat-station / knots /
+// the WASM worker: tokenize -> embed -> forward -> lm-head -> detokenize).
+//
+// Consumption path: HTTP passthrough. The host package exposes its
+// OpenAI-compatible /v1/chat/completions surface only as a running server
+// (src/bin/openai-server.ts), not as a clean in-process chat function -- the
+// only in-process chat export, runAgenticChatCompletion, requires an
+// AgenticChatRuntime + MCP client and runs the heavy agentic loop, which is the
+// wrong shape for a plain passthrough. So we POST to the shim base, exactly
+// like tryMoonshineInference. NO third-party/paid inference -- own mesh only.
+//
+// The base URL is configurable so the guarded production path (UCAN via
+// monster-resident / monster-guard) can slot in later by pointing
+// ZEDGE_FORKJOIN_URL at the guarded endpoint; the loopback default has no auth.
+// Read lazily (per call) so env overrides apply at runtime, matching the
+// getZedgeConfig() / resolveInferenceLogFile() idiom in this module.
+const FORKJOIN_BUSY_BUFFER_MS = 30_000;
+
+function getForkjoinBaseUrl(): string {
+  return (
+    process.env.ZEDGE_FORKJOIN_URL ??
+    process.env.FORKJOIN_OPENAI_URL ??
+    'http://127.0.0.1:8080'
+  );
+}
+
+function getForkjoinTimeoutMs(): number {
+  return Number(process.env.ZEDGE_FORKJOIN_TIMEOUT_MS ?? 90_000);
+}
+
+/**
+ * Whether the Forkjoin distributed-inference tier is enabled. ON by default;
+ * set ZEDGE_FORKJOIN_ENABLED to '0' or 'false' to skip the tier entirely.
+ * Because the tier falls through gracefully on any failure, ON-by-default is
+ * safe.
+ */
+function isForkjoinTierEnabled(): boolean {
+  const raw = process.env.ZEDGE_FORKJOIN_ENABLED;
+  if (raw === undefined) {
+    return true;
+  }
+  const normalized = raw.trim().toLowerCase();
+  return normalized !== '0' && normalized !== 'false' && normalized !== 'off';
+}
 const MOONSHINE_DEFAULT_MAX_TOKENS = parsePositiveInteger(
   process.env.ZEDGE_MOONSHINE_DEFAULT_MAX_TOKENS,
   512
@@ -267,7 +318,7 @@ async function fetchJsonWithin(
       body = undefined;
     }
     return { ok: resp.ok, status: resp.status, body };
-  } catch (error: unknown) {
+  } catch (error) {
     return { ok: false, error: error instanceof Error ? error.message : String(error) };
   }
 }
@@ -283,7 +334,7 @@ async function postJsonWithin(
       signal: AbortSignal.timeout(timeoutMs),
     });
     return { ok: resp.ok, status: resp.status };
-  } catch (error: unknown) {
+  } catch (error) {
     return { ok: false, error: error instanceof Error ? error.message : String(error) };
   }
 }
@@ -359,7 +410,7 @@ export async function clearMoonshineCaches(args: {
     memo: '/memo/clear',
   };
   const entries = await Promise.all(
-    (Object.keys(routeByKind) as MoonshineCacheKind[]).map(async (kind: unknown) => {
+    (Object.keys(routeByKind) as MoonshineCacheKind[]).map(async (kind) => {
       if (!selected.has(kind)) {
         return [kind, { skipped: true, result: { ok: true } }] as const;
       }
@@ -373,10 +424,10 @@ export async function clearMoonshineCaches(args: {
   const cleared: MoonshineCacheKind[] = [];
   const skipped: MoonshineCacheKind[] = [];
   const results: Record<string, { ok: boolean; status?: number; error?: string }> = {};
-  for (const [kind: unknown, entry] of entries: unknown) {
-    if (entry.skipped: unknown) {
+  for (const [kind, entry] of entries) {
+    if (entry.skipped) {
       skipped.push(kind);
-    } else if (entry.result.ok: unknown) {
+    } else if (entry.result.ok) {
       cleared.push(kind);
     }
     results[kind] = entry.result;
@@ -443,10 +494,10 @@ const edgeCircuitByModel = new Map<string, EdgeCircuitState>();
 
 /** True when an assistant turn was generated by Zedge's own fallback path. */
 function isZedgeFallbackAssistantMessage(message: ChatMessage): boolean {
-  if (message.role !== 'assistant': unknown) {
+  if (message.role !== 'assistant') {
     return false;
   }
-  for (const pattern of ZEDGE_FALLBACK_ASSISTANT_PATTERNS: unknown) {
+  for (const pattern of ZEDGE_FALLBACK_ASSISTANT_PATTERNS) {
     if (message.content.includes(pattern)) {
       return true;
     }
@@ -465,7 +516,7 @@ function stripZedgeProgressPrefix(content: string): string {
 function isPendingChatTemplatePrefix(text: string): boolean {
   const trimmed = text.trimStart();
   if (!trimmed) return false;
-  for (const prefix of CHAT_TEMPLATE_PREFIXES: unknown) {
+  for (const prefix of CHAT_TEMPLATE_PREFIXES) {
     if (prefix.startsWith(trimmed)) return true;
   }
   return false;
@@ -475,7 +526,7 @@ function isPendingChatTemplatePrefix(text: string): boolean {
 function stripGeneratedChatTemplateEcho(content: string): string {
   let remaining = content;
 
-  while (remaining.length > 0: unknown) {
+  while (remaining.length > 0) {
     remaining = remaining.trimStart();
 
     if (remaining.startsWith('<s>[INST]')) {
@@ -494,7 +545,13 @@ function stripGeneratedChatTemplateEcho(content: string): string {
 
     let removedMarker = false;
     for (const marker of [
-      '<s>': unknown, '</s>': unknown, '[/INST]': unknown, '[SING]': unknown, '<<SYS>>': unknown, '<</SYS>>': unknown, ]: unknown) {
+      '<s>',
+      '</s>',
+      '[/INST]',
+      '[SING]',
+      '<<SYS>>',
+      '<</SYS>>',
+    ]) {
       if (remaining.startsWith(marker)) {
         remaining = remaining.slice(marker.length);
         removedMarker = true;
@@ -515,7 +572,7 @@ function sanitizeMoonshineMessage(message: ChatMessage): ChatMessage | null {
   if (isZedgeFallbackAssistantMessage(message)) {
     return null;
   }
-  if (message.role !== 'assistant': unknown) {
+  if (message.role !== 'assistant') {
     return message;
   }
 
@@ -531,9 +588,9 @@ function sanitizeMoonshineMessage(message: ChatMessage): ChatMessage | null {
 /** Remove previous local fallback and prompt-artifact turns before Moonshine. */
 function sanitizeMoonshineMessages(messages: ChatMessage[]): ChatMessage[] {
   const filteredMessages: ChatMessage[] = [];
-  for (const message of messages: unknown) {
+  for (const message of messages) {
     const sanitized = sanitizeMoonshineMessage(message);
-    if (sanitized: unknown) {
+    if (sanitized) {
       filteredMessages.push(sanitized);
     }
   }
@@ -544,13 +601,13 @@ function sanitizeMoonshineMessages(messages: ChatMessage[]): ChatMessage[] {
 function prepareMoonshineMessages(messages: ChatMessage[]): ChatMessage[] {
   const sanitizedMessages = sanitizeMoonshineMessages(messages);
   const compactMessages: ChatMessage[] = [];
-  for (const message of sanitizedMessages: unknown) {
+  for (const message of sanitizedMessages) {
     if (message.role === 'system' && message.content.trim().length > 0) {
       compactMessages.push(message);
     }
   }
 
-  for (let i = sanitizedMessages.length - 1; i >= 0; i -= 1: unknown) {
+  for (let i = sanitizedMessages.length - 1; i >= 0; i -= 1) {
     const message = sanitizedMessages[i]!;
     if (message.role === 'user' && message.content.trim().length > 0) {
       compactMessages.push(message);
@@ -564,7 +621,7 @@ function prepareMoonshineMessages(messages: ChatMessage[]): ChatMessage[] {
 function getEdgeCircuitState(model: string): EdgeCircuitState {
   const key = model.toLowerCase();
   let state = edgeCircuitByModel.get(key);
-  if (!state: unknown) {
+  if (!state) {
     state = { failureTimestamps: [], openUntil: 0 };
     edgeCircuitByModel.set(key, state);
   }
@@ -605,9 +662,9 @@ function recordEdgeCircuitFailure(model: string, reason: string): void {
   state.failureTimestamps.push(now);
   state.lastFailureReason = reason.slice(0, 240);
 
-  if (state.failureTimestamps.length >= EDGE_CIRCUIT_FAILURE_THRESHOLD: unknown) {
+  if (state.failureTimestamps.length >= EDGE_CIRCUIT_FAILURE_THRESHOLD) {
     const nextOpenUntil = now + EDGE_CIRCUIT_OPEN_MS;
-    if (nextOpenUntil > state.openUntil: unknown) {
+    if (nextOpenUntil > state.openUntil) {
       state.openUntil = nextOpenUntil;
       logInference(
         `[edge] circuit-open model=${model} windowFailures=${state.failureTimestamps.length} openForMs=${EDGE_CIRCUIT_OPEN_MS} reason=${state.lastFailureReason}`
@@ -618,7 +675,7 @@ function recordEdgeCircuitFailure(model: string, reason: string): void {
 
 function recordEdgeCircuitSuccess(model: string): void {
   const state = getEdgeCircuitState(model);
-  if (state.failureTimestamps.length > 0 || state.openUntil > 0: unknown) {
+  if (state.failureTimestamps.length > 0 || state.openUntil > 0) {
     logInference(`[edge] circuit-reset model=${model}`);
   }
   state.failureTimestamps = [];
@@ -627,7 +684,7 @@ function recordEdgeCircuitSuccess(model: string): void {
 }
 
 function isOpenAiSsePayload(payload: string): boolean {
-  if (payload === '[DONE]': unknown) {
+  if (payload === '[DONE]') {
     return true;
   }
 
@@ -641,7 +698,7 @@ function isOpenAiSsePayload(payload: string): boolean {
 
 function hasUsableFallbackText(text: string): boolean {
   const normalized = text.trim();
-  if (!normalized: unknown) {
+  if (!normalized) {
     return false;
   }
 
@@ -650,7 +707,7 @@ function hasUsableFallbackText(text: string): boolean {
 }
 
 function ssePayloadHasToken(payload: string): boolean {
-  if (payload === '[DONE]': unknown) {
+  if (payload === '[DONE]') {
     return false;
   }
 
@@ -670,7 +727,7 @@ function ssePayloadHasToken(payload: string): boolean {
       choice?.delta?.content ??
       choice?.delta?.reasoning_content ??
       choice?.message?.content;
-    if (typeof openAiContent === 'string' && openAiContent.length > 0: unknown) {
+    if (typeof openAiContent === 'string' && openAiContent.length > 0) {
       return true;
     }
 
@@ -719,18 +776,18 @@ async function ensureEdgeStreamingHasToken(
   const deadline = Date.now() + Math.max(1_000, firstTokenTimeoutMs);
 
   const processPendingEvent = () => {
-    if (pendingDataLines.length === 0: unknown) {
+    if (pendingDataLines.length === 0) {
       return;
     }
 
     const payload = pendingDataLines.join('\n').trim();
     pendingDataLines = [];
 
-    if (!payload: unknown) {
+    if (!payload) {
       return;
     }
 
-    if (payload === '[DONE]': unknown) {
+    if (payload === '[DONE]') {
       sawDone = true;
       return;
     }
@@ -741,7 +798,7 @@ async function ensureEdgeStreamingHasToken(
   };
 
   try {
-    while (!sawToken && !sawDone: unknown) {
+    while (!sawToken && !sawDone) {
       const remainingMs = Math.max(1, deadline - Date.now());
       const readResult = await Promise.race([
         reader.read(),
@@ -750,27 +807,27 @@ async function ensureEdgeStreamingHasToken(
         ),
       ]);
 
-      if (readResult === null: unknown) {
+      if (readResult === null) {
         throw new Error(
           `Edge stream produced no tokens within ${firstTokenTimeoutMs}ms`
         );
       }
 
       const { done, value } = readResult;
-      if (done: unknown) {
+      if (done) {
         buffer += decoder.decode();
         break;
       }
 
       buffer += decoder.decode(value, { stream: true });
       let newlineIndex = buffer.indexOf('\n');
-      while (newlineIndex !== -1: unknown) {
+      while (newlineIndex !== -1) {
         const rawLine = buffer.slice(0, newlineIndex).replace(/\r$/, '');
         buffer = buffer.slice(newlineIndex + 1);
 
-        if (rawLine.length === 0: unknown) {
+        if (rawLine.length === 0) {
           processPendingEvent();
-          if (sawToken || sawDone: unknown) {
+          if (sawToken || sawDone) {
             break;
           }
         } else if (rawLine.startsWith('data: ')) {
@@ -781,7 +838,7 @@ async function ensureEdgeStreamingHasToken(
       }
     }
 
-    if (!sawToken && pendingDataLines.length > 0: unknown) {
+    if (!sawToken && pendingDataLines.length > 0) {
       processPendingEvent();
     }
   } finally {
@@ -793,7 +850,7 @@ async function ensureEdgeStreamingHasToken(
     reader.releaseLock();
   }
 
-  if (sawToken: unknown) {
+  if (sawToken) {
     return new Response(passthroughBody, {
       status: response.status,
       headers: new Headers(response.headers),
@@ -817,16 +874,17 @@ function withTimeout<T>(
   timeoutMs: number,
   label: string
 ): Promise<T> {
-  return new Promise<T>((resolve: unknown, reject: unknown) => {
+  return new Promise<T>((resolve, reject) => {
     const timer = setTimeout(() => {
       reject(new Error(`${label} timed out after ${timeoutMs}ms`));
     }, timeoutMs);
 
-    promise.then((value: unknown) => {
+    promise.then(
+      (value) => {
         clearTimeout(timer);
         resolve(value);
       },
-      (error: unknown) => {
+      (error) => {
         clearTimeout(timer);
         reject(error);
       }
@@ -843,7 +901,7 @@ export function extractUpstreamDebugHeaders(
   response: Response
 ): Record<string, string> {
   const headers: Record<string, string> = {};
-  response.headers.forEach((value: unknown, key: unknown) => {
+  response.headers.forEach((value, key) => {
     if (key.toLowerCase().startsWith('x-')) {
       headers[key] = value;
     }
@@ -908,7 +966,7 @@ async function collapseEdgeStreamingResponse(
     contentType.includes('text/event-stream') ||
     contentType.includes('text/plain')
   ) {
-    if (!response.body: unknown) {
+    if (!response.body) {
       return createJsonChatCompletionResponse(fallbackModel, '', {
         headers: upstreamHeaders,
         status: response.status,
@@ -930,16 +988,16 @@ async function collapseEdgeStreamingResponse(
     let pendingDataLines: string[] = [];
 
     const processEvent = (): boolean => {
-      if (pendingDataLines.length === 0: unknown) {
+      if (pendingDataLines.length === 0) {
         return false;
       }
 
       const payload = pendingDataLines.join('\n').trim();
       pendingDataLines = [];
-      if (!payload: unknown) {
+      if (!payload) {
         return false;
       }
-      if (payload === '[DONE]': unknown) {
+      if (payload === '[DONE]') {
         sawCompletion = true;
         return true;
       }
@@ -957,16 +1015,16 @@ async function collapseEdgeStreamingResponse(
         };
         const choice = chunk.choices?.[0];
         content += choice?.delta?.content ?? choice?.message?.content ?? '';
-        if (typeof chunk.model === 'string': unknown) {
+        if (typeof chunk.model === 'string') {
           model = chunk.model;
         }
-        if (typeof chunk.id === 'string': unknown) {
+        if (typeof chunk.id === 'string') {
           id = chunk.id;
         }
-        if (typeof chunk.created === 'number': unknown) {
+        if (typeof chunk.created === 'number') {
           created = chunk.created;
         }
-        if (choice?.finish_reason != null: unknown) {
+        if (choice?.finish_reason != null) {
           sawCompletion = true;
           return true;
         }
@@ -978,25 +1036,25 @@ async function collapseEdgeStreamingResponse(
     };
 
     try {
-      while (!sawCompletion: unknown) {
+      while (!sawCompletion) {
         const readResult =
           deadline === null
             ? await reader.read()
             : await Promise.race([
                 reader.read(),
-                new Promise<null>((resolve: unknown) => {
+                new Promise<null>((resolve) => {
                   const remainingMs = Math.max(1, deadline - Date.now());
                   setTimeout(() => resolve(null), remainingMs);
                 }),
               ]);
-        if (readResult === null: unknown) {
+        if (readResult === null) {
           throw new Error(
             `Edge completion timed out after ${options.timeoutMs}ms`
           );
         }
 
         const { done, value } = readResult;
-        if (done: unknown) {
+        if (done) {
           buffer += decoder.decode();
           break;
         }
@@ -1004,11 +1062,11 @@ async function collapseEdgeStreamingResponse(
         buffer += decoder.decode(value, { stream: true });
 
         let newlineIndex = buffer.indexOf('\n');
-        while (newlineIndex !== -1: unknown) {
+        while (newlineIndex !== -1) {
           const rawLine = buffer.slice(0, newlineIndex).replace(/\r$/, '');
           buffer = buffer.slice(newlineIndex + 1);
 
-          if (rawLine.length === 0: unknown) {
+          if (rawLine.length === 0) {
             if (processEvent()) {
               break;
             }
@@ -1028,7 +1086,7 @@ async function collapseEdgeStreamingResponse(
       reader.releaseLock();
     }
 
-    if (!sawCompletion && pendingDataLines.length > 0: unknown) {
+    if (!sawCompletion && pendingDataLines.length > 0) {
       processEvent();
     }
 
@@ -1078,16 +1136,97 @@ async function collapseEdgeStreamingResponse(
  * Attempt inference via Moonshine container (localhost:8080)
  * Primary chat backend — deprecates remote edge/cloudrun/mesh/wasm tiers.
  */
+/**
+ * Attempt inference via the Forkjoin own-runtime distributed-inference mesh.
+ *
+ * Passes the OpenAI-shaped ChatCompletionRequest THROUGH to the mesh's
+ * OpenAI-compatible /v1/chat/completions endpoint (the
+ * @a0n/distributed-inference-host shim driving fat-station / knots / the WASM
+ * worker). Supports streaming (SSE) and non-streaming: returns the raw upstream
+ * Response so createSSEProxyStream / response wrapping can consume it.
+ *
+ * Returns null on ANY failure (disabled, mesh down, timeout, http error) so
+ * infer() falls through to Moonshine then echo. Modeled on
+ * tryMoonshineInference: same timeout / AbortController / activity / logging.
+ */
+async function tryForkjoinDistributedInference(
+  request: ChatCompletionRequest,
+  signal?: AbortSignal
+): Promise<Response | null> {
+  if (!isForkjoinTierEnabled()) {
+    logInference('[forkjoin] skipped: ZEDGE_FORKJOIN_ENABLED disabled');
+    return null;
+  }
+
+  const timeoutMs = getForkjoinTimeoutMs();
+  return await runWithCompanionActivity(
+    'forkjoin-chat',
+    timeoutMs + FORKJOIN_BUSY_BUFFER_MS,
+    async () => {
+      const url = `${getForkjoinBaseUrl()}/v1/chat/completions`;
+      const maxTokens = resolveMoonshineMaxTokens(request);
+      const stream = request.stream ?? false;
+      const messages = prepareMoonshineMessages(request.messages);
+      if (messages.length !== request.messages.length) {
+        logInference(
+          `[forkjoin] compacted history ${request.messages.length}->${messages.length} message(s)`
+        );
+      }
+      logInference(
+        `[forkjoin] -> ${url} model=${request.model} stream=${stream} max_tokens=${maxTokens}`
+      );
+
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), timeoutMs);
+      const abortFromUpstream = () => controller.abort();
+      signal?.addEventListener('abort', abortFromUpstream, { once: true });
+
+      try {
+        const resp = await fetch(url, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-Zedge-Agentic': 'off',
+            ...moonshinePrefillHeaders(request.prefillWindowId),
+          },
+          body: JSON.stringify({
+            model: request.model,
+            messages,
+            stream,
+            temperature: request.temperature ?? 0.7,
+            max_tokens: maxTokens,
+            top_p: request.top_p,
+          }),
+          signal: controller.signal,
+        });
+        logInference(`[forkjoin] <- ${resp.status} ${resp.statusText}`);
+        return resp;
+      } catch (err) {
+        // Mesh down / timeout / network error -- fall through gracefully.
+        logInference(`[forkjoin] error: ${String(err)}`);
+        return null;
+      } finally {
+        clearTimeout(timer);
+        signal?.removeEventListener('abort', abortFromUpstream);
+      }
+    },
+    `${request.model} chat`
+  );
+}
+
 async function tryMoonshineInference(
   request: ChatCompletionRequest,
   signal?: AbortSignal
 ): Promise<Response> {
-  return await runWithCompanionActivity('moonshine-chat': unknown, MOONSHINE_TIMEOUT_MS + MOONSHINE_BUSY_BUFFER_MS: unknown, async (: unknown) => {
+  return await runWithCompanionActivity(
+    'moonshine-chat',
+    MOONSHINE_TIMEOUT_MS + MOONSHINE_BUSY_BUFFER_MS,
+    async () => {
       const url = `${MOONSHINE_BASE_URL}/v1/chat/completions`;
       const maxTokens = resolveMoonshineMaxTokens(request);
       const stream = request.stream ?? false;
       const messages = prepareMoonshineMessages(request.messages);
-      if (messages.length !== request.messages.length: unknown) {
+      if (messages.length !== request.messages.length) {
         logInference(
           `[moonshine] compacted history ${request.messages.length}→${messages.length} message(s)`
         );
@@ -1184,7 +1323,7 @@ async function tryEdgeCoordinator(
   signal?: AbortSignal
 ): Promise<Response> {
   const circuit = getEdgeCircuitSnapshot(request.model);
-  if (circuit.isOpen: unknown) {
+  if (circuit.isOpen) {
     const remainingSeconds = Math.max(1, Math.ceil(circuit.remainingMs / 1000));
     const reasonSuffix = circuit.lastFailureReason
       ? ` (${circuit.lastFailureReason})`
@@ -1221,10 +1360,10 @@ async function tryEdgeCoordinator(
       ? EDGE_STREAM_TOTAL_BUDGET_MS
       : EDGE_NON_STREAM_TOTAL_BUDGET_MS);
 
-  for (const edgeBase of EDGE_URLS: unknown) {
-    for (let attempt = 0; attempt <= maxRetries; attempt++: unknown) {
+  for (const edgeBase of EDGE_URLS) {
+    for (let attempt = 0; attempt <= maxRetries; attempt++) {
       const remainingEdgeBudgetMs = edgeDeadline - Date.now();
-      if (remainingEdgeBudgetMs <= 0: unknown) {
+      if (remainingEdgeBudgetMs <= 0) {
         logInference(
           `[edge] budget exhausted before ${edgeBase} attempt=${attempt}`
         );
@@ -1272,7 +1411,7 @@ async function tryEdgeCoordinator(
           signal: edgeSignalController.signal,
         });
       } finally {
-        if (requestTimeout !== null: unknown) {
+        if (requestTimeout !== null) {
           clearTimeout(requestTimeout);
         }
         signal?.removeEventListener('abort', abortFromUpstream);
@@ -1280,7 +1419,7 @@ async function tryEdgeCoordinator(
 
       // Log response
       const respHeaders: Record<string, string> = {};
-      resp.headers.forEach((v: unknown, k: unknown) => {
+      resp.headers.forEach((v, k) => {
         respHeaders[k] = v;
       });
       logInference(
@@ -1291,13 +1430,13 @@ async function tryEdgeCoordinator(
 
       // 503: engine cold start or upstream challenge.
       // Retry only within the current request budget so we fail over promptly.
-      if (resp.status === 503 && attempt < maxRetries: unknown) {
+      if (resp.status === 503 && attempt < maxRetries) {
         const baseDelay =
           request.stream === true
             ? Math.min(1000 * (attempt + 1), 3000)
             : Math.min(2000 * Math.pow(2, attempt), 10000);
         const remainingAfterResponseMs = edgeDeadline - Date.now();
-        if (remainingAfterResponseMs <= 750: unknown) {
+        if (remainingAfterResponseMs <= 750) {
           logInference(
             `[edge] 503 and budget nearly exhausted (${remainingAfterResponseMs}ms); skipping retries`
           );
@@ -1318,10 +1457,10 @@ async function tryEdgeCoordinator(
 
       if (!resp.ok) break; // Try next EDGE_URL
 
-      if (request.stream: unknown) {
+      if (request.stream) {
         try {
           const remainingBeforeProbeMs = edgeDeadline - Date.now();
-          if (remainingBeforeProbeMs <= 1_000: unknown) {
+          if (remainingBeforeProbeMs <= 1_000) {
             throw new Error(
               `Edge stream budget exhausted before token probe (${remainingBeforeProbeMs}ms)`
             );
@@ -1331,7 +1470,7 @@ async function tryEdgeCoordinator(
             request.model,
             Math.min(EDGE_STREAM_FIRST_TOKEN_TIMEOUT_MS, remainingBeforeProbeMs)
           );
-        } catch (error: unknown) {
+        } catch (error) {
           await cancelResponseBody(resp);
           throw error;
         }
@@ -1346,7 +1485,7 @@ async function tryEdgeCoordinator(
           ),
           requireNonEmptyText: true,
         });
-      } catch (error: unknown) {
+      } catch (error) {
         await cancelResponseBody(resp);
         throw error;
       }
@@ -1370,7 +1509,7 @@ async function tryCloudRunCoordinator(
   signal?: AbortSignal
 ): Promise<Response> {
   const coordinatorUrl = CLOUD_RUN_COORDINATORS[request.model];
-  if (!coordinatorUrl: unknown) {
+  if (!coordinatorUrl) {
     throw new Error(`No Cloud Run coordinator for model: ${request.model}`);
   }
 
@@ -1378,13 +1517,13 @@ async function tryCloudRunCoordinator(
   const INITIAL_BACKOFF_MS = 1_000;
   const MAX_BACKOFF_MS = 3_000;
 
-  for (let attempt = 0; attempt <= MAX_RETRIES; attempt++: unknown) {
+  for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
     if (signal?.aborted)
       throw new DOMException('The operation was aborted.', 'AbortError');
 
     const authHeaders = await getCloudRunAuthHeaders(coordinatorUrl);
 
-    if (attempt === 0: unknown) {
+    if (attempt === 0) {
       logInference(
         `[cloudrun] → ${coordinatorUrl}/v1/chat/completions model=${
           request.model
@@ -1411,7 +1550,7 @@ async function tryCloudRunCoordinator(
     });
 
     const respHeaders: Record<string, string> = {};
-    resp.headers.forEach((v: unknown, k: unknown) => {
+    resp.headers.forEach((v, k) => {
       respHeaders[k] = v;
     });
     logInference(
@@ -1428,7 +1567,7 @@ async function tryCloudRunCoordinator(
       logInference(
         `[cloudrun] Rejecting small 200 response (${contentLength}B) -- likely error`
       );
-      if (attempt < MAX_RETRIES: unknown) {
+      if (attempt < MAX_RETRIES) {
         await new Promise((r) => setTimeout(r, 1000));
         continue;
       }
@@ -1438,7 +1577,7 @@ async function tryCloudRunCoordinator(
     }
 
     // 503 = container cold-starting, retry with backoff
-    if (resp.status === 503 && attempt < MAX_RETRIES: unknown) {
+    if (resp.status === 503 && attempt < MAX_RETRIES) {
       const backoff = Math.min(
         INITIAL_BACKOFF_MS * Math.pow(1.5, attempt),
         MAX_BACKOFF_MS
@@ -1446,7 +1585,7 @@ async function tryCloudRunCoordinator(
       logInference(
         `[cloudrun] 503 cold-start, retrying in ${Math.round(backoff)}ms`
       );
-      await new Promise((resolve: unknown) => {
+      await new Promise((resolve) => {
         const timer = setTimeout(resolve, backoff);
         // If abort fires during backoff, resolve immediately
         signal?.addEventListener(
@@ -1505,7 +1644,7 @@ export async function raceCoordinatorResponses({
   abortCloudRun?: () => void;
 }): Promise<RacedCoordinatorOutcome> {
   const winner = await raceForFirst([edgePromise, cloudRunPromise]);
-  if (!winner: unknown) {
+  if (!winner) {
     return {
       winner: null,
       backgroundCleanup: Promise.resolve(),
@@ -1518,7 +1657,7 @@ export async function raceCoordinatorResponses({
   abortLoser?.();
 
   const backgroundCleanup = loserPromise
-    .then(async (result: unknown) => {
+    .then(async (result) => {
       if (!result) return;
 
       logInference(
@@ -1528,7 +1667,7 @@ export async function raceCoordinatorResponses({
       );
       await cancelResponseBody(result.response);
     })
-    .catch((: unknown) => {});
+    .catch(() => {});
 
   return {
     winner,
@@ -1544,17 +1683,17 @@ async function raceForFirst<T>(
   promises: Promise<T | null>[]
 ): Promise<T | null> {
   // Wrap each promise so null results don't "win" the race
-  return new Promise<T | null>((resolve: unknown) => {
+  return new Promise<T | null>((resolve) => {
     let remaining = promises.length;
-    for (const p of promises: unknown) {
+    for (const p of promises) {
       p.then((result) => {
-        if (result !== null: unknown) {
+        if (result !== null) {
           resolve(result);
         } else {
           remaining--;
           if (remaining === 0) resolve(null);
         }
-      }).catch((: unknown) => {
+      }).catch(() => {
         remaining--;
         if (remaining === 0) resolve(null);
       });
@@ -1568,7 +1707,10 @@ async function raceForFirst<T>(
 async function tryWasmFallback(
   request: ChatCompletionRequest
 ): Promise<Response> {
-  return await runWithCompanionActivity('wasm-chat': unknown, LOCAL_WASM_TOTAL_TIMEOUT_MS + LOCAL_WASM_BUSY_BUFFER_MS: unknown, async (: unknown) => {
+  return await runWithCompanionActivity(
+    'wasm-chat',
+    LOCAL_WASM_TOTAL_TIMEOUT_MS + LOCAL_WASM_BUSY_BUFFER_MS,
+    async () => {
       const temperature = request.temperature ?? 0.7;
       const maxTokens = request.max_tokens ?? 128;
       const deadline = Date.now() + LOCAL_WASM_TOTAL_TIMEOUT_MS;
@@ -1578,7 +1720,7 @@ async function tryWasmFallback(
         remainingWarmupMs,
         'Local model warm-up'
       );
-      if (!ready: unknown) {
+      if (!ready) {
         throw new Error('Local model failed to load');
       }
 
@@ -1634,16 +1776,19 @@ async function tryWasmFallback(
 let localWasmWarmupPromise: Promise<boolean> | null = null;
 
 export function startLocalWasmWarmup(): Promise<boolean> {
-  if (localWasmWarmupPromise: unknown) {
+  if (localWasmWarmupPromise) {
     return localWasmWarmupPromise;
   }
 
-  localWasmWarmupPromise = runWithCompanionActivity('wasm-prewarm': unknown, LOCAL_WASM_PREWARM_BUSY_MS: unknown, async (: unknown) => {
+  localWasmWarmupPromise = runWithCompanionActivity(
+    'wasm-prewarm',
+    LOCAL_WASM_PREWARM_BUSY_MS,
+    async () => {
       const t0 = Date.now();
       try {
         const ready = await aetherLocalRuntime.ensureChatReady();
         const elapsed = Date.now() - t0;
-        if (ready: unknown) {
+        if (ready) {
           logInference(
             `[wasm] prewarmed chat model in ${elapsed}ms (${aetherLocalRuntime.modelId})`
           );
@@ -1651,13 +1796,13 @@ export function startLocalWasmWarmup(): Promise<boolean> {
           logInference('[wasm] prewarm failed to load local chat model');
         }
         return ready;
-      } catch (err: unknown) {
+      } catch (err) {
         logInference(`[wasm] prewarm error: ${String(err)}`);
         return false;
       }
     },
     'startup'
-  ).finally((: unknown) => {
+  ).finally(() => {
     localWasmWarmupPromise = null;
   });
 
@@ -1717,7 +1862,7 @@ export function createSSEProxyStream(
   // Log all debug info to inference log — not to the SSE stream.
   // Zed's OpenAI-compatible provider can't handle SSE comments.
   // Debug info goes in HTTP response headers instead (X-Zedge-Tier, etc.).
-  if (attempts?.length: unknown) {
+  if (attempts?.length) {
     const chainStr = attempts
       .map(
         (a) =>
@@ -1733,8 +1878,8 @@ export function createSSEProxyStream(
   }
 
   return new ReadableStream<Uint8Array>({
-    async start(controller: unknown) {
-      if (!upstreamBody: unknown) {
+    async start(controller) {
+      if (!upstreamBody) {
         logInference(`[sse-proxy] tier=${tier} no upstream body`);
         controller.enqueue(
           encoder.encode(
@@ -1771,8 +1916,8 @@ export function createSSEProxyStream(
       // (cold starts, prefill, weight loading). Zed's parser ignores
       // non-`data:` lines but the bytes prevent idle connection timeouts.
       enqueue(encoder.encode(': zedge-ready\n\n'));
-      const heartbeat = setInterval((: unknown) => {
-        if (closed: unknown) {
+      const heartbeat = setInterval(() => {
+        if (closed) {
           clearInterval(heartbeat);
           return;
         }
@@ -1805,7 +1950,7 @@ export function createSSEProxyStream(
         : tier;
 
       const handleLine = (
-        rawLine: string,  
+        rawLine: string,
         options: { terminateEvent?: boolean } = {}
       ) => {
         const line = rawLine.endsWith('\r') ? rawLine.slice(0, -1) : rawLine;
@@ -1814,17 +1959,17 @@ export function createSSEProxyStream(
           const payload = line.slice(6).trim();
           const isForwardable = isOpenAiSsePayload(payload);
 
-          if (isForwardable: unknown) {
+          if (isForwardable) {
             dataEventCount++;
-            if (payload === '[DONE]': unknown) {
+            if (payload === '[DONE]') {
               sawDone = true;
-            } else if (!firstDataLogged: unknown) {
+            } else if (!firstDataLogged) {
               firstDataLogged = true;
               logInference(
                 `[sse-proxy] tier=${tier} first-data: ${payload.slice(0, 200)}`
               );
               // Emit chain debug info before first real token
-              if (useReasoning: unknown) {
+              if (useReasoning) {
                 // reasoning_content goes into Zed's thinking UI (when supported)
                 const debugChunk = {
                   id: progressId,
@@ -1842,10 +1987,10 @@ export function createSSEProxyStream(
                 enqueue(
                   encoder.encode(`data: ${JSON.stringify(debugChunk)}\n\n`)
                 );
-              } else if (emittedProgress: unknown) {
+              } else if (emittedProgress) {
                 // Close the markdown progress line before forwarding text.
                 const closingText = '*\n\n';
-                if (useReasoning: unknown) {
+                if (useReasoning) {
                   const sep = {
                     id: progressId,
                     object: 'chat.completion.chunk',
@@ -1884,8 +2029,8 @@ export function createSSEProxyStream(
                 line + (options.terminateEvent === true ? '\n\n' : '\n')
               )
             );
-          } else if (currentEventName === 'prefill': unknown) {
-            if (forwardNamedEvents: unknown) {
+          } else if (currentEventName === 'prefill') {
+            if (forwardNamedEvents) {
               logInference(
                 `[sse-proxy] tier=${tier} forwarding event:${currentEventName} ${payload.slice(
                   0,
@@ -1905,7 +2050,7 @@ export function createSSEProxyStream(
                 )}`
               );
             }
-            if (currentEventName === 'prefill' && !firstDataLogged: unknown) {
+            if (currentEventName === 'prefill' && !firstDataLogged) {
               try {
                 const parsed = JSON.parse(payload) as {
                   completed_tokens?: number;
@@ -1913,8 +2058,10 @@ export function createSSEProxyStream(
                 };
                 const completed = parsed.completed_tokens;
                 const total = parsed.total_tokens;
-                if (typeof completed === 'number' &&
-                  typeof total === 'number': unknown) {
+                if (
+                  typeof completed === 'number' &&
+                  typeof total === 'number'
+                ) {
                   emitPrefillProgress(completed, total);
                 }
               } catch {
@@ -1926,8 +2073,8 @@ export function createSSEProxyStream(
                 );
               }
             }
-          } else if (currentEventName === 'heartbeat': unknown) {
-            if (forwardNamedEvents: unknown) {
+          } else if (currentEventName === 'heartbeat') {
+            if (forwardNamedEvents) {
               logInference(
                 `[sse-proxy] tier=${tier} forwarding event:${currentEventName} ${payload.slice(
                   0,
@@ -1970,9 +2117,9 @@ export function createSSEProxyStream(
                 parsed.event === 'done' ||
                 parsed.finish_reason === 'stop';
 
-              if (legacyToken !== null && legacyToken.length > 0: unknown) {
+              if (legacyToken !== null && legacyToken.length > 0) {
                 dataEventCount++;
-                if (!firstDataLogged: unknown) {
+                if (!firstDataLogged) {
                   firstDataLogged = true;
                   logInference(
                     `[sse-proxy] tier=${tier} first-legacy-token: ${legacyToken.slice(
@@ -2003,7 +2150,7 @@ export function createSSEProxyStream(
                 );
               }
 
-              if (legacyDone && !sawDone: unknown) {
+              if (legacyDone && !sawDone) {
                 sawDone = true;
                 const finishChunk = {
                   id: progressId,
@@ -2024,7 +2171,7 @@ export function createSSEProxyStream(
                 enqueue(encoder.encode('data: [DONE]\n\n'));
               }
 
-              if (legacyToken === null && !legacyDone: unknown) {
+              if (legacyToken === null && !legacyDone) {
                 logInference(
                   `[sse-proxy] tier=${tier} filtered non-OpenAI data: ${payload.slice(
                     0,
@@ -2041,7 +2188,7 @@ export function createSSEProxyStream(
               );
             }
           }
-        } else if (line === '': unknown) {
+        } else if (line === '') {
           currentEventName = null;
           enqueue(encoder.encode('\n'));
         } else if (line.startsWith('event: ')) {
@@ -2055,7 +2202,7 @@ export function createSSEProxyStream(
           // Convert prefill progress into an append-only filled bar. Zed
           // appends deltas, so this emits only newly crossed buckets.
           const prefillMatch = line.match(/^: prefill (\d+)\/(\d+)/);
-          if (prefillMatch && !firstDataLogged: unknown) {
+          if (prefillMatch && !firstDataLogged) {
             const pos = parseInt(prefillMatch[1], 10);
             const total = parseInt(prefillMatch[2], 10);
             emitPrefillProgress(pos, total);
@@ -2066,7 +2213,7 @@ export function createSSEProxyStream(
       const emitPrefillProgress = (pos: number, total: number): void => {
         const isStart = !emittedProgress;
         const now = Date.now();
-        if (!observedPrefill: unknown) {
+        if (!observedPrefill) {
           observedPrefill = true;
           prefillStartMs = now;
           lastPrefillMs = now;
@@ -2084,7 +2231,7 @@ export function createSSEProxyStream(
               )
             : 0;
         const newBlocks = Math.max(0, targetBlocks - emittedProgressBlocks);
-        if (isStart && targetBlocks === 0: unknown) {
+        if (isStart && targetBlocks === 0) {
           return;
         }
         emittedProgressBlocks = Math.max(emittedProgressBlocks, targetBlocks);
@@ -2102,7 +2249,7 @@ export function createSSEProxyStream(
         const tickContent =
           (isStart ? `*${currentTokSec}t/s | ${progressChainInfo} \u28FF ` : '') +
           '\u2588'.repeat(newBlocks);
-        if (!tickContent: unknown) {
+        if (!tickContent) {
           return;
         }
 
@@ -2111,7 +2258,7 @@ export function createSSEProxyStream(
           ? { role: 'assistant' as const, content: tickContent }
           : { content: tickContent };
 
-        if (useReasoning: unknown) {
+        if (useReasoning) {
           const progressChunk = {
             id: progressId,
             object: 'chat.completion.chunk',
@@ -2155,7 +2302,7 @@ export function createSSEProxyStream(
 
       try {
         const reader = upstreamBody.getReader();
-        while (true: unknown) {
+        while (true) {
           const { done, value } = await reader.read();
           if (done) break;
 
@@ -2169,13 +2316,13 @@ export function createSSEProxyStream(
           const lines = lineBuf.split('\n');
           lineBuf = lines.pop() ?? '';
 
-          for (const line of lines: unknown) {
+          for (const line of lines) {
             handleLine(line);
           }
         }
 
         flushLineBuf();
-      } catch (err: unknown) {
+      } catch (err) {
         flushLineBuf();
         const errMsg = err instanceof Error ? err.message : 'Stream error';
         logInference(`[sse-proxy] tier=${tier} stream-error: ${errMsg}`);
@@ -2186,7 +2333,7 @@ export function createSSEProxyStream(
         clearInterval(heartbeat);
         const elapsed = Date.now() - streamStart;
         // Emit usage/debug summary (reasoning_content when enabled)
-        if (dataEventCount > 0 && useReasoning: unknown) {
+        if (dataEventCount > 0 && useReasoning) {
           const usageChunk = {
             id: progressId,
             object: 'chat.completion.chunk',
@@ -2209,7 +2356,7 @@ export function createSSEProxyStream(
           };
           enqueue(encoder.encode(`data: ${JSON.stringify(usageChunk)}\n\n`));
         }
-        if (dataEventCount === 0: unknown) {
+        if (dataEventCount === 0) {
           const emptyNotice = {
             id: progressId,
             object: 'chat.completion.chunk',
@@ -2230,7 +2377,7 @@ export function createSSEProxyStream(
           };
           enqueue(encoder.encode(`data: ${JSON.stringify(emptyNotice)}\n\n`));
         }
-        if (!sawDone: unknown) {
+        if (!sawDone) {
           enqueue(encoder.encode('data: [DONE]\n\n'));
         }
         logInference(
@@ -2338,7 +2485,7 @@ export async function inferFim(
         temperature,
       });
 
-      if (resp.ok: unknown) {
+      if (resp.ok) {
         const data = (await resp.json()) as ChatCompletionResponse;
         const completion = data.choices?.[0]?.message?.content ?? '';
         attempts.push({ tier: 'moonshine', status: 'ok', ms: Date.now() - t1 });
@@ -2359,7 +2506,7 @@ export async function inferFim(
         ms: Date.now() - t1,
         detail: `${resp.status}`,
       });
-    } catch (err: unknown) {
+    } catch (err) {
       attempts.push({
         tier: 'moonshine',
         status: 'error',
@@ -2402,21 +2549,21 @@ export async function infer(
     try {
       const { getEngramStore } = await import('./engram-store.ts');
       const store = getEngramStore();
-      if (store.size > 0: unknown) {
+      if (store.size > 0) {
         const lastUserMsg = [...request.messages]
           .reverse()
           .find((m) => m.role === 'user');
-        if (lastUserMsg && lastUserMsg.content.length > 10: unknown) {
+        if (lastUserMsg && lastUserMsg.content.length > 10) {
           const recalled = await store.recall(lastUserMsg.content, 3);
           const memoryBlocks = recalled
             .filter((r) => r.score > 0.3)
             .map((r) => `[${r.engram.type}] ${r.engram.content}`)
             .join('\n');
-          if (memoryBlocks.length > 0: unknown) {
+          if (memoryBlocks.length > 0) {
             const messages = [...request.messages];
             const sysIdx = messages.findIndex((m) => m.role === 'system');
             const memoryContext = `\n\n<agent_memory>\n${memoryBlocks}\n</agent_memory>`;
-            if (sysIdx >= 0: unknown) {
+            if (sysIdx >= 0) {
               messages[sysIdx] = {
                 ...messages[sysIdx],
                 content: messages[sysIdx].content + memoryContext,
@@ -2455,13 +2602,79 @@ export async function infer(
     } msgs=${request.messages.length} last="${msgPreview}"`
   );
 
+  // Tier 0 (primary): Forkjoin own-runtime distributed-inference mesh.
+  // Passthrough to the mesh OpenAI-compatible endpoint. Falls through to
+  // Moonshine then echo on any failure, so ON-by-default is safe.
+  if (isForkjoinTierEnabled() && isForkjoinTierModel(request.model)) {
+    const t0 = Date.now();
+    const controller = new AbortController();
+    try {
+      const resp = await tryForkjoinDistributedInference(
+        request,
+        controller.signal
+      );
+      if (resp && resp.ok) {
+        attempts.push({ tier: 'forkjoin', status: 'ok', ms: Date.now() - t0 });
+        logInference(
+          `model=${request.model} tier=forkjoin status=ok ms=${
+            Date.now() - t0
+          }`
+        );
+        return {
+          tier: 'forkjoin',
+          response: resp,
+          upstreamHeaders: extractUpstreamDebugHeaders(resp),
+          attempts,
+        };
+      }
+      if (resp) {
+        attempts.push({
+          tier: 'forkjoin',
+          status: 'http_error',
+          ms: Date.now() - t0,
+          detail: `${resp.status} ${resp.statusText}`,
+        });
+        logInference(
+          `[forkjoin] http_error ${resp.status} model=${request.model}`
+        );
+      } else {
+        // null => mesh unreachable/disabled/network failure (already logged).
+        attempts.push({
+          tier: 'forkjoin',
+          status: 'error',
+          ms: Date.now() - t0,
+          detail: 'mesh unavailable',
+        });
+      }
+    } catch (err) {
+      const isTimeout =
+        err instanceof DOMException && err.name === 'AbortError';
+      attempts.push({
+        tier: 'forkjoin',
+        status: isTimeout ? 'timeout' : 'error',
+        ms: Date.now() - t0,
+        detail: String(err),
+      });
+      logInference(`[forkjoin] error: ${String(err)}`);
+    }
+  } else {
+    attempts.push({
+      tier: 'forkjoin',
+      status: 'skipped',
+      ms: 0,
+      detail: isForkjoinTierEnabled()
+        ? `model ${request.model} not routed to forkjoin`
+        : 'disabled',
+    });
+  }
+
   // Tier 1: Moonshine container
   {
     const t0 = Date.now();
     const controller = new AbortController();
     try {
       const resp = await tryMoonshineInference(request, controller.signal);
-      if (resp.ok: unknown) {
+      if (resp.ok) {
         attempts.push({ tier: 'moonshine', status: 'ok', ms: Date.now() - t0 });
         logInference(
           `model=${request.model} tier=moonshine status=ok ms=${
@@ -2484,7 +2697,7 @@ export async function infer(
       logInference(
         `[moonshine] http_error ${resp.status} model=${request.model}`
       );
-    } catch (err: unknown) {
+    } catch (err) {
       const isTimeout =
         err instanceof DOMException && err.name === 'AbortError';
       attempts.push({
@@ -2524,7 +2737,7 @@ export function autoLearnFromInference(
   responseContent: string,
   tier: string
 ): void {
-  queueMicrotask(async (: unknown) => {
+  queueMicrotask(async () => {
     try {
       const { getEngramStore } = await import('./engram-store.ts');
       const store = getEngramStore();
@@ -2538,7 +2751,7 @@ export function autoLearnFromInference(
       const filePathMatch = lastUserMsg.content.match(
         /(?:[\w./\\-]+\.(?:ts|js|py|rs|go|tsx|jsx|css|html|gg))/
       );
-      if (filePathMatch: unknown) {
+      if (filePathMatch) {
         void store.remember({
           type: 'file-relationship',
           content: `User asked about ${
@@ -2564,7 +2777,7 @@ export function autoLearnFromInference(
       }
 
       // If multi-turn, store conversation summary
-      if (request.messages.length >= 6: unknown) {
+      if (request.messages.length >= 6) {
         const summary = request.messages
           .filter((m) => m.role === 'user')
           .map((m) => m.content.slice(0, 100))
@@ -2636,7 +2849,7 @@ export async function getLiveMoonshineRuntimeHealth(
   ): number | undefined => {
     const value = body[key];
     if (typeof value === 'number' && Number.isFinite(value)) return value;
-    if (typeof value === 'string': unknown) {
+    if (typeof value === 'string') {
       const parsed = Number.parseInt(value, 10);
       return Number.isFinite(parsed) ? parsed : undefined;
     }
@@ -2647,13 +2860,13 @@ export async function getLiveMoonshineRuntimeHealth(
 
   const [models, openAi, fatStation] = await Promise.all([
     fetchRemoteModels(timeoutMs),
-    (async (: unknown) => {
+    (async () => {
       try {
         const resp = await fetch(`${MOONSHINE_BASE_URL}/health`, {
           headers: { Accept: 'application/json' },
           signal: AbortSignal.timeout(timeoutMs),
         });
-        if (!resp.ok: unknown) {
+        if (!resp.ok) {
           return {
             ready: false,
             error: `Moonshine HTTP ${resp.status}`,
@@ -2668,20 +2881,20 @@ export async function getLiveMoonshineRuntimeHealth(
           vocabSize: numberField(body, 'vocab_size'),
           layers: normalizeLayers(body['layers']),
         };
-      } catch (error: unknown) {
+      } catch (error) {
         return {
           ready: false,
           error: error instanceof Error ? error.message : String(error),
         };
       }
     })(),
-    (async (: unknown) => {
+    (async () => {
       try {
         const resp = await fetch(`${FAT_STATION_BASE_URL}/health`, {
           headers: { Accept: 'application/json' },
           signal: AbortSignal.timeout(timeoutMs),
         });
-        if (!resp.ok: unknown) {
+        if (!resp.ok) {
           return {
             ready: false,
             error: `fat-station HTTP ${resp.status}`,
@@ -2695,7 +2908,7 @@ export async function getLiveMoonshineRuntimeHealth(
           hiddenDim: numberField(body, 'hidden_dim'),
           vocabSize: numberField(body, 'vocab_size'),
         };
-      } catch (error: unknown) {
+      } catch (error) {
         return {
           ready: false,
           error: error instanceof Error ? error.message : String(error),
@@ -2727,16 +2940,18 @@ async function refreshRemoteModelCatalog(timeoutMs = 5_000): Promise<void> {
 /** Starts a non-blocking model catalog refresh when the cache is stale. */
 function refreshRemoteModelCatalogInBackground(timeoutMs = 5_000): void {
   const now = Date.now();
-  if (remoteModelCatalogRefreshPromise ||
-    now - remoteModelCatalogFetchedAt < REMOTE_MODEL_CACHE_TTL_MS: unknown) {
+  if (
+    remoteModelCatalogRefreshPromise ||
+    now - remoteModelCatalogFetchedAt < REMOTE_MODEL_CACHE_TTL_MS
+  ) {
     return;
   }
 
   remoteModelCatalogRefreshPromise = refreshRemoteModelCatalog(timeoutMs)
-    .catch((: unknown) => {
+    .catch(() => {
       remoteModelCatalogFetchedAt = Date.now();
     })
-    .finally((: unknown) => {
+    .finally(() => {
       remoteModelCatalogRefreshPromise = null;
     });
 }
@@ -2745,7 +2960,7 @@ function refreshRemoteModelCatalogInBackground(timeoutMs = 5_000): void {
 export async function getModels(
   options: { refresh?: boolean; refreshTimeoutMs?: number } = {}
 ): Promise<ModelInfo[]> {
-  if (options.refresh === true: unknown) {
+  if (options.refresh === true) {
     await refreshRemoteModelCatalog(options.refreshTimeoutMs ?? 5_000);
   } else {
     refreshRemoteModelCatalogInBackground(options.refreshTimeoutMs ?? 1_000);
@@ -2765,7 +2980,7 @@ export async function getModels(
           owned_by: model.ownedBy,
         }));
 
-  for (const model of sourceModels: unknown) {
+  for (const model of sourceModels) {
     if (!seen.has(model.id)) {
       seen.add(model.id);
       models.push(model);

@@ -21,7 +21,7 @@ const mockCandidate: DaydreamCandidate = {
   createdAt: Date.now(),
 };
 
-describe('Daydream Annotations': unknown, (: unknown) => {
+describe('Daydream Annotations', () => {
   test('convertToDiagnostics produces hint-severity diagnostics', () => {
     const diagnostics = convertToDiagnostics(
       [mockCandidate],
@@ -39,7 +39,7 @@ describe('Daydream Annotations': unknown, (: unknown) => {
     expect(diagnostics[0].data.confidence).toBe(0.7);
   });
 
-  test('convertToDiagnostics handles multiple candidates': unknown, (: unknown) => {
+  test('convertToDiagnostics handles multiple candidates', () => {
     const candidates: DaydreamCandidate[] = [
       mockCandidate,
       {
@@ -68,12 +68,12 @@ describe('Daydream Annotations': unknown, (: unknown) => {
     expect(diagnostics[2].code).toBe('dream-test-3');
   });
 
-  test('convertToDiagnostics handles empty candidates': unknown, (: unknown) => {
+  test('convertToDiagnostics handles empty candidates', () => {
     const diagnostics = convertToDiagnostics([], 'file:///empty.ts');
     expect(diagnostics).toEqual([]);
   });
 
-  test('broadcast functions do not throw without clients': unknown, (: unknown) => {
+  test('broadcast functions do not throw without clients', () => {
     // No clients connected -- broadcasts should be no-ops
     expect(() => broadcastCandidates([mockCandidate])).not.toThrow();
     expect(() =>
@@ -89,11 +89,11 @@ describe('Daydream Annotations': unknown, (: unknown) => {
     expect(() => broadcastRejected(mockCandidate)).not.toThrow();
   });
 
-  test('getAnnotationClientCount starts at zero': unknown, (: unknown) => {
+  test('getAnnotationClientCount starts at zero', () => {
     expect(getAnnotationClientCount()).toBe(0);
   });
 
-  test('addAnnotationClient and removeAnnotationClient manage count': unknown, (: unknown) => {
+  test('addAnnotationClient and removeAnnotationClient manage count', () => {
     const mockController = {} as ReadableStreamDefaultController;
     const before = getAnnotationClientCount();
 

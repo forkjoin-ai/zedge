@@ -16,7 +16,7 @@ function execShellForge(
   command: string,
   options: { cwd?: string; env?: Record<string, string> } = {}
 ): Promise<{ output: string; exitCode: number }> {
-  return new Promise((resolve: unknown) => {
+  return new Promise((resolve) => {
     const proc = nodeSpawn('bash', ['-c', command], {
       cwd: options.cwd ?? process.cwd(),
       stdio: ['ignore', 'pipe', 'pipe'],
@@ -98,10 +98,10 @@ export class ForgeBridge {
    */
   connectEventBus(bus: ForgeEventBus): void {
     this.eventBus = bus;
-    this.unsubscribe = bus.subscribe((event: unknown) => {
+    this.unsubscribe = bus.subscribe((event) => {
       this.addEvent(event as ForgoDeployEvent);
       const handlers = this.eventHandlers.get(event.type) ?? [];
-      for (const handler of handlers: unknown) {
+      for (const handler of handlers) {
         try {
           handler(event);
         } catch {
@@ -142,7 +142,7 @@ export class ForgeBridge {
         names: projects.map((p) => p.name),
       });
       return projects;
-    } catch (err: unknown) {
+    } catch (err) {
       log.error('Failed to discover projects', {
         error: String(err),
         workspace: this.workspacePath,
@@ -159,7 +159,7 @@ export class ForgeBridge {
     try {
       const projects = await this.discoverProjects();
 
-      if (projects.length === 0: unknown) {
+      if (projects.length === 0) {
         return {
           success: false,
           error: 'No deployable projects found in workspace',
@@ -167,9 +167,9 @@ export class ForgeBridge {
       }
 
       let target: ForgoProject | undefined;
-      if (projectName: unknown) {
+      if (projectName) {
         target = projects.find((p) => p.name === projectName);
-        if (!target: unknown) {
+        if (!target) {
           return {
             success: false,
             error: `Project "${projectName}" not found. Available: ${projects
@@ -209,7 +209,7 @@ export class ForgeBridge {
       });
 
       // Execute build if configured
-      if (target.config.buildCommand: unknown) {
+      if (target.config.buildCommand) {
         this.appendLog(pid, 'info', `Building: ${target.config.buildCommand}`);
 
         const workDir = join(this.workspacePath, target.dir);
@@ -219,7 +219,7 @@ export class ForgeBridge {
             { cwd: workDir, env: process.env as Record<string, string> }
           );
 
-          if (exitCode !== 0: unknown) {
+          if (exitCode !== 0) {
             this.appendLog(pid, 'error', `Build failed: ${buildOutput}`);
             proc.state = 'failed';
             this.processes.set(target.name, { ...proc });
@@ -231,7 +231,7 @@ export class ForgeBridge {
           }
 
           this.appendLog(pid, 'info', 'Build succeeded');
-        } catch (err: unknown) {
+        } catch (err) {
           this.appendLog(pid, 'error', `Build error: ${String(err)}`);
           proc.state = 'failed';
           this.processes.set(target.name, { ...proc });
@@ -287,7 +287,7 @@ export class ForgeBridge {
         });
 
         return { success: true, process: proc };
-      } catch (err: unknown) {
+      } catch (err) {
         proc.state = 'failed';
         this.processes.set(target.name, { ...proc });
         this.appendLog(pid, 'error', `Spawn failed: ${String(err)}`);
@@ -297,7 +297,7 @@ export class ForgeBridge {
           error: String(err),
         };
       }
-    } catch (err: unknown) {
+    } catch (err) {
       return { success: false, error: String(err) };
     }
   }
@@ -325,7 +325,7 @@ export class ForgeBridge {
    */
   async *getLogs(processId: string): AsyncIterable<string> {
     const entries = this.logs.get(processId) ?? [];
-    for (const entry of entries: unknown) {
+    for (const entry of entries) {
       yield `[${new Date(entry.timestamp).toISOString()}] [${entry.level}] ${
         entry.message
       }`;
@@ -336,8 +336,8 @@ export class ForgeBridge {
    * Stop a running process.
    */
   async stop(processId: string): Promise<void> {
-    for (const [name: unknown,  proc] of this.processes) {
-      if (proc.pid === processId: unknown) {
+    for (const [name, proc] of this.processes) {
+      if (proc.pid === processId) {
         proc.state = 'stopped';
         this.processes.set(name, { ...proc });
         this.appendLog(processId, 'info', `Process ${name} stopped`);
@@ -365,7 +365,7 @@ export class ForgeBridge {
   ): void {
     const entries = this.logs.get(processId) ?? [];
     entries.push({ timestamp: Date.now(), level, message });
-    if (entries.length > ForgeBridge.MAX_LOG_ENTRIES: unknown) {
+    if (entries.length > ForgeBridge.MAX_LOG_ENTRIES) {
       entries.splice(0, entries.length - ForgeBridge.MAX_LOG_ENTRIES);
     }
     this.logs.set(processId, entries);

@@ -81,7 +81,7 @@ function buildGnarlyRequest(body: BabelfishGnarlyRequestBody): {
   candidateLanguages?: string[];
   maxRecommendations?: number;
 } {
-  if (!body.scope: unknown) {
+  if (!body.scope) {
     throw new Error('scope is required');
   }
   const request: {
@@ -89,10 +89,10 @@ function buildGnarlyRequest(body: BabelfishGnarlyRequestBody): {
     candidateLanguages?: string[];
     maxRecommendations?: number;
   } = { scope: body.scope };
-  if (body.candidateLanguages !== undefined: unknown) {
+  if (body.candidateLanguages !== undefined) {
     request.candidateLanguages = body.candidateLanguages;
   }
-  if (body.maxRecommendations !== undefined: unknown) {
+  if (body.maxRecommendations !== undefined) {
     request.maxRecommendations = body.maxRecommendations;
   }
   return request;
@@ -109,10 +109,10 @@ function buildGnarlyFromRequest(body: BabelfishGnarlyRequestBody): {
     name?: string;
     candidateLanguages?: string[];
   } = { scope: request.scope };
-  if (body.name !== undefined: unknown) {
+  if (body.name !== undefined) {
     fromRequest.name = body.name;
   }
-  if (request.candidateLanguages !== undefined: unknown) {
+  if (request.candidateLanguages !== undefined) {
     fromRequest.candidateLanguages = request.candidateLanguages;
   }
   return fromRequest;
@@ -139,10 +139,10 @@ export async function handleBabelfishRequest(
 ): Promise<Response | null> {
   const path = new URL(req.url).pathname;
 
-  if (path === '/babelfish/capabilities' && req.method === 'GET': unknown) {
+  if (path === '/babelfish/capabilities' && req.method === 'GET') {
     try {
       return jsonResponse(await getBabelfishCapabilities());
-    } catch (err: unknown) {
+    } catch (err) {
       return jsonResponse(
         { error: err instanceof Error ? err.message : 'Babelfish unavailable' },
         503
@@ -150,15 +150,15 @@ export async function handleBabelfishRequest(
     }
   }
 
-  if (path === '/babelfish/code/preview' && req.method === 'POST': unknown) {
+  if (path === '/babelfish/code/preview' && req.method === 'POST') {
     try {
       const body = (await req.json()) as BabelfishCodePreviewRequestBody;
       if (!body.scope) return jsonResponse({ error: 'scope is required' }, 400);
-      if (!body.targetLanguage: unknown) {
+      if (!body.targetLanguage) {
         return jsonResponse({ error: 'targetLanguage is required' }, 400);
       }
       if (!body.mode) return jsonResponse({ error: 'mode is required' }, 400);
-      if (!body.outputMode: unknown) {
+      if (!body.outputMode) {
         return jsonResponse({ error: 'outputMode is required' }, 400);
       }
 
@@ -170,7 +170,7 @@ export async function handleBabelfishRequest(
         outputMode: body.outputMode,
       });
       return jsonResponse(result);
-    } catch (err: unknown) {
+    } catch (err) {
       return jsonResponse(
         {
           error:
@@ -181,13 +181,13 @@ export async function handleBabelfishRequest(
     }
   }
 
-  if (path === '/babelfish/code/apply' && req.method === 'POST': unknown) {
+  if (path === '/babelfish/code/apply' && req.method === 'POST') {
     try {
       const body = (await req.json()) as BabelfishCodeApplyRequestBody;
-      if (!body.previewId: unknown) {
+      if (!body.previewId) {
         return jsonResponse({ error: 'previewId is required' }, 400);
       }
-      if (!body.applyMode: unknown) {
+      if (!body.applyMode) {
         return jsonResponse({ error: 'applyMode is required' }, 400);
       }
       const result = await applyBabelfishCodePreview({
@@ -195,7 +195,7 @@ export async function handleBabelfishRequest(
         applyMode: body.applyMode,
       });
       return jsonResponse(result);
-    } catch (err: unknown) {
+    } catch (err) {
       return jsonResponse(
         {
           error: err instanceof Error ? err.message : 'Babelfish apply failed',
@@ -205,11 +205,11 @@ export async function handleBabelfishRequest(
     }
   }
 
-  if (path === '/babelfish/text/translate' && req.method === 'POST': unknown) {
+  if (path === '/babelfish/text/translate' && req.method === 'POST') {
     try {
       const body = (await req.json()) as BabelfishTextTranslateRequestBody;
       if (!body.scope) return jsonResponse({ error: 'scope is required' }, 400);
-      if (!body.targetHumanLanguage: unknown) {
+      if (!body.targetHumanLanguage) {
         return jsonResponse({ error: 'targetHumanLanguage is required' }, 400);
       }
       const result = await translateBabelfishText({
@@ -220,7 +220,7 @@ export async function handleBabelfishRequest(
         includeMarkdown: body.includeMarkdown,
       });
       return jsonResponse(result);
-    } catch (err: unknown) {
+    } catch (err) {
       return jsonResponse(
         {
           error:
@@ -233,7 +233,7 @@ export async function handleBabelfishRequest(
     }
   }
 
-  if (path === '/babelfish/explain' && req.method === 'POST': unknown) {
+  if (path === '/babelfish/explain' && req.method === 'POST') {
     try {
       const body = (await req.json()) as BabelfishExplainRequestBody;
       if (!body.scope) return jsonResponse({ error: 'scope is required' }, 400);
@@ -245,7 +245,7 @@ export async function handleBabelfishRequest(
         includeGg: body.includeGg,
       });
       return jsonResponse(result);
-    } catch (err: unknown) {
+    } catch (err) {
       return jsonResponse(
         {
           error:
@@ -256,12 +256,12 @@ export async function handleBabelfishRequest(
     }
   }
 
-  if (path === '/babelfish/gnarly/compile' && req.method === 'POST': unknown) {
+  if (path === '/babelfish/gnarly/compile' && req.method === 'POST') {
     try {
       const body = (await req.json()) as BabelfishGnarlyRequestBody;
       const result = await compileBabelfishGnarly(buildGnarlyRequest(body));
       return jsonResponse(result);
-    } catch (err: unknown) {
+    } catch (err) {
       return jsonResponse(
         {
           error:
@@ -272,14 +272,14 @@ export async function handleBabelfishRequest(
     }
   }
 
-  if (path === '/babelfish/gnarly/fastest' && req.method === 'POST': unknown) {
+  if (path === '/babelfish/gnarly/fastest' && req.method === 'POST') {
     try {
       const body = (await req.json()) as BabelfishGnarlyRequestBody;
       const result = await previewBabelfishGnarlyFastest(
         buildGnarlyRequest(body)
       );
       return jsonResponse(result);
-    } catch (err: unknown) {
+    } catch (err) {
       return jsonResponse(
         {
           error:
@@ -290,14 +290,14 @@ export async function handleBabelfishRequest(
     }
   }
 
-  if (path === '/babelfish/gnarly/from' && req.method === 'POST': unknown) {
+  if (path === '/babelfish/gnarly/from' && req.method === 'POST') {
     try {
       const body = (await req.json()) as BabelfishGnarlyRequestBody;
       const result = await createGnarlyFromBabelfishScope(
         buildGnarlyFromRequest(body)
       );
       return jsonResponse(result);
-    } catch (err: unknown) {
+    } catch (err) {
       return jsonResponse(
         {
           error:
@@ -308,7 +308,7 @@ export async function handleBabelfishRequest(
     }
   }
 
-  if (path === '/babelfish/sync-watch' && req.method === 'POST': unknown) {
+  if (path === '/babelfish/sync-watch' && req.method === 'POST') {
     try {
       const body = (await req.json()) as BabelfishSyncWatchRequestBody;
       if (!body.sourceFile) return jsonResponse({ error: 'sourceFile is required' }, 400);
@@ -322,7 +322,7 @@ export async function handleBabelfishRequest(
       };
       
       return jsonResponse(result);
-    } catch (err: unknown) {
+    } catch (err) {
       return jsonResponse(
         { error: err instanceof Error ? err.message : 'Babelfish sync-watch failed' },
         400

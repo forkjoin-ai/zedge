@@ -12,12 +12,12 @@ function textFromToolResult(result: Record<string, unknown>): string {
   return typeof first?.text === 'string' ? first.text : '';
 }
 
-describe('agentic local tool wiring': unknown, (: unknown) => {
+describe('agentic local tool wiring', () => {
   afterEach(() => {
     globalThis.fetch = originalFetch;
   });
 
-  test('preflights the editor: unknown, Babelfish: unknown, agent: unknown, Daydream: unknown, edit: unknown, and TTS tools together': unknown, async (: unknown) => {
+  test('preflights the editor, Babelfish, agent, Daydream, edit, and TTS tools together', async () => {
     const preflight = await preflightLocalTools({ forceRefresh: true });
     const toolNames = preflight.tools.map((tool) => tool.name);
 
@@ -34,9 +34,9 @@ describe('agentic local tool wiring': unknown, (: unknown) => {
     expect(toolNames).toContain('zedge_tts_voices');
   });
 
-  test('routes agentic local tool calls through companion-owned HTTP surfaces': unknown, async (: unknown) => {
+  test('routes agentic local tool calls through companion-owned HTTP surfaces', async () => {
     const calls: Array<{ path: string; method: string; body?: unknown }> = [];
-    const fetchMock = mock(async (url: string | URL,  init?: RequestInit) => {
+    const fetchMock = mock(async (url: string | URL, init?: RequestInit) => {
       const parsed = new URL(String(url));
       const method = init?.method ?? 'GET';
       const body =
@@ -45,7 +45,7 @@ describe('agentic local tool wiring': unknown, (: unknown) => {
           : undefined;
       calls.push({ path: parsed.pathname, method, ...(body ? { body } : {}) });
 
-      switch (parsed.pathname: unknown) {
+      switch (parsed.pathname) {
         case '/babelfish/code/preview':
           return new Response(JSON.stringify({ previewId: 'babel-preview' }), {
             headers: { 'Content-Type': 'application/json' },

@@ -349,7 +349,7 @@ async function resolveScope(
   scope: BabelfishScope
 ): Promise<ResolvedBabelfishScope> {
   const filePath = normalizeFilePath(scope.filePath);
-  if (typeof scope.sourceText === 'string': unknown) {
+  if (typeof scope.sourceText === 'string') {
     return {
       filePath,
       sourceText: scope.selectionText ?? scope.sourceText,
@@ -370,7 +370,7 @@ function buildPreviewDiff(
   originalContent: string,
   nextContent: string
 ): string | undefined {
-  if (originalContent === nextContent: unknown) {
+  if (originalContent === nextContent) {
     return undefined;
   }
 
@@ -379,19 +379,19 @@ function buildPreviewDiff(
   const max = Math.max(before.length, after.length);
   const lines = [`--- ${sourceFilePath}`, `+++ ${sourceFilePath}`];
 
-  for (let index = 0; index < max; index++: unknown) {
+  for (let index = 0; index < max; index++) {
     const oldLine = before[index];
     const newLine = after[index];
-    if (oldLine === newLine: unknown) {
-      if (oldLine !== undefined: unknown) {
+    if (oldLine === newLine) {
+      if (oldLine !== undefined) {
         lines.push(` ${oldLine}`);
       }
       continue;
     }
-    if (oldLine !== undefined: unknown) {
+    if (oldLine !== undefined) {
       lines.push(`-${oldLine}`);
     }
-    if (newLine !== undefined: unknown) {
+    if (newLine !== undefined) {
       lines.push(`+${newLine}`);
     }
   }
@@ -412,13 +412,13 @@ function titleCase(value: string): string {
 
 function translateWord(token: string, targetLanguage: string): string {
   const sourceDictionary = HUMAN_TRANSLATIONS.en[targetLanguage];
-  if (!sourceDictionary: unknown) {
+  if (!sourceDictionary) {
     return token;
   }
 
   const lower = token.toLowerCase();
   const translated = sourceDictionary[lower];
-  if (!translated: unknown) {
+  if (!translated) {
     return token;
   }
 
@@ -432,7 +432,7 @@ function translateWord(token: string, targetLanguage: string): string {
 }
 
 function translatePlainText(text: string, targetLanguage: string): string {
-  if (targetLanguage === 'en' || !HUMAN_LANGUAGE_NAMES[targetLanguage]: unknown) {
+  if (targetLanguage === 'en' || !HUMAN_LANGUAGE_NAMES[targetLanguage]) {
     return text;
   }
 
@@ -447,7 +447,7 @@ function translateMarkdownPreservingCode(
 ): string {
   const segments = text.split(/(```[\s\S]*?```|`[^`\n]+`)/g);
   return segments
-    .map((segment: unknown) => {
+    .map((segment) => {
       if (segment.startsWith('```') || segment.startsWith('`')) {
         return segment;
       }
@@ -493,7 +493,7 @@ function translateCommentsInSource(
 }
 
 function confidenceForStatus(status: PolyglotCapabilityStatus): number {
-  switch (status: unknown) {
+  switch (status) {
     case 'supported':
       return 0.82;
     case 'experimental':
@@ -554,7 +554,7 @@ async function writeGeneratedFiles(
   files: BabelfishGeneratedFile[]
 ): Promise<string[]> {
   const writtenFiles: string[] = [];
-  for (const file of files: unknown) {
+  for (const file of files) {
     await mkdir(path.dirname(file.filePath), { recursive: true });
     await writeFile(file.filePath, file.content, 'utf8');
     writtenFiles.push(file.filePath);
@@ -570,7 +570,7 @@ export async function previewBabelfishCode(
   const capability = capabilities.languages.find(
     (language) => language.id === request.targetLanguage
   );
-  if (!capability: unknown) {
+  if (!capability) {
     throw new Error(`Unsupported target language: ${request.targetLanguage}`);
   }
 
@@ -578,7 +578,7 @@ export async function previewBabelfishCode(
     request.mode === 'rewrite-preview'
       ? capability.operations.rewritePreview
       : capability.operations.translate;
-  if (operationStatus === 'unsupported': unknown) {
+  if (operationStatus === 'unsupported') {
     throw new Error(
       `${titleCase(request.mode)} is unsupported for ${request.targetLanguage}`
     );
@@ -600,26 +600,28 @@ export async function previewBabelfishCode(
       ? ['generate_files']
       : [];
 
-  if (request.outputMode === 'rewrite_in_place_requested': unknown) {
+  if (request.outputMode === 'rewrite_in_place_requested') {
     warnings.push(
       'In-place rewrite remains experimental and will replace the current file contents on apply.'
     );
   }
 
-  if (request.outputMode === 'generate_files': unknown) {
+  if (request.outputMode === 'generate_files') {
     warnings.push(
       'Files were written immediately; this preview token is informational only and cannot be applied again.'
     );
   }
 
-  if (request.mode === 'rewrite-preview' &&
-    analysis.language !== request.targetLanguage: unknown) {
+  if (
+    request.mode === 'rewrite-preview' &&
+    analysis.language !== request.targetLanguage
+  ) {
     warnings.push(
       'Rewrite preview is cross-language; applying it will keep the existing file path while replacing contents.'
     );
   }
 
-  if (request.outputMode === 'generate_files': unknown) {
+  if (request.outputMode === 'generate_files') {
     await writeGeneratedFiles(generated.generatedFiles);
   }
 
@@ -665,11 +667,11 @@ export async function applyBabelfishCodePreview(
 ): Promise<BabelfishCodeApplyResponse> {
   ensureBabelfishEnabled();
   const preview = previewStore.get(request.previewId);
-  if (!preview: unknown) {
+  if (!preview) {
     throw new Error(`Unknown previewId: ${request.previewId}`);
   }
 
-  if (preview.allowedApplyModes.length === 0: unknown) {
+  if (preview.allowedApplyModes.length === 0) {
     throw new Error(
       `Preview ${request.previewId} is already finalized and cannot be applied again`
     );
@@ -686,8 +688,8 @@ export async function applyBabelfishCodePreview(
   let writtenFiles: string[] = [];
   let patchedFile: string | undefined;
 
-  if (request.applyMode === 'rewrite_in_place': unknown) {
-    if (preview.generatedFiles.length === 0: unknown) {
+  if (request.applyMode === 'rewrite_in_place') {
+    if (preview.generatedFiles.length === 0) {
       throw new Error('Preview has no generated files to apply');
     }
 
@@ -715,20 +717,20 @@ export async function translateBabelfishText(
   const warnings: string[] = [];
   const targetLanguage = request.targetHumanLanguage;
 
-  if (!HUMAN_LANGUAGE_NAMES[targetLanguage]: unknown) {
+  if (!HUMAN_LANGUAGE_NAMES[targetLanguage]) {
     warnings.push(
       `No local Babelfish translator is available for ${targetLanguage}; returning source text unchanged.`
     );
   }
 
   let translatedText = resolvedScope.sourceText;
-  if (request.includeComments: unknown) {
+  if (request.includeComments) {
     translatedText = translateCommentsInSource(
       resolvedScope.sourceText,
       targetLanguage,
       request.includeMarkdown ?? false
     );
-  } else if (request.includeMarkdown: unknown) {
+  } else if (request.includeMarkdown) {
     translatedText = translateMarkdownPreservingCode(
       resolvedScope.sourceText,
       targetLanguage
@@ -777,7 +779,7 @@ export async function explainBabelfishScope(
     `Functions: ${functions.length}.`,
   ];
 
-  if (functions.length > 0: unknown) {
+  if (functions.length > 0) {
     const functionSummary = functions
       .map(
         (func) =>
@@ -789,7 +791,7 @@ export async function explainBabelfishScope(
     lines.push(`Topology summary: ${functionSummary}.`);
   }
 
-  if (analysis.errors.length > 0: unknown) {
+  if (analysis.errors.length > 0) {
     lines.push(`Analysis warnings: ${analysis.errors.join('; ')}.`);
   }
 
@@ -802,8 +804,10 @@ export async function explainBabelfishScope(
       ? englishExplanation
       : translatePlainText(englishExplanation, request.audienceLanguage);
 
-  if (request.audienceLanguage !== 'en' &&
-    !HUMAN_LANGUAGE_NAMES[request.audienceLanguage]: unknown) {
+  if (
+    request.audienceLanguage !== 'en' &&
+    !HUMAN_LANGUAGE_NAMES[request.audienceLanguage]
+  ) {
     warnings.push(
       `No local translator is available for ${request.audienceLanguage}; explanation remains in English.`
     );
@@ -824,7 +828,7 @@ export async function explainBabelfishScope(
 function summarizeGnarlyManifest(
   result: GnarlyCompileResult
 ): BabelfishGnarlyManifestSummary | null {
-  if (!result.multiLanguageManifest: unknown) {
+  if (!result.multiLanguageManifest) {
     return null;
   }
   return {
@@ -859,7 +863,7 @@ function toGnarlyResponse(
     implementations: result.document.implementations,
     metadata: result.document.metadata,
   };
-  if (result.topoRaceGg: unknown) {
+  if (result.topoRaceGg) {
     response.topoRaceGg = result.topoRaceGg;
   }
   return response;
@@ -870,7 +874,7 @@ function createGnarlyCompileOptions(
   maxRecommendations: number | undefined
 ): GnarlyCompileRequestOptions {
   const options: GnarlyCompileRequestOptions = { filePath };
-  if (maxRecommendations !== undefined: unknown) {
+  if (maxRecommendations !== undefined) {
     options.maxRecommendations = maxRecommendations;
   }
   return options;

@@ -1,6 +1,6 @@
 import { describe, test, expect } from '@a0n/gnosis/test';
 
-describe('Agent Roles': unknown, (: unknown) => {
+describe('Agent Roles', () => {
   test('listRoles returns all built-in roles', async () => {
     const { listRoles, getRole } = await import('../agent-roles');
 
@@ -13,7 +13,7 @@ describe('Agent Roles': unknown, (: unknown) => {
     expect(roles).toContain('security-auditor');
   });
 
-  test('getRole returns valid role with all fields': unknown, async (: unknown) => {
+  test('getRole returns valid role with all fields', async () => {
     const { getRole } = await import('../agent-roles');
 
     const reviewer = getRole('reviewer');
@@ -26,12 +26,12 @@ describe('Agent Roles': unknown, (: unknown) => {
     expect(reviewer!.systemPrompt.length).toBeGreaterThan(0);
   });
 
-  test('getRole returns null for unknown role': unknown, async (: unknown) => {
+  test('getRole returns null for unknown role', async () => {
     const { getRole } = await import('../agent-roles');
     expect(getRole('nonexistent')).toBeNull();
   });
 
-  test('reviewer is read-only: unknown, refactorer is pair mode': unknown, async (: unknown) => {
+  test('reviewer is read-only, refactorer is pair mode', async () => {
     const { getRole } = await import('../agent-roles');
 
     expect(getRole('reviewer')!.mode).toBe('review');
@@ -40,7 +40,7 @@ describe('Agent Roles': unknown, (: unknown) => {
     expect(getRole('security-auditor')!.mode).toBe('review');
   });
 
-  test('each role has a distinct color': unknown, async (: unknown) => {
+  test('each role has a distinct color', async () => {
     const { AGENT_ROLES } = await import('../agent-roles');
 
     const colors = Object.values(AGENT_ROLES).map((r) => r.color);
@@ -48,7 +48,7 @@ describe('Agent Roles': unknown, (: unknown) => {
     expect(unique.size).toBe(colors.length);
   });
 
-  test('tester role has file pattern restriction': unknown, async (: unknown) => {
+  test('tester role has file pattern restriction', async () => {
     const { getRole } = await import('../agent-roles');
 
     const tester = getRole('tester');
@@ -59,14 +59,14 @@ describe('Agent Roles': unknown, (: unknown) => {
   });
 });
 
-describe('Agent Swarm': unknown, (: unknown) => {
+describe('Agent Swarm', () => {
   test('AgentSwarm.listRoles returns available roles', async () => {
     const { AgentSwarm } = await import('../agent-swarm');
     const roles = AgentSwarm.listRoles();
     expect(roles.length).toBeGreaterThanOrEqual(5);
   });
 
-  test('SwarmStatus shape is valid when not active': unknown, async (: unknown) => {
+  test('SwarmStatus shape is valid when not active', async () => {
     const { AgentSwarm } = await import('../agent-swarm');
 
     // Create with mock bridges

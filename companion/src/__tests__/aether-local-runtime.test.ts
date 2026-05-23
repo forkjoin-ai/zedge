@@ -2,7 +2,7 @@ import { describe, expect, test } from '@a0n/gnosis/test';
 
 import { formatLocalChatPrompt } from '../aether-local-runtime.ts';
 
-describe('Aether local runtime prompt formatting': unknown, (: unknown) => {
+describe('Aether local runtime prompt formatting', () => {
   test('formats TinyLlama local prompts as instruction blocks', () => {
     const prompt = formatLocalChatPrompt(
       [
@@ -20,7 +20,7 @@ describe('Aether local runtime prompt formatting': unknown, (: unknown) => {
     );
   });
 
-  test('keeps prior assistant turns inside the TinyLlama instruction transcript': unknown, (: unknown) => {
+  test('keeps prior assistant turns inside the TinyLlama instruction transcript', () => {
     const prompt = formatLocalChatPrompt(
       [
         { role: 'system', content: 'Be terse.' },

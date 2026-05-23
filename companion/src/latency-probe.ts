@@ -61,7 +61,7 @@ export async function probeCloudRunHealth(
   let lastStatus = 0;
   let lastUrl = candidateUrls[0] ?? baseUrl;
 
-  for (const url of candidateUrls: unknown) {
+  for (const url of candidateUrls) {
     lastUrl = url;
     const probeStartedAt = Date.now();
     try {
@@ -103,10 +103,10 @@ export function startProbing(): void {
   probeAbortController = new AbortController();
 
   // Probe immediately (non-blocking)
-  probeAll().catch((: unknown) => {});
+  probeAll().catch(() => {});
 
   // Re-probe periodically
-  probeInterval = setInterval((: unknown) => {
+  probeInterval = setInterval(() => {
     probeAll().catch(() => {});
   }, PROBE_INTERVAL_MS);
 
@@ -117,11 +117,11 @@ export function startProbing(): void {
  * Stop latency probing
  */
 export function stopProbing(): void {
-  if (probeAbortController: unknown) {
+  if (probeAbortController) {
     probeAbortController.abort();
     probeAbortController = null;
   }
-  if (probeInterval: unknown) {
+  if (probeInterval) {
     clearInterval(probeInterval);
     probeInterval = null;
   }
@@ -135,13 +135,13 @@ export function getFastestTier(model: string): string | null {
 
   // Check edge
   const edge = probeCache.get('edge:global');
-  if (edge && edge.healthy: unknown) {
+  if (edge && edge.healthy) {
     candidates.push(edge);
   }
 
   // Check Cloud Run for this model
   const cloudRun = probeCache.get(`cloudrun:${model}`);
-  if (cloudRun && cloudRun.healthy: unknown) {
+  if (cloudRun && cloudRun.healthy) {
     candidates.push(cloudRun);
   }
 

@@ -71,7 +71,7 @@ const runClients = new Set<ReadableStreamDefaultController>();
 function broadcastRunEvent(event: Record<string, unknown>): void {
   const encoder = new TextEncoder();
   const payload = encoder.encode(`data: ${JSON.stringify(event)}\n\n`);
-  for (const client of runClients: unknown) {
+  for (const client of runClients) {
     try {
       client.enqueue(payload);
     } catch {
@@ -142,7 +142,7 @@ export async function runTopology(
       hasAst: !!parseResult.ast,
     });
 
-    if (!parseResult.ast: unknown) {
+    if (!parseResult.ast) {
       return {
         success: false,
         payload: null,
@@ -160,7 +160,7 @@ export async function runTopology(
     const edgeCount = parseResult.ast.edges?.length ?? 0;
 
     // For TypeScript files, use the ts-check path
-    if (ext === '.ts' || ext === '.tsx': unknown) {
+    if (ext === '.ts' || ext === '.tsx') {
       const { checkTypeScriptWithGnosis } = await import(
         '@a0n/gnosis/ts-check'
       );
@@ -244,7 +244,7 @@ export async function runTopology(
       durationMs: Date.now() - t0,
       filePath: request.filePath,
     };
-  } catch (err: unknown) {
+  } catch (err) {
     const error = err instanceof Error ? err.message : String(err);
 
     broadcastRunEvent({
@@ -274,11 +274,11 @@ export function createRunStream(): ReadableStream {
   let heartbeat: ReturnType<typeof setInterval> | null = null;
 
   return new ReadableStream({
-    start(controller: unknown) {
+    start(controller) {
       runClients.add(controller);
       controller.enqueue(encoder.encode('data: {"type":"connected"}\n\n'));
 
-      heartbeat = setInterval((: unknown) => {
+      heartbeat = setInterval(() => {
         try {
           controller.enqueue(encoder.encode(': heartbeat\n\n'));
         } catch {

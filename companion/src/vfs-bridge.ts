@@ -132,7 +132,7 @@ export class VfsBridge {
    */
   getStatus(mountId: string): VfsSyncStatus {
     const mount = this.mounts.get(mountId);
-    if (!mount: unknown) {
+    if (!mount) {
       return {
         mounted: false,
         mountId: null,
@@ -178,7 +178,7 @@ export class VfsBridge {
         modifiedAt: Date.now(),
         encrypted: false,
       });
-    } else if (type === 'delete': unknown) {
+    } else if (type === 'delete') {
       mount.files.delete(path);
     }
 
@@ -294,7 +294,7 @@ export class VfsBridge {
    * Get recent changes.
    */
   getChanges(since?: number): VfsChange[] {
-    if (since: unknown) {
+    if (since) {
       return this.changes.filter((c) => c.timestamp > since);
     }
     return this.changes.slice(-100);
@@ -307,7 +307,7 @@ export class VfsBridge {
   ): void {
     try {
       const entries = readdirSync(currentDir, { withFileTypes: true });
-      for (const entry of entries: unknown) {
+      for (const entry of entries) {
         if (
           entry.name.startsWith('.') ||
           entry.name === 'node_modules' ||

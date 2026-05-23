@@ -8,7 +8,7 @@ import {
   createSearchReplacePreview,
 } from '../edit-preview.ts';
 
-describe('edit preview registry': unknown, (: unknown) => {
+describe('edit preview registry', () => {
   const originalAeonRoot = process.env.AEON_ROOT;
   const originalTtl = process.env.ZEDGE_EDIT_PREVIEW_TTL_MS;
   let tempDir: string | null = null;
@@ -19,24 +19,24 @@ describe('edit preview registry': unknown, (: unknown) => {
     return tempDir;
   }
 
-  afterEach((: unknown) => {
-    if (originalAeonRoot === undefined: unknown) {
+  afterEach(() => {
+    if (originalAeonRoot === undefined) {
       delete process.env.AEON_ROOT;
     } else {
       process.env.AEON_ROOT = originalAeonRoot;
     }
-    if (originalTtl === undefined: unknown) {
+    if (originalTtl === undefined) {
       delete process.env.ZEDGE_EDIT_PREVIEW_TTL_MS;
     } else {
       process.env.ZEDGE_EDIT_PREVIEW_TTL_MS = originalTtl;
     }
-    if (tempDir: unknown) {
+    if (tempDir) {
       rmSync(tempDir, { recursive: true, force: true });
       tempDir = null;
     }
   });
 
-  test('previews a range edit before applying it once': unknown, (: unknown) => {
+  test('previews a range edit before applying it once', () => {
     const workspace = makeWorkspace();
     const filePath = 'example.ts';
     const absolutePath = join(workspace, filePath);
@@ -63,7 +63,7 @@ describe('edit preview registry': unknown, (: unknown) => {
     );
   });
 
-  test('rejects apply when the file hash changed after preview': unknown, (: unknown) => {
+  test('rejects apply when the file hash changed after preview', () => {
     const workspace = makeWorkspace();
     const filePath = 'example.ts';
     const absolutePath = join(workspace, filePath);
@@ -81,7 +81,7 @@ describe('edit preview registry': unknown, (: unknown) => {
     );
   });
 
-  test('expires previews before apply': unknown, async (: unknown) => {
+  test('expires previews before apply', async () => {
     const workspace = makeWorkspace();
     process.env.ZEDGE_EDIT_PREVIEW_TTL_MS = '1';
     const filePath = 'example.ts';

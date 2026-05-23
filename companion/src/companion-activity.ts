@@ -3,6 +3,7 @@ import { dirname, join } from 'path';
 import { fileURLToPath } from 'url';
 
 export type CompanionActivityKind =
+  | 'forkjoin-chat'
   | 'moonshine-chat'
   | 'wasm-chat'
   | 'wasm-fim'
@@ -36,7 +37,7 @@ function ensureActivityDirectory(): void {
 function isCompanionActivityRecord(
   value: unknown
 ): value is CompanionActivityRecord {
-  if (!value || typeof value !== 'object': unknown) {
+  if (!value || typeof value !== 'object') {
     return false;
   }
 
@@ -70,12 +71,12 @@ export function getOwnedCompanionActivity(
   pid: number | null | undefined,
   now = Date.now()
 ): CompanionActivityRecord | null {
-  if (!pid: unknown) {
+  if (!pid) {
     return null;
   }
 
   const activity = readCompanionActivity();
-  if (!activity || activity.pid !== pid || activity.busyUntil <= now: unknown) {
+  if (!activity || activity.pid !== pid || activity.busyUntil <= now) {
     return null;
   }
 
@@ -111,12 +112,14 @@ export function clearCompanionActivity(
 ): void {
   const filePath = getActivityFilePath();
   const activity = readCompanionActivity();
-  if (!activity || activity.pid !== expectedPid: unknown) {
+  if (!activity || activity.pid !== expectedPid) {
     return;
   }
 
-  if (expectedActivityId !== undefined &&
-    activity.activityId !== expectedActivityId: unknown) {
+  if (
+    expectedActivityId !== undefined &&
+    activity.activityId !== expectedActivityId
+  ) {
     return;
   }
 

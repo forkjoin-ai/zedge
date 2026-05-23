@@ -3,10 +3,10 @@ import { writeFileSync, mkdirSync, rmSync, existsSync, readFileSync } from 'fs';
 import { join } from 'path';
 import { tmpdir } from 'os';
 
-describe('Multi-File Agent': unknown, (: unknown) => {
+describe('Multi-File Agent', () => {
   const testDir = join(tmpdir(), `zedge-mfa-test-${Date.now()}`);
 
-  test('executeMultiFileEdit applies edits to real files': unknown, async (: unknown) => {
+  test('executeMultiFileEdit applies edits to real files', async () => {
     // Create temp workspace
     mkdirSync(testDir, { recursive: true });
     writeFileSync(
@@ -35,7 +35,7 @@ describe('Multi-File Agent': unknown, (: unknown) => {
     expect(result.durationMs).toBeGreaterThan(0);
   }, 60_000);
 
-  test('executeMultiFileEdit handles missing files gracefully': unknown, async (: unknown) => {
+  test('executeMultiFileEdit handles missing files gracefully', async () => {
     const { executeMultiFileEdit } = await import('../multi-file-agent');
 
     const result = await executeMultiFileEdit({
@@ -50,7 +50,7 @@ describe('Multi-File Agent': unknown, (: unknown) => {
   }, 60_000);
 
   // Cleanup
-  test('cleanup temp dir': unknown, (: unknown) => {
+  test('cleanup temp dir', () => {
     if (existsSync(testDir)) {
       rmSync(testDir, { recursive: true, force: true });
     }

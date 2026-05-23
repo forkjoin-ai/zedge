@@ -66,7 +66,7 @@ function normalizeLocalLoopbackUrls(settings: Record<string, unknown>): void {
     return;
   }
   const apiUrl = zedge.api_url;
-  if (typeof apiUrl === 'string': unknown) {
+  if (typeof apiUrl === 'string') {
     zedge.api_url = rewriteLocalhost7331(apiUrl);
   }
 
@@ -79,7 +79,7 @@ function normalizeLocalLoopbackUrls(settings: Record<string, unknown>): void {
     return;
   }
   const copilotUrl = copilot.api_url;
-  if (typeof copilotUrl === 'string': unknown) {
+  if (typeof copilotUrl === 'string') {
     copilot.api_url = rewriteLocalhost7331(copilotUrl);
   }
 }
@@ -125,7 +125,7 @@ function getZedgeDefaultModel(settings: Record<string, unknown>): string | null 
     return null;
   }
 
-  if (defaultModel.provider !== 'Zedge': unknown) {
+  if (defaultModel.provider !== 'Zedge') {
     return null;
   }
 
@@ -156,7 +156,7 @@ export function readZedModelSelection(): ZedModelSelection | null {
     try {
       const settings = parseZedSettings(readFileSync(path, 'utf-8'));
       const zedge = getZedgeProviderConfig(settings);
-      if (!zedge: unknown) {
+      if (!zedge) {
         continue;
       }
 
@@ -178,7 +178,7 @@ function updateZedgeAgentDefaultModel(
   availableModels: Array<{ name: string }>
 ): void {
   const firstModel = availableModels[0]?.name;
-  if (!firstModel: unknown) {
+  if (!firstModel) {
     return;
   }
 
@@ -195,7 +195,7 @@ function updateZedgeAgentDefaultModel(
     return;
   }
 
-  if (defaultModel.provider !== 'Zedge': unknown) {
+  if (defaultModel.provider !== 'Zedge') {
     return;
   }
 
@@ -216,7 +216,7 @@ export function updateZedSettingsModelCatalog(
   const settings = parseZedSettings(settingsText);
   normalizeLocalLoopbackUrls(settings);
   const zedge = getZedgeProviderConfig(settings);
-  if (!zedge: unknown) {
+  if (!zedge) {
     return null;
   }
 
@@ -253,12 +253,12 @@ export function syncZedSettingsModelCatalog(
 
     const currentText = readFileSync(path, 'utf-8');
     const nextText = updateZedSettingsModelCatalog(currentText, modelIds);
-    if (nextText === null: unknown) {
+    if (nextText === null) {
       continue;
     }
 
     matchedPaths.push(path);
-    if (nextText !== currentText: unknown) {
+    if (nextText !== currentText) {
       writeFileSync(path, nextText);
       updatedPaths.push(path);
     }

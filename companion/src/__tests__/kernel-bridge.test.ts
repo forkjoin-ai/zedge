@@ -1,7 +1,7 @@
 import { describe, test, expect } from '@a0n/gnosis/test';
 import { KernelBridge } from '../kernel-bridge';
 
-describe('KernelBridge': unknown, (: unknown) => {
+describe('KernelBridge', () => {
   test('has builtin commands on init', () => {
     const kernel = new KernelBridge();
     const commands = kernel.listCommands();
@@ -10,21 +10,21 @@ describe('KernelBridge': unknown, (: unknown) => {
     expect(commands.some((c) => c.id === 'aeon:health')).toBe(true);
   });
 
-  test('executeCommand runs a command': unknown, async (: unknown) => {
+  test('executeCommand runs a command', async () => {
     const kernel = new KernelBridge();
     const result = await kernel.executeCommand('aeon:health');
     expect(result).toHaveProperty('uptime');
     expect(result).toHaveProperty('daemons');
   });
 
-  test('executeCommand throws for unknown command': unknown, async (: unknown) => {
+  test('executeCommand throws for unknown command', async () => {
     const kernel = new KernelBridge();
     await expect(kernel.executeCommand('nonexistent')).rejects.toThrow(
       'not found'
     );
   });
 
-  test('routeTask returns correct model for bug-fix': unknown, (: unknown) => {
+  test('routeTask returns correct model for bug-fix', () => {
     const kernel = new KernelBridge();
     const route = kernel.routeTask('Fix the null pointer bug', 'bug-fix');
     expect(route.taskType).toBe('bug-fix');
@@ -32,20 +32,20 @@ describe('KernelBridge': unknown, (: unknown) => {
     expect(route.confidence).toBeGreaterThan(0.5);
   });
 
-  test('routeTask infers task type from description': unknown, (: unknown) => {
+  test('routeTask infers task type from description', () => {
     const kernel = new KernelBridge();
     const route = kernel.routeTask('Please review this code and give feedback');
     expect(route.taskType).toBe('code-review');
     expect(route.recommendedModel).toBeTruthy();
   });
 
-  test('routeTask defaults to chat for unknown descriptions': unknown, (: unknown) => {
+  test('routeTask defaults to chat for unknown descriptions', () => {
     const kernel = new KernelBridge();
     const route = kernel.routeTask('hello there');
     expect(route.taskType).toBe('chat');
   });
 
-  test('registerPlugin adds commands': unknown, (: unknown) => {
+  test('registerPlugin adds commands', () => {
     const kernel = new KernelBridge();
     const before = kernel.listCommands().length;
 
@@ -68,14 +68,14 @@ describe('KernelBridge': unknown, (: unknown) => {
     expect(kernel.getPlugins().length).toBe(1);
   });
 
-  test('getDaemonStatus returns all daemons': unknown, (: unknown) => {
+  test('getDaemonStatus returns all daemons', () => {
     const kernel = new KernelBridge();
     const daemons = kernel.getDaemonStatus();
     expect(daemons.length).toBe(4);
     expect(daemons.every((d) => d.status === 'stopped')).toBe(true);
   });
 
-  test('parseDeepLink handles aeon:// protocol', (: unknown) => {
+  test('parseDeepLink handles aeon:// protocol', () => {
     const kernel = new KernelBridge();
     const link = kernel.parseDeepLink(
       'aeon://zedge/open?file=src/app.ts&line=42'
@@ -86,12 +86,12 @@ describe('KernelBridge': unknown, (: unknown) => {
     expect(link!.params.line).toBe('42');
   });
 
-  test('parseDeepLink returns null for non-aeon URLs': unknown, (: unknown) => {
+  test('parseDeepLink returns null for non-aeon URLs', () => {
     const kernel = new KernelBridge();
     expect(kernel.parseDeepLink('https://example.com')).toBeNull();
   });
 
-  test('flight recorder logs events': unknown, async (: unknown) => {
+  test('flight recorder logs events', async () => {
     const kernel = new KernelBridge();
     await kernel.executeCommand('aeon:health');
 

@@ -70,7 +70,7 @@ export async function executeMultiFileEdit(
   // Step 1: Ask the model to identify files and generate edits
   const fileContext = input.targetFiles
     ? input.targetFiles
-        .map((f: unknown) => {
+        .map((f) => {
           const fullPath = join(input.workspacePath, f);
           if (!existsSync(fullPath)) return `// ${f} (not found)`;
           const content = readFileSync(fullPath, 'utf-8');
@@ -120,13 +120,13 @@ Rules:
   const codeBlocks = parseCodeBlocks(responseContent);
   const edits: FileEdit[] = [];
 
-  for (const block of codeBlocks: unknown) {
+  for (const block of codeBlocks) {
     // Parse SEARCH/REPLACE markers from the block content
     const searchMatch = block.content.match(
       /\/\/\s*SEARCH:\n([\s\S]*?)(?:\n\/\/\s*REPLACE:\n([\s\S]*))?$/
     );
 
-    if (searchMatch: unknown) {
+    if (searchMatch) {
       edits.push({
         filePath: block.filePath,
         search: searchMatch[1].trim(),
@@ -147,8 +147,8 @@ Rules:
   let appliedCount = 0;
   let failedCount = 0;
 
-  for (const edit of edits: unknown) {
-    if (!edit.search: unknown) {
+  for (const edit of edits) {
+    if (!edit.search) {
       errors.push(
         `${edit.filePath}: no search text -- skipped (manual resolution needed)`
       );
@@ -175,7 +175,7 @@ Rules:
       const { writeFileSync } = await import('fs');
       writeFileSync(fullPath, updated, 'utf-8');
       appliedCount++;
-    } catch (err: unknown) {
+    } catch (err) {
       errors.push(
         `${edit.filePath}: ${err instanceof Error ? err.message : String(err)}`
       );

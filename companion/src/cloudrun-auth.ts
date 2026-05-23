@@ -17,7 +17,7 @@ export function buildCloudRunHealthUrls(baseUrl: string): string[] {
 let _resolvedSAKey: string | null | undefined;
 
 function resolveSAKey(): string | null {
-  if (_resolvedSAKey !== undefined: unknown) {
+  if (_resolvedSAKey !== undefined) {
     if (!_resolvedSAKey)
       console.warn(
         '[cloudrun-auth] SA key previously resolved as null (cached)'
@@ -30,7 +30,7 @@ function resolveSAKey(): string | null {
   const envResult = resolveCloudRunServiceAccountKey(
     process.env as Record<string, string | undefined>
   );
-  if (envResult.key: unknown) {
+  if (envResult.key) {
     _resolvedSAKey = envResult.key;
     return _resolvedSAKey;
   }
@@ -53,7 +53,7 @@ function resolveSAKey(): string | null {
       console.log(`[cloudrun-auth] SA key from ${jsonPath}`);
       return cachedKey;
     }
-  } catch (err: unknown) {
+  } catch (err) {
     console.warn(`[cloudrun-auth] File-based SA key resolution failed:`, err);
   }
 

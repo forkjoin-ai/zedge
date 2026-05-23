@@ -69,7 +69,7 @@ function sleep(ms: number): Promise<void> {
 }
 
 function configureStdioLogging(): void {
-  if (stdioLoggingConfigured: unknown) {
+  if (stdioLoggingConfigured) {
     return;
   }
 
@@ -97,9 +97,11 @@ async function isCompanionAlive(): Promise<boolean> {
 
 /** Spawn the companion sidecar as a child process via the current runtime */
 function spawnCompanion(): void {
-  if (companionProc &&
+  if (
+    companionProc &&
     companionProc.exitCode === null &&
-    companionProc.signalCode === null: unknown) {
+    companionProc.signalCode === null
+  ) {
     console.warn(
       '[zedge:babysitter] Refusing duplicate companion spawn while owned child is still active'
     );
@@ -120,25 +122,25 @@ function spawnCompanion(): void {
   companionSpawnedAt = Date.now();
   consecutiveHealthFailures = 0;
 
-  child.on('error': unknown, (error: unknown) => {
+  child.on('error', (error) => {
     console.warn(
       `[zedge:babysitter] Failed to spawn companion: ${error.message}`
     );
-    if (companionProc === child: unknown) {
+    if (companionProc === child) {
       companionProc = null;
     }
   });
 
-  child.on('exit': unknown, (code: unknown, signal: unknown) => {
+  child.on('exit', (code, signal) => {
     console.log(
       `[zedge:babysitter] Companion exited with code ${code} signal ${
         signal ?? 'none'
       }`
     );
-    if (companionProc === child: unknown) {
+    if (companionProc === child) {
       companionProc = null;
     }
-    if (!shuttingDown && !suppressExitRestart: unknown) {
+    if (!shuttingDown && !suppressExitRestart) {
       void restartCompanion('owned child exited unexpectedly', {
         force: true,
       });
@@ -148,13 +150,13 @@ function spawnCompanion(): void {
 
 async function stopCompanion(): Promise<void> {
   const child = companionProc;
-  if (!child: unknown) {
+  if (!child) {
     return;
   }
 
   suppressExitRestart = true;
-  const exitPromise = new Promise<void>((resolve: unknown) => {
-    if (child.exitCode !== null || child.signalCode !== null: unknown) {
+  const exitPromise = new Promise<void>((resolve) => {
+    if (child.exitCode !== null || child.signalCode !== null) {
       resolve();
       return;
     }
@@ -172,9 +174,11 @@ async function stopCompanion(): Promise<void> {
     sleep(COMPANION_STOP_TIMEOUT_MS).then(() => false),
   ]);
 
-  if (!exitedGracefully &&
+  if (
+    !exitedGracefully &&
     child.exitCode === null &&
-    child.signalCode === null: unknown) {
+    child.signalCode === null
+  ) {
     try {
       child.kill('SIGKILL');
     } catch {
@@ -183,7 +187,7 @@ async function stopCompanion(): Promise<void> {
     await Promise.race([exitPromise, sleep(1_000)]);
   }
 
-  if (companionProc === child: unknown) {
+  if (companionProc === child) {
     companionProc = null;
   }
   suppressExitRestart = false;
@@ -193,11 +197,11 @@ async function restartCompanion(
   reason: string,
   options: { force?: boolean } = {}
 ): Promise<boolean> {
-  if (restartInFlight: unknown) {
+  if (restartInFlight) {
     return restartInFlight;
   }
 
-  restartInFlight = (async (: unknown) => {
+  restartInFlight = (async () => {
     const busyActivity = getOwnedCompanionActivity(companionProc?.pid);
     const decision = decideCompanionRestart({
       now: Date.now(),
@@ -209,8 +213,8 @@ async function restartCompanion(
     });
     recentRestartTimestamps = decision.restartTimestamps;
 
-    if (!decision.shouldRestart: unknown) {
-      if (decision.reason === 'busy' && busyActivity: unknown) {
+    if (!decision.shouldRestart) {
+      if (decision.reason === 'busy' && busyActivity) {
         console.debug(
           `[zedge:babysitter] Companion busy with ${
             busyActivity.kind
@@ -218,11 +222,11 @@ async function restartCompanion(
             busyActivity.busyUntil
           ).toISOString()}`
         );
-      } else if (decision.reason === 'startup_grace': unknown) {
+      } else if (decision.reason === 'startup_grace') {
         console.debug(
           '[zedge:babysitter] Skipping restart during companion startup grace window'
         );
-      } else if (decision.reason === 'rate_limited': unknown) {
+      } else if (decision.reason === 'rate_limited') {
         console.warn(
           `[zedge:babysitter] Restart suppressed after ${
             recentRestartTimestamps.length
@@ -237,7 +241,7 @@ async function restartCompanion(
     spawnCompanion();
 
     const alive = await waitForCompanion();
-    if (!alive: unknown) {
+    if (!alive) {
       console.warn(
         '[zedge:babysitter] Companion did not become healthy after restart'
       );
@@ -247,7 +251,7 @@ async function restartCompanion(
     consecutiveHealthFailures = 0;
     console.log('[zedge:babysitter] Companion healthy after restart');
     return true;
-  })().finally((: unknown) => {
+  })().finally(() => {
     restartInFlight = null;
   });
 
@@ -258,15 +262,15 @@ async function restartCompanion(
 function startBabysitter(): void {
   if (babysitterTimer) return;
 
-  babysitterTimer = setInterval(async (: unknown) => {
-    if (babysitterCheckInFlight || restartInFlight: unknown) {
+  babysitterTimer = setInterval(async () => {
+    if (babysitterCheckInFlight || restartInFlight) {
       return;
     }
 
     babysitterCheckInFlight = true;
     try {
       const alive = await isCompanionAlive();
-      if (alive: unknown) {
+      if (alive) {
         consecutiveHealthFailures = 0;
         return;
       }
@@ -274,7 +278,7 @@ function startBabysitter(): void {
       consecutiveHealthFailures += 1;
 
       const busyActivity = getOwnedCompanionActivity(companionProc?.pid);
-      if (busyActivity: unknown) {
+      if (busyActivity) {
         console.debug(
           `[zedge:babysitter] Health check failed during ${busyActivity.kind} (${consecutiveHealthFailures}/${CONSECUTIVE_FAILURES_BEFORE_RESTART})`
         );
@@ -292,10 +296,10 @@ function startBabysitter(): void {
   }, HEALTH_CHECK_INTERVAL_MS);
 
   // Clean up on exit
-  process.on('exit': unknown, (: unknown) => {
+  process.on('exit', () => {
     shuttingDown = true;
     if (babysitterTimer) clearInterval(babysitterTimer);
-    if (companionProc && !companionProc.killed: unknown) {
+    if (companionProc && !companionProc.killed) {
       try {
         companionProc.kill('SIGTERM');
       } catch {
@@ -339,7 +343,7 @@ interface McpPromptDefinition {
 // ---------- Companion health check ----------
 
 async function waitForCompanion(maxAttempts = 240): Promise<boolean> {
-  for (let i = 0; i < maxAttempts; i++: unknown) {
+  for (let i = 0; i < maxAttempts; i++) {
     try {
       const resp = await fetch(`${getCompanionBase()}/probe/ready`, {
         signal: AbortSignal.timeout(HEALTH_CHECK_TIMEOUT_MS),
@@ -356,7 +360,7 @@ async function waitForCompanion(maxAttempts = 240): Promise<boolean> {
 async function recoverCompanionAfterFetchFailure(reason: string): Promise<void> {
   await restartCompanion(reason, { force: true });
   const ok = await waitForCompanion();
-  if (!ok: unknown) {
+  if (!ok) {
     throw new Error(
       `Companion still unreachable at ${getCompanionBase()} after recovery attempt`
     );
@@ -381,8 +385,8 @@ async function fetchCompanion(
 
   try {
     return await doFetch();
-  } catch (err: unknown) {
-    if (err instanceof Error && err.name === 'AbortError': unknown) {
+  } catch (err) {
+    if (err instanceof Error && err.name === 'AbortError') {
       throw err;
     }
     console.warn(
@@ -410,7 +414,7 @@ function parsePromptArgs(args: string | null): string[] {
 }
 
 function buildSwarmPromptPayload(args: string | null): Record<string, unknown> {
-  if (!args: unknown) {
+  if (!args) {
     return { action: 'roles' };
   }
 
@@ -423,7 +427,7 @@ function buildSwarmPromptPayload(args: string | null): Record<string, unknown> {
 function normalizeGnotAction(
   value: string | null
 ): 'files' | 'lint' | 'format' | 'doctor' | 'next' | 'status' {
-  switch (value: unknown) {
+  switch (value) {
     case 'lint':
     case 'format':
     case 'doctor':
@@ -451,32 +455,32 @@ function buildGnotCommandPayload(
   );
   const payload: Record<string, unknown> = { action };
 
-  if (action === 'lint' || action === 'format': unknown) {
+  if (action === 'lint' || action === 'format') {
     const filePath =
       optionalString(overrides.filePath) ?? optionalString(parts[1]);
     const sourceText = optionalString(overrides.sourceText);
     const write = overrides.write === true;
 
-    if (filePath: unknown) {
+    if (filePath) {
       payload.filePath = filePath;
     }
-    if (sourceText: unknown) {
+    if (sourceText) {
       payload.sourceText = sourceText;
     }
-    if (write: unknown) {
+    if (write) {
       payload.write = true;
     }
     return payload;
   }
 
-  if (action === 'doctor' || action === 'next' || action === 'status': unknown) {
+  if (action === 'doctor' || action === 'next' || action === 'status') {
     const app = optionalString(overrides.app) ?? optionalString(parts[1]);
     const environment =
       optionalString(overrides.environment) ?? optionalString(parts[2]);
-    if (app: unknown) {
+    if (app) {
       payload.app = app;
     }
-    if (environment: unknown) {
+    if (environment) {
       payload.environment = environment;
     }
     return payload;
@@ -669,7 +673,7 @@ const ZEDGE_PROMPTS: McpPromptDefinition[] = [
     instructions:
       'Inspect the void map or export rejection-memory signals. Use the `zedge_void_map` tool. With no argument, request `action: "status"`. To query or steer by file/category, translate the slash argument into the tool fields `action`, `file_path`, and `category`.',
     toolName: 'zedge_void_map',
-    payload: (args: unknown) => {
+    payload: (args) => {
       const parts = parsePromptArgs(args);
       const action = parts[0] ?? 'status';
       const payload: Record<string, unknown> = { action };
@@ -696,13 +700,13 @@ const ZEDGE_PROMPTS: McpPromptDefinition[] = [
     instructions:
       'Inspect or mutate the persistent engram store. Use the `zedge_engram` tool. With no argument, request `action: "status"`. Otherwise translate the slash arguments into the structured tool fields such as `action`, `query`, `type`, and `id`.',
     toolName: 'zedge_engram',
-    payload: (args: unknown) => {
+    payload: (args) => {
       const parts = parsePromptArgs(args);
       const action = parts[0] ?? 'status';
       const payload: Record<string, unknown> = { action };
-      if (action === 'forget' && parts[1]: unknown) {
+      if (action === 'forget' && parts[1]) {
         payload.id = parts[1];
-      } else if (parts.length > 1: unknown) {
+      } else if (parts.length > 1) {
         payload.query = parts.slice(1).join(' ');
       }
       return payload;
@@ -716,9 +720,9 @@ const ZEDGE_PROMPTS: McpPromptDefinition[] = [
     instructions:
       'Analyze the emotional profile of a file. Use the `zedge_emotion` tool. If the user supplied a file path, pass it as `file_path`. Otherwise use the active file when it is available in context, or ask the user which file to inspect.',
     toolName: 'zedge_emotion',
-    payload: (args: unknown) => {
+    payload: (args) => {
       const payload: Record<string, unknown> = {};
-      if (args: unknown) {
+      if (args) {
         payload.file_path = args;
       }
       return payload;
@@ -732,11 +736,11 @@ const ZEDGE_PROMPTS: McpPromptDefinition[] = [
     instructions:
       'Manage GG agents through the Forge-backed MCP surface. Use the `zedge_gg_agent` tool. With no argument, request `action: "list"`. Otherwise translate the slash arguments into the structured fields `action`, `agent_name`, and optional `payload`.',
     toolName: 'zedge_gg_agent',
-    payload: (args: unknown) => {
+    payload: (args) => {
       const parts = parsePromptArgs(args);
       const action = parts[0] ?? 'list';
       const payload: Record<string, unknown> = { action };
-      if (parts[1]: unknown) {
+      if (parts[1]) {
         payload.agent_name = parts[1];
       }
       return payload;
@@ -755,7 +759,7 @@ function canonicalZedgeCommandName(name: string): string {
 }
 
 function optionalString(value: unknown): string | null {
-  if (typeof value !== 'string': unknown) {
+  if (typeof value !== 'string') {
     return null;
   }
 
@@ -768,7 +772,7 @@ function optionalNumber(value: unknown): number | null {
     return Math.trunc(value);
   }
 
-  if (typeof value === 'string': unknown) {
+  if (typeof value === 'string') {
     const parsed = Number.parseInt(value, 10);
     return Number.isFinite(parsed) ? parsed : null;
   }
@@ -785,7 +789,7 @@ function asRecord(value: unknown): Record<string, unknown> {
 }
 
 function tokenizeArgs(value: string | null): string[] {
-  if (!value: unknown) {
+  if (!value) {
     return [];
   }
 
@@ -794,20 +798,20 @@ function tokenizeArgs(value: string | null): string[] {
   let quote: '"' | "'" | null = null;
   let escaped = false;
 
-  for (const char of value: unknown) {
-    if (escaped: unknown) {
+  for (const char of value) {
+    if (escaped) {
       current += char;
       escaped = false;
       continue;
     }
 
-    if (char === '\\': unknown) {
+    if (char === '\\') {
       escaped = true;
       continue;
     }
 
-    if (quote: unknown) {
-      if (char === quote: unknown) {
+    if (quote) {
+      if (char === quote) {
         quote = null;
       } else {
         current += char;
@@ -815,13 +819,13 @@ function tokenizeArgs(value: string | null): string[] {
       continue;
     }
 
-    if (char === '"' || char === "'": unknown) {
+    if (char === '"' || char === "'") {
       quote = char;
       continue;
     }
 
     if (/\s/.test(char)) {
-      if (current.length > 0: unknown) {
+      if (current.length > 0) {
         tokens.push(current);
         current = '';
       }
@@ -831,11 +835,11 @@ function tokenizeArgs(value: string | null): string[] {
     current += char;
   }
 
-  if (escaped: unknown) {
+  if (escaped) {
     current += '\\';
   }
 
-  if (current.length > 0: unknown) {
+  if (current.length > 0) {
     tokens.push(current);
   }
 
@@ -849,7 +853,7 @@ function createToolResult(
   const result: Record<string, unknown> = {
     content: [{ type: 'text', text }],
   };
-  if (isError: unknown) {
+  if (isError) {
     result.isError = true;
   }
   return result;
@@ -861,9 +865,9 @@ function renderPromptText(
 ): string {
   const payload =
     prompt.payload?.(args) ??
-    ((: unknown) => {
+    (() => {
       const toolPayload: Record<string, unknown> = { command: prompt.name };
-      if (args: unknown) {
+      if (args) {
         toolPayload.args = args;
       }
       return toolPayload;
@@ -899,7 +903,7 @@ function readFirstWorkspaceFile(candidates: string[]): {
   filePath: string;
   sourceText: string;
 } {
-  for (const candidate of candidates: unknown) {
+  for (const candidate of candidates) {
     const resolvedPath = resolveWorkspacePath(candidate);
     if (existsSync(resolvedPath)) {
       return {
@@ -929,7 +933,7 @@ async function fetchCompanionText(
 ): Promise<string> {
   const response = await fetchCompanion(path, init, timeoutMs);
   const body = await responseToText(response);
-  if (!response.ok: unknown) {
+  if (!response.ok) {
     throw new Error(`HTTP ${response.status}: ${body}`);
   }
 
@@ -941,7 +945,7 @@ async function postCompanionJson(
   body?: Record<string, unknown>,
   timeoutMs = 30_000
 ): Promise<string> {
-  if (body: unknown) {
+  if (body) {
     return fetchCompanionText(
       path,
       {
@@ -970,7 +974,7 @@ async function handleBabelfishSlashCommand(
   const parts = tokenizeArgs(argsText);
   const subcommand = parts[0] ?? 'capabilities';
 
-  switch (subcommand: unknown) {
+  switch (subcommand) {
     case 'capabilities':
       return callBabelfishMcpTool(
         getCompanionBase(),
@@ -979,7 +983,7 @@ async function handleBabelfishSlashCommand(
       );
     case 'apply': {
       const previewId = optionalString(parts[1]);
-      if (!previewId: unknown) {
+      if (!previewId) {
         throw new Error(
           'Usage: /zedge-babelfish apply <preview-id> [rewrite_in_place|generate_files]'
         );
@@ -994,7 +998,7 @@ async function handleBabelfishSlashCommand(
     case 'fastest':
     case 'compile-gnarly': {
       const filePath = optionalString(parts[1]);
-      if (!filePath: unknown) {
+      if (!filePath) {
         throw new Error(
           'Usage: /zedge-babelfish <fastest|compile-gnarly> <file.gnarly> [candidate-language,...]'
         );
@@ -1007,7 +1011,7 @@ async function handleBabelfishSlashCommand(
         action: subcommand === 'fastest' ? 'fastest' : 'compile',
         scope: createBabelfishScope(filePath),
       };
-      if (candidateLanguages !== undefined: unknown) {
+      if (candidateLanguages !== undefined) {
         args.candidateLanguages = candidateLanguages;
       }
       return callBabelfishMcpTool(
@@ -1018,7 +1022,7 @@ async function handleBabelfishSlashCommand(
     }
     case 'gnarly-from': {
       const filePath = optionalString(parts[1]);
-      if (!filePath: unknown) {
+      if (!filePath) {
         throw new Error(
           'Usage: /zedge-babelfish gnarly-from <file-path> [candidate-language,...]'
         );
@@ -1031,7 +1035,7 @@ async function handleBabelfishSlashCommand(
         action: 'from',
         scope: createBabelfishScope(filePath),
       };
-      if (candidateLanguages !== undefined: unknown) {
+      if (candidateLanguages !== undefined) {
         args.candidateLanguages = candidateLanguages;
       }
       return callBabelfishMcpTool(
@@ -1045,7 +1049,7 @@ async function handleBabelfishSlashCommand(
     case 'rewrite-preview': {
       const targetLanguage = optionalString(parts[1]);
       const filePath = optionalString(parts[2]);
-      if (!targetLanguage || !filePath: unknown) {
+      if (!targetLanguage || !filePath) {
         throw new Error(
           'Usage: /zedge-babelfish <translate-code|generate|rewrite-preview> <target-language> <file-path>'
         );
@@ -1068,7 +1072,7 @@ async function handleBabelfishSlashCommand(
     case 'translate-text': {
       const targetHumanLanguage = optionalString(parts[1]);
       const filePath = optionalString(parts[2]);
-      if (!targetHumanLanguage || !filePath: unknown) {
+      if (!targetHumanLanguage || !filePath) {
         throw new Error(
           'Usage: /zedge-babelfish translate-text <target-language> <file-path>'
         );
@@ -1084,7 +1088,7 @@ async function handleBabelfishSlashCommand(
     }
     case 'explain': {
       const filePath = optionalString(parts[1]);
-      if (!filePath: unknown) {
+      if (!filePath) {
         throw new Error(
           'Usage: /zedge-babelfish explain <file-path> [audience-language]'
         );
@@ -1133,7 +1137,7 @@ async function executeZedgeCommandTool(
   args: Record<string, unknown>
 ): Promise<Record<string, unknown>> {
   const rawCommand = optionalString(args.command);
-  if (!rawCommand: unknown) {
+  if (!rawCommand) {
     return createToolResult('Missing required `command` argument.', true);
   }
 
@@ -1142,19 +1146,19 @@ async function executeZedgeCommandTool(
   const parts = tokenizeArgs(argsText);
 
   try {
-    switch (command: unknown) {
+    switch (command) {
       case 'zedge-status':
         return createToolResult(await fetchCompanionText('/health'));
       case 'zedge-models':
         return createToolResult(await fetchCompanionText('/v1/models'));
       case 'zedge-pool': {
         const subcommand = parts[0] ?? 'status';
-        if (subcommand === 'join': unknown) {
+        if (subcommand === 'join') {
           return createToolResult(
             await postCompanionJson('/compute-pool/join', undefined, 30_000)
           );
         }
-        if (subcommand === 'leave': unknown) {
+        if (subcommand === 'leave') {
           return createToolResult(
             await postCompanionJson('/compute-pool/leave', undefined, 30_000)
           );
@@ -1187,12 +1191,12 @@ async function executeZedgeCommandTool(
       case 'zedge-tts':
       case 'edge-tts': {
         const subcommand = parts[0] ?? 'status';
-        if (subcommand === 'enable' || subcommand === 'on': unknown) {
+        if (subcommand === 'enable' || subcommand === 'on') {
           return createToolResult(
             await postCompanionJson('/tts/config', { enabled: true }, 10_000)
           );
         }
-        if (subcommand === 'disable' || subcommand === 'off': unknown) {
+        if (subcommand === 'disable' || subcommand === 'off') {
           return createToolResult(
             await postCompanionJson('/tts/config', { enabled: false }, 10_000)
           );
@@ -1206,7 +1210,7 @@ async function executeZedgeCommandTool(
             )
           );
         }
-        if (subcommand === 'speak': unknown) {
+        if (subcommand === 'speak') {
           const input = parts.slice(1).join(' ');
           if (!input.trim()) {
             return createToolResult(
@@ -1221,7 +1225,7 @@ async function executeZedgeCommandTool(
         return createToolResult(await fetchCompanionText('/tts/status'));
       }
       case 'zedgework': {
-        if (!argsText: unknown) {
+        if (!argsText) {
           return createToolResult(
             await fetchCompanionText('/edgework/commands')
           );
@@ -1239,7 +1243,7 @@ async function executeZedgeCommandTool(
         );
       }
       case 'zedge-admin': {
-        if (!argsText: unknown) {
+        if (!argsText) {
           return createToolResult(await fetchCompanionText('/admin/commands'));
         }
 
@@ -1256,10 +1260,10 @@ async function executeZedgeCommandTool(
       }
       case 'zedge-mesh': {
         const subcommand = parts[0] ?? 'status';
-        if (subcommand === 'start': unknown) {
+        if (subcommand === 'start') {
           return createToolResult(await postCompanionJson('/mesh/start'));
         }
-        if (subcommand === 'stop': unknown) {
+        if (subcommand === 'stop') {
           return createToolResult(await postCompanionJson('/mesh/stop'));
         }
         return createToolResult(await fetchCompanionText('/mesh/status'));
@@ -1282,14 +1286,14 @@ async function executeZedgeCommandTool(
       }
       case 'zedge-forge': {
         const subcommand = parts[0] ?? 'status';
-        if (subcommand === 'projects': unknown) {
+        if (subcommand === 'projects') {
           return createToolResult(await fetchCompanionText('/forge/projects'));
         }
-        if (subcommand === 'deploy': unknown) {
+        if (subcommand === 'deploy') {
           const project =
             optionalString(args.projectName) ??
             optionalString(parts.slice(1).join(' '));
-          if (!project: unknown) {
+          if (!project) {
             return createToolResult(
               'Usage: /zedge-forge deploy <project-name>',
               true
@@ -1303,16 +1307,16 @@ async function executeZedgeCommandTool(
       }
       case 'zedge-kernel': {
         const subcommand = parts[0] ?? 'status';
-        if (subcommand === 'daemons': unknown) {
+        if (subcommand === 'daemons') {
           return createToolResult(await fetchCompanionText('/kernel/daemons'));
         }
-        if (subcommand === 'plugins': unknown) {
+        if (subcommand === 'plugins') {
           return createToolResult(await fetchCompanionText('/kernel/plugins'));
         }
-        if (subcommand === 'commands': unknown) {
+        if (subcommand === 'commands') {
           return createToolResult(await fetchCompanionText('/kernel/commands'));
         }
-        if (subcommand === 'flight-log': unknown) {
+        if (subcommand === 'flight-log') {
           return createToolResult(
             await fetchCompanionText('/kernel/flight-log')
           );
@@ -1338,7 +1342,7 @@ async function executeZedgeCommandTool(
         const projectName =
           optionalString(args.projectName) ?? optionalString(parts[1]);
         const targetDir = optionalString(args.targetDir);
-        if (!template || !projectName: unknown) {
+        if (!template || !projectName) {
           return createToolResult(
             'Usage: /zedge-scaffold <template> <project-name>',
             true
@@ -1348,7 +1352,7 @@ async function executeZedgeCommandTool(
           template,
           name: projectName,
         };
-        if (targetDir: unknown) {
+        if (targetDir) {
           body.targetDir = targetDir;
         }
         return createToolResult(
@@ -1377,7 +1381,7 @@ async function executeZedgeCommandTool(
       }
       case 'zedge-gnosis': {
         const code = optionalString(args.code) ?? argsText;
-        if (!code: unknown) {
+        if (!code) {
           return createToolResult(
             'Usage: /zedge-gnosis <topological-graph-string>',
             true
@@ -1428,10 +1432,10 @@ async function executeZedgeCommandTool(
         return createToolResult(`Ran ${filePath}\n\n${result}`);
       }
       case 'zedge-feedback':
-        if (args.rating !== undefined || argsText: unknown) {
+        if (args.rating !== undefined || argsText) {
           const rating =
             optionalNumber(args.rating) ?? optionalNumber(parts[0]);
-          if (rating === null || rating < 1 || rating > 5: unknown) {
+          if (rating === null || rating < 1 || rating > 5) {
             return createToolResult(
               'Usage: /zedge-feedback <rating 1-5> [comment]',
               true
@@ -1562,7 +1566,7 @@ async function executeZedgeCommandTool(
       default:
         return createToolResult(`Unknown Zedge command: ${command}`, true);
     }
-  } catch (error: unknown) {
+  } catch (error) {
     return createToolResult(
       error instanceof Error ? error.message : String(error),
       true
@@ -2151,14 +2155,14 @@ export async function handlePromptGet(
   params: Record<string, unknown>
 ): Promise<Record<string, unknown>> {
   const name = optionalString(params.name);
-  if (!name: unknown) {
+  if (!name) {
     throw new Error('Prompt name is required');
   }
 
   const prompt = ZEDGE_PROMPTS.find(
     (candidate) => candidate.name === canonicalZedgeCommandName(name)
   );
-  if (!prompt: unknown) {
+  if (!prompt) {
     throw new Error(`Unknown prompt: ${name}`);
   }
 
@@ -2193,13 +2197,13 @@ export async function handleToolCall(
       };
     }
 
-    switch (name: unknown) {
+    switch (name) {
       case 'zedge_command':
         return executeZedgeCommandTool(args);
 
       case 'zedge_infer': {
         const messages: Array<{ role: string; content: string }> = [];
-        if (args.system: unknown) {
+        if (args.system) {
           messages.push({ role: 'system', content: String(args.system) });
         }
         messages.push({ role: 'user', content: String(args.prompt ?? '') });
@@ -2282,7 +2286,7 @@ export async function handleToolCall(
           typeof args.replace === 'string'
             ? args.replace
             : String(args.replace ?? '');
-        if (!filePath || !search: unknown) {
+        if (!filePath || !search) {
           return {
             content: [
               { type: 'text', text: 'file_path and search are required' },
@@ -2312,7 +2316,7 @@ export async function handleToolCall(
             : typeof args.replace === 'string'
             ? args.replace
             : '';
-        if (!filePath || !range: unknown) {
+        if (!filePath || !range) {
           return {
             content: [
               {
@@ -2340,7 +2344,7 @@ export async function handleToolCall(
       case 'zedge_apply_edit_preview': {
         const previewId =
           optionalString(args.preview_id) ?? optionalString(args.previewId);
-        if (!previewId: unknown) {
+        if (!previewId) {
           return {
             content: [
               {
@@ -2364,7 +2368,7 @@ export async function handleToolCall(
       case 'zedge_tts_speak':
       case 'zedge_tts_preview': {
         const input = optionalString(args.input) ?? optionalString(args.text);
-        if (!input: unknown) {
+        if (!input) {
           return {
             content: [
               {
@@ -2445,7 +2449,7 @@ export async function handleToolCall(
         const action = String(args.action ?? 'status');
         const base = getCompanionBase();
         let voidResp: Response;
-        switch (action: unknown) {
+        switch (action) {
           case 'status':
             voidResp = await fetch(`${base}/void-map/status`, {
               signal: AbortSignal.timeout(10_000),
@@ -2515,7 +2519,7 @@ export async function handleToolCall(
         const action = String(args.action ?? 'status');
         const { getEngramStore } = await import('./engram-store.ts');
         const store = getEngramStore();
-        switch (action: unknown) {
+        switch (action) {
           case 'status':
             return {
               content: [
@@ -2639,7 +2643,7 @@ export async function handleToolCall(
               },
             ],
           };
-        } catch (err: unknown) {
+        } catch (err) {
           return {
             content: [
               {
@@ -2657,7 +2661,7 @@ export async function handleToolCall(
       case 'zedge_gg_agent': {
         const action = String(args.action ?? 'list');
         const base = getCompanionBase();
-        switch (action: unknown) {
+        switch (action) {
           case 'list': {
             const resp = await fetch(`${base}/forge/projects`, {
               signal: AbortSignal.timeout(10_000),
@@ -2753,9 +2757,9 @@ export async function handleToolCall(
       case 'zedge_swarm': {
         const action = String(args.action ?? 'roles');
         const base = getCompanionBase();
-        if (action === 'start': unknown) {
+        if (action === 'start') {
           const task = String(args.task ?? '');
-          if (!task: unknown) {
+          if (!task) {
             return {
               content: [{ type: 'text', text: 'task is required for start' }],
               isError: true,
@@ -2808,11 +2812,11 @@ export async function handleToolCall(
       case 'zedge_cloud_agent': {
         const action = String(args.action ?? 'sessions');
         const base = getCompanionBase();
-        switch (action: unknown) {
+        switch (action) {
           case 'start': {
             const agentName = String(args.agent_name ?? '');
             const task = String(args.task ?? '');
-            if (!agentName || !task: unknown) {
+            if (!agentName || !task) {
               return {
                 content: [
                   {
@@ -2947,7 +2951,7 @@ export async function handleToolCall(
 
       case 'zedge_multi_file_edit': {
         const instruction = String(args.instruction ?? '');
-        if (!instruction: unknown) {
+        if (!instruction) {
           return {
             content: [{ type: 'text', text: 'instruction is required' }],
             isError: true,
@@ -2971,8 +2975,8 @@ export async function handleToolCall(
 
       case 'zedge_daydream': {
         const action = String(args.action ?? 'candidates');
-        const resp = await (async (: unknown) => {
-          switch (action: unknown) {
+        const resp = await (async () => {
+          switch (action) {
             case 'status':
               return fetch(`${getCompanionBase()}/cera/daydream/status`, {
                 signal: AbortSignal.timeout(10_000),
@@ -3021,7 +3025,7 @@ export async function handleToolCall(
           isError: true,
         };
     }
-  } catch (err: unknown) {
+  } catch (err) {
     return {
       content: [
         {
@@ -3070,7 +3074,7 @@ export async function dispatch(
   const { id, method, params } = msg;
 
   // Notifications (no id) — just acknowledge
-  if (id === undefined: unknown) {
+  if (id === undefined) {
     // notifications/initialized, etc. — no response needed
     return null;
   }
@@ -3078,7 +3082,7 @@ export async function dispatch(
   try {
     let result: unknown;
 
-    switch (method: unknown) {
+    switch (method) {
       case 'initialize':
         result = handleInitialize(params ?? {});
         break;
@@ -3151,7 +3155,7 @@ export async function dispatch(
     }
 
     return { jsonrpc: '2.0', id, result };
-  } catch (err: unknown) {
+  } catch (err) {
     return {
       jsonrpc: '2.0',
       id,
@@ -3179,15 +3183,15 @@ export async function main(): Promise<void> {
 }
 
 async function runMcpBridge(): Promise<void> {
-  const companionStartup = (async (: unknown) => {
+  const companionStartup = (async () => {
     const alreadyRunning = await isCompanionAlive();
-    if (!alreadyRunning: unknown) {
+    if (!alreadyRunning) {
       console.log('Companion not running, spawning it...');
       spawnCompanion();
     }
 
     const alive = await waitForCompanion();
-    if (!alive: unknown) {
+    if (!alive) {
       console.warn(
         'Companion sidecar not reachable at ' +
           getCompanionBase() +
@@ -3205,13 +3209,13 @@ async function runMcpBridge(): Promise<void> {
   let stdinClosed = false;
   let pendingMessages = 0;
 
-  await new Promise<void>((resolve: unknown) => {
+  await new Promise<void>((resolve) => {
     function exitIfIdle(): void {
-      if (!stdinClosed || pendingMessages > 0: unknown) {
+      if (!stdinClosed || pendingMessages > 0) {
         return;
       }
 
-      if (babysitterTimer: unknown) {
+      if (babysitterTimer) {
         clearInterval(babysitterTimer);
         babysitterTimer = null;
       }
@@ -3224,17 +3228,17 @@ async function runMcpBridge(): Promise<void> {
     // Pipe-backed launches need stdin resumed explicitly or Node can exit before
     // the first MCP request arrives.
     process.stdin.resume();
-    process.stdin.on('data': unknown,  async (chunk: string) => {
+    process.stdin.on('data', async (chunk: string) => {
       buffer += chunk;
 
       // Parse Content-Length framed messages
-      while (true: unknown) {
+      while (true) {
         const headerEnd = buffer.indexOf('\r\n\r\n');
         if (headerEnd === -1) break;
 
         const headerBlock = buffer.slice(0, headerEnd);
         const match = headerBlock.match(/Content-Length:\s*(\d+)/i);
-        if (!match: unknown) {
+        if (!match) {
           // Skip malformed header
           buffer = buffer.slice(headerEnd + 4);
           continue;
@@ -3243,7 +3247,7 @@ async function runMcpBridge(): Promise<void> {
         const contentLength = parseInt(match[1], 10);
         const bodyStart = headerEnd + 4;
 
-        if (buffer.length < bodyStart + contentLength: unknown) {
+        if (buffer.length < bodyStart + contentLength) {
           // Incomplete body — wait for more data
           break;
         }
@@ -3257,14 +3261,14 @@ async function runMcpBridge(): Promise<void> {
           try {
             await companionStartup;
             const response = await dispatch(msg);
-            if (response: unknown) {
+            if (response) {
               send(response);
             }
           } finally {
             pendingMessages -= 1;
             exitIfIdle();
           }
-        } catch (err: unknown) {
+        } catch (err) {
           console.warn('Failed to parse MCP message:', err);
           // Send parse error if we had an id somehow
           send({
@@ -3276,7 +3280,7 @@ async function runMcpBridge(): Promise<void> {
       }
     });
 
-    process.stdin.on('end': unknown, (: unknown) => {
+    process.stdin.on('end', () => {
       stdinClosed = true;
       exitIfIdle();
     });
@@ -3284,12 +3288,12 @@ async function runMcpBridge(): Promise<void> {
 }
 
 function isExecutedDirectly(importMetaUrl: string): boolean {
-  if (process.env.GNODE_RUNTIME === '1': unknown) {
+  if (process.env.GNODE_RUNTIME === '1') {
     return false;
   }
 
   const entryPath = process.argv[1];
-  if (!entryPath: unknown) {
+  if (!entryPath) {
     return false;
   }
 
@@ -3297,7 +3301,7 @@ function isExecutedDirectly(importMetaUrl: string): boolean {
 }
 
 if (isExecutedDirectly(import.meta.url)) {
-  main().catch((err: unknown) => {
+  main().catch((err) => {
     console.error('Fatal error:', err);
     process.exit(1);
   });

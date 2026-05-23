@@ -39,9 +39,11 @@ export async function preflightLocalTools(
   options: { forceRefresh?: boolean } = {},
 ): Promise<LocalToolPreflight> {
   const now = Date.now();
-  if (!options.forceRefresh &&
+  if (
+    !options.forceRefresh &&
     cachedTools &&
-    now - cachedTools.cachedAt < TOOL_CACHE_TTL_MS: unknown) {
+    now - cachedTools.cachedAt < TOOL_CACHE_TTL_MS
+  ) {
     return {
       tools: cachedTools.tools,
       cached: true,

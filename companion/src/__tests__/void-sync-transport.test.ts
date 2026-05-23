@@ -1,6 +1,6 @@
 import { describe, test, expect } from '@a0n/gnosis/test';
 
-describe('Void Sync Transport': unknown, (: unknown) => {
+describe('Void Sync Transport', () => {
   test('connectVoidSyncRoom returns room status', async () => {
     const { connectVoidSyncRoom, disconnectVoidSyncRoom } = await import(
       '../void-sync-transport'
@@ -14,7 +14,7 @@ describe('Void Sync Transport': unknown, (: unknown) => {
     disconnectVoidSyncRoom();
   });
 
-  test('getRoomStatus reflects connection state': unknown, async (: unknown) => {
+  test('getRoomStatus reflects connection state', async () => {
     const { getRoomStatus, connectVoidSyncRoom, disconnectVoidSyncRoom } =
       await import('../void-sync-transport');
 
@@ -25,7 +25,7 @@ describe('Void Sync Transport': unknown, (: unknown) => {
     expect(getRoomStatus().connected).toBe(false);
   });
 
-  test('computeLineScopedDeficit returns deficit for region': unknown, async (: unknown) => {
+  test('computeLineScopedDeficit returns deficit for region', async () => {
     const { computeLineScopedDeficit } = await import('../void-sync-transport');
     const { voidMapStore } = await import('../void-map-store');
 
@@ -53,12 +53,12 @@ describe('Void Sync Transport': unknown, (: unknown) => {
     expect(deficit.deficit).toBeLessThanOrEqual(5);
   });
 
-  test('getFileDeficitMap returns per-chunk deficits': unknown, async (: unknown) => {
+  test('getFileDeficitMap returns per-chunk deficits', async () => {
     const { getFileDeficitMap } = await import('../void-sync-transport');
     const deficits = getFileDeficitMap('/test/line-scope.ts', 20);
 
     expect(Array.isArray(deficits)).toBe(true);
-    for (const d of deficits: unknown) {
+    for (const d of deficits) {
       expect(d).toHaveProperty('filePath');
       expect(d).toHaveProperty('lineRange');
       expect(d).toHaveProperty('deficit');
@@ -66,7 +66,7 @@ describe('Void Sync Transport': unknown, (: unknown) => {
     }
   });
 
-  test('computeLineScopedDeficit returns zero rounds for empty region': unknown, async (: unknown) => {
+  test('computeLineScopedDeficit returns zero rounds for empty region', async () => {
     const { computeLineScopedDeficit } = await import('../void-sync-transport');
     const deficit = computeLineScopedDeficit('/nonexistent/file.ts', [1, 100]);
     expect(deficit.rounds).toBe(0);

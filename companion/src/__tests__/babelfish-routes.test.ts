@@ -146,12 +146,12 @@ function jsonRequest(
   });
 }
 
-describe('Babelfish HTTP routes': unknown, (: unknown) => {
+describe('Babelfish HTTP routes', () => {
   beforeEach(() => {
     resetBabelfishStateForTest();
   });
 
-  test('capabilities route returns the Gnosis-backed capability matrix': unknown, async (: unknown) => {
+  test('capabilities route returns the Gnosis-backed capability matrix', async () => {
     const response = await handleBabelfishRequest(
       jsonRequest('/babelfish/capabilities')
     );
@@ -166,7 +166,7 @@ describe('Babelfish HTTP routes': unknown, (: unknown) => {
     ).toEqual(['typescript', 'rust']);
   });
 
-  test('code preview returns the standardized payload and preview-only tokens cannot rewrite in place': unknown, async (: unknown) => {
+  test('code preview returns the standardized payload and preview-only tokens cannot rewrite in place', async () => {
     const dir = mkdtempSync(path.join(tmpdir(), 'babelfish-route-preview-'));
     const filePath = path.join(dir, 'input.ts');
     writeFileSync(filePath, 'export const greet = () => "hello";\n', 'utf8');
@@ -224,7 +224,7 @@ describe('Babelfish HTTP routes': unknown, (: unknown) => {
     expect(repeatedApply.error).toContain('Unknown previewId');
   });
 
-  test('rewrite_in_place_requested does not mutate until apply and remains single-use': unknown, async (: unknown) => {
+  test('rewrite_in_place_requested does not mutate until apply and remains single-use', async () => {
     const dir = mkdtempSync(path.join(tmpdir(), 'babelfish-route-rewrite-'));
     const filePath = path.join(dir, 'input.ts');
     writeFileSync(filePath, 'export const greet = () => "hello";\n', 'utf8');
@@ -265,7 +265,7 @@ describe('Babelfish HTTP routes': unknown, (: unknown) => {
     expect(repeatedApply.error).toContain('Unknown previewId');
   });
 
-  test('text translation route preserves fenced and inline code': unknown, async (: unknown) => {
+  test('text translation route preserves fenced and inline code', async () => {
     const response = await handleBabelfishRequest(
       jsonRequest('/babelfish/text/translate', {
         scope: {
@@ -289,7 +289,7 @@ describe('Babelfish HTTP routes': unknown, (: unknown) => {
     expect(payload.translatedDiagnostics[0]?.message).toContain('hola mundo');
   });
 
-  test('explain route falls back to the configured audience language': unknown, async (: unknown) => {
+  test('explain route falls back to the configured audience language', async () => {
     const response = await handleBabelfishRequest(
       jsonRequest('/babelfish/explain', {
         scope: {
@@ -307,7 +307,7 @@ describe('Babelfish HTTP routes': unknown, (: unknown) => {
     expect(payload.ggSource).toContain('(greet:PROCESS)');
   });
 
-  test('gnarly fastest route returns speed hints': unknown, async (: unknown) => {
+  test('gnarly fastest route returns speed hints', async () => {
     const response = await handleBabelfishRequest(
       jsonRequest('/babelfish/gnarly/fastest', {
         scope: {
