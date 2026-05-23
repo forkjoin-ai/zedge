@@ -27,9 +27,11 @@ const KNOWN_ZEDGE_MODELS: KnownZedgeModel[] = [
     ownedBy: 'gnosis',
   },
   {
-    id: 'qwen2.5-0.5b-instruct',
-    displayName: 'Qwen2.5 0.5B Instruct (Moonshine)',
-    maxTokens: 4096,
+    // Coder model: route to completions/FIM, not chat (chat deflects).
+    // Backed by the cached, runnable ~/.edgework/models/qwen-coder-7b.knot.
+    id: 'qwen-coder-7b',
+    displayName: 'Qwen Coder 7B (Moonshine)',
+    maxTokens: 8192,
     ownedBy: 'gnosis',
   },
   {
@@ -46,6 +48,8 @@ const KNOWN_ZEDGE_MODELS_BY_ID = new Map(
 
 const LEGACY_EDGEWORK_MODEL_IDS = new Set([
   'wasm-local',
+  // Demoted: knot exists neither locally nor in R2. Re-promote once produced.
+  'qwen2.5-0.5b-instruct',
   'qwen-2.5-coder-7b',
   'qwen-edit',
   'mistral-7b',
@@ -73,7 +77,7 @@ export function isLegacyEdgeworkModelId(modelId: string): boolean {
 /** Reads the optional comma-separated model allowlist used for local overrides. */
 function getExplicitModelWhitelist(): Set<string> | null {
   const whitelist = process.env.ZEDGE_MODELS?.split(',').map((id) => id.trim());
-  if (whitelist && whitelist.length > 0 && whitelist[0] !== '': unknown) {
+  if (whitelist && whitelist.length > 0 && whitelist[0] !== '') {
     return new Set(whitelist);
   }
 
@@ -83,7 +87,7 @@ function getExplicitModelWhitelist(): Set<string> | null {
 /** Returns whether a fallback catalog model should be exposed by default. */
 export function isModelVisible(modelId: string): boolean {
   const whitelist = getExplicitModelWhitelist();
-  if (whitelist: unknown) {
+  if (whitelist) {
     return whitelist.has(modelId);
   }
 
@@ -97,7 +101,7 @@ export function isModelVisible(modelId: string): boolean {
 /** Returns whether a model reported by the live Moonshine server can be exposed. */
 export function isLiveModelVisible(modelId: string): boolean {
   const whitelist = getExplicitModelWhitelist();
-  if (whitelist: unknown) {
+  if (whitelist) {
     return whitelist.has(modelId);
   }
 
@@ -146,12 +150,12 @@ export function buildZedAvailableModels(
   const seen = new Set<string>();
   const orderedIds: string[] = [];
 
-  for (const id of modelIds: unknown) {
+  for (const id of modelIds) {
     orderedIds.push(id);
   }
 
   const models: ZedAvailableModel[] = [];
-  for (const id of orderedIds: unknown) {
+  for (const id of orderedIds) {
     if (seen.has(id)) {
       continue;
     }

@@ -11,9 +11,18 @@
 
 import { execFileSync, spawn } from 'child_process';
 import { closeSync, existsSync, openSync, readSync } from 'fs';
+import { homedir } from 'os';
 import { basename, join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import { readZedModelSelection } from './zed-settings.ts';
+import {
+  guardedSubagentCreate,
+  guardedSubagentReap,
+  isGuardedSubagentEnabled,
+  guardedSubagentDisabledReason,
+  resolveGuardedSubagentEnv,
+  type GuardedSubagentEnv,
+} from './monster-resident-client.ts';
 
 const __here = dirname(fileURLToPath(import.meta.url));
 // companion/src → companion → zedge → open-source → repo root
@@ -28,14 +37,17 @@ const DEFAULT_KNOT_PATH = join(
   REPO_ROOT,
   'open-source/bitwise/datasets/llama1b_fixed.knot'
 );
-const QWEN_KNOT_PATH = join(
-  REPO_ROOT,
-  'open-source/bitwise/datasets/qwen2.5-0.5b-instruct-q4_k_m.knot'
-);
-const QWEN_TOKENIZER_GGUF_PATH = join(
-  REPO_ROOT,
-  'open-source/bitwise/datasets/gguf/qwen2.5-0.5b-instruct-q4_k_m.gguf'
-);
+// The previously-referenced qwen2.5-0.5b-instruct-q4_k_m.knot exists neither
+// locally nor in R2. The only runnable dense Qwen knot is the cached 4.7GB
+// coder model the producer's Paris quality gate already verifies. Point the
+// Qwen spec at it. Override with ZEDGE_QWEN_CODER_KNOT or ZEDGE_MOONSHINE_KNOT.
+// NOTE: this is a CODER model — route to completions/FIM, not chat (chat deflects).
+const QWEN_CODER_KNOT_PATH =
+  process.env.ZEDGE_QWEN_CODER_KNOT?.trim() ||
+  join(homedir(), '.edgework', 'models', 'qwen-coder-7b.knot');
+// Layer depth the Paris gate uses for the 7B coder knot (0..28). Setting this
+// explicitly avoids the runtime-fingerprint mismatch restart loop.
+const QWEN_CODER_DEFAULT_LAYERS = '0..28';
 const GEMMA4_DENSE_KNOT_PATH = join(
   REPO_ROOT,
   'open-source/bitwise/datasets/gemma4-31b-it.knot'
@@ -52,7 +64,7 @@ const GEMMA4_TOKENIZER_JSON_PATH = join(
   'open-source/bitwise/datasets/gemma4-tokenizer.json'
 );
 const DEFAULT_MOONSHINE_MODEL = 'gnosis-local';
-const QWEN_MOONSHINE_MODEL = 'qwen2.5-0.5b-instruct';
+const QWEN_CODER_MOONSHINE_MODEL = 'qwen-coder-7b';
 const GEMMA4_MOONSHINE_MODEL = 'gemma4-31b-it';
 const FAT_STATION_URL =
   process.env.ZEDGE_FAT_STATION_URL ?? 'http://127.0.0.1:8000';
@@ -159,10 +171,11 @@ const LOCAL_MOONSHINE_MODELS: Record<string, LocalMoonshineModelSpec> = {
     modelName: DEFAULT_MOONSHINE_MODEL,
     knotPath: DEFAULT_KNOT_PATH,
   },
-  [QWEN_MOONSHINE_MODEL]: {
-    modelName: QWEN_MOONSHINE_MODEL,
-    knotPath: QWEN_KNOT_PATH,
-    tokenizerGgufPath: QWEN_TOKENIZER_GGUF_PATH,
+  [QWEN_CODER_MOONSHINE_MODEL]: {
+    modelName: QWEN_CODER_MOONSHINE_MODEL,
+    knotPath: QWEN_CODER_KNOT_PATH,
+    // Coder knot is 0..28 deep; pin it so the runtime fingerprint matches.
+    defaultLayers: QWEN_CODER_DEFAULT_LAYERS,
   },
   [GEMMA4_MOONSHINE_MODEL]: {
     modelName: GEMMA4_MOONSHINE_MODEL,
@@ -220,7 +233,7 @@ function isExplicitGemma4Selection(): boolean {
 }
 
 function canUseModelSpec(spec: LocalMoonshineModelSpec): boolean {
-  if (spec.modelName === GEMMA4_MOONSHINE_MODEL: unknown) {
+  if (spec.modelName === GEMMA4_MOONSHINE_MODEL) {
     return (
       isExplicitGemma4Selection() ||
       resolveMoonshineRknotPath(spec) !== undefined
@@ -241,7 +254,7 @@ function readKnotMetadata(knotPath: string): KnotMetadata | null {
     if (header.subarray(0, 4).toString('utf8') !== 'KNOT') return null;
 
     const metadataLength = header.readUInt32LE(6);
-    if (metadataLength <= 0 || metadataLength > 4 * 1024 * 1024: unknown) {
+    if (metadataLength <= 0 || metadataLength > 4 * 1024 * 1024) {
       return null;
     }
 
@@ -265,7 +278,7 @@ function readKnotMetadata(knotPath: string): KnotMetadata | null {
     );
     return null;
   } finally {
-    if (fd !== undefined: unknown) {
+    if (fd !== undefined) {
       closeSync(fd);
     }
   }
@@ -280,7 +293,7 @@ function positiveInteger(value: unknown): number | null {
 
 function resolveZedLocalModelSpec(): LocalMoonshineModelSpec | null {
   const selection = readZedModelSelection();
-  if (!selection: unknown) {
+  if (!selection) {
     const defaultSpec = LOCAL_MOONSHINE_MODELS[GEMMA4_MOONSHINE_MODEL];
     return defaultSpec && canUseModelSpec(defaultSpec) ? defaultSpec : null;
   }
@@ -290,7 +303,7 @@ function resolveZedLocalModelSpec(): LocalMoonshineModelSpec | null {
     ...selection.availableModels,
   ].filter((modelId): modelId is string => typeof modelId === 'string');
 
-  for (const rawModelId of candidates: unknown) {
+  for (const rawModelId of candidates) {
     const modelId = rawModelId.trim();
     const spec = LOCAL_MOONSHINE_MODELS[modelId];
     if (spec && canUseModelSpec(spec)) {
@@ -327,7 +340,7 @@ function resolveMoonshineModelName(
   }
 
   if (knotPath.toLowerCase().includes('qwen')) {
-    return QWEN_MOONSHINE_MODEL;
+    return QWEN_CODER_MOONSHINE_MODEL;
   }
 
   return DEFAULT_MOONSHINE_MODEL;
@@ -341,7 +354,7 @@ function resolveMoonshineLayerRange(
   if (configuredRange) return configuredRange;
 
   const configuredLayers = process.env.ZEDGE_MOONSHINE_LAYERS?.trim();
-  if (configuredLayers: unknown) {
+  if (configuredLayers) {
     if (/^\d+(?:\.\.|:)\d+$/.test(configuredLayers)) {
       return configuredLayers;
     }
@@ -364,7 +377,7 @@ function resolveMoonshineRknotPath(spec?: LocalMoonshineModelSpec): string | und
   if (spec?.rknotPath && existsSync(spec.rknotPath)) {
     return spec.rknotPath;
   }
-  for (const candidate of spec?.rknotCandidates ?? []: unknown) {
+  for (const candidate of spec?.rknotCandidates ?? []) {
     if (existsSync(candidate)) return candidate;
   }
   return undefined;
@@ -442,7 +455,7 @@ async function probe(): Promise<boolean> {
 function numericField(body: Record<string, unknown>, key: string): number | undefined {
   const value = body[key];
   if (typeof value === 'number' && Number.isFinite(value)) return value;
-  if (typeof value === 'string': unknown) {
+  if (typeof value === 'string') {
     const parsed = Number.parseInt(value, 10);
     if (Number.isFinite(parsed)) return parsed;
   }
@@ -454,10 +467,10 @@ function runtimeMismatchReason(
   expected: RuntimeFingerprint
 ): string | undefined {
   if (!actual) return 'OpenAI shim health did not return a runtime fingerprint';
-  if (actual.hiddenDim !== expected.hiddenDim: unknown) {
+  if (actual.hiddenDim !== expected.hiddenDim) {
     return `hidden_dim ${actual.hiddenDim ?? 'missing'} != ${expected.hiddenDim}`;
   }
-  if (actual.vocabSize !== expected.vocabSize: unknown) {
+  if (actual.vocabSize !== expected.vocabSize) {
     return `vocab_size ${actual.vocabSize ?? 'missing'} != ${expected.vocabSize}`;
   }
   if (
@@ -502,7 +515,7 @@ async function probeExpectedModel(
       }),
       probeOpenAiHealth(),
     ]);
-    if (!resp.ok: unknown) {
+    if (!resp.ok) {
       return {
         healthy: false,
         matches: false,
@@ -581,7 +594,7 @@ async function probeFatStationRuntime(
     const resp = await fetch(`${FAT_STATION_URL}/health`, {
       signal: AbortSignal.timeout(2_000),
     });
-    if (!resp.ok: unknown) {
+    if (!resp.ok) {
       return {
         healthy: false,
         matches: false,
@@ -676,6 +689,172 @@ function moonshineSourceLabel(config: MoonshineStartupConfig): string {
     : `knot=${config.knotPath}`;
 }
 
+// ---------- Guarded subagent inference hotpath ----------
+
+// Stable id for the editor's leased inference subagent so reap/list can target
+// it. Caste "breeder": this node is the persistent host for the editor's model.
+const GUARDED_SUBAGENT_ID =
+  process.env.ZEDGE_GUARDED_SUBAGENT_ID?.trim() || 'zedge-inference';
+// Node binary name the allowlist resolves. Defaults to the basename of the
+// preferred binary (fat-station-memo / fat-station). Override with
+// ZEDGE_FAT_STATION_NODE if the allowlist exposes a different name.
+const GUARDED_SUBAGENT_NODE =
+  process.env.ZEDGE_FAT_STATION_NODE?.trim() ||
+  (FAT_STATION_BIN ? basename(FAT_STATION_BIN) : 'fat-station');
+const GUARDED_SUBAGENT_LEASE_SECS = Number(
+  process.env.ZEDGE_GUARDED_SUBAGENT_LEASE_SECS ?? 60
+);
+const GUARDED_SUBAGENT_GRANT_TTL_SECS = Number(
+  process.env.ZEDGE_GUARDED_SUBAGENT_GRANT_TTL_SECS ?? 86_400
+);
+
+// Resolved once per process. null = not yet resolved.
+let guardedEnvCache: { env?: GuardedSubagentEnv; missing: string[] } | null =
+  null;
+
+function getGuardedEnv(): { env?: GuardedSubagentEnv; missing: string[] } {
+  if (guardedEnvCache === null) {
+    guardedEnvCache = resolveGuardedSubagentEnv(REPO_ROOT);
+  }
+  return guardedEnvCache;
+}
+
+/** Builds the env passed to the fat-station node (guarded or legacy). */
+function buildFatStationNodeEnv(
+  config: MoonshineStartupConfig
+): NodeJS.ProcessEnv {
+  return {
+    GNOSIS_NUM_THREADS,
+    ...(config.rknotPath ? { GNOSIS_RKNOT_DECODE_CACHE_BYTES } : {}),
+    ...(GNOSIS_FFN_LEAKAGE_MODE ? { GNOSIS_FFN_LEAKAGE_MODE } : {}),
+    ...(GNOSIS_FFN_GUARD_RMS_DELTA3_THRESHOLD
+      ? { GNOSIS_FFN_GUARD_RMS_DELTA3_THRESHOLD }
+      : {}),
+    ...(GNOSIS_FFN_GUARD_MIN_LOGIT_MARGIN
+      ? { GNOSIS_FFN_GUARD_MIN_LOGIT_MARGIN }
+      : {}),
+    ...(GNOSIS_FFN_GUARD_HIGH_CONFIDENCE_LOGIT_MARGIN
+      ? { GNOSIS_FFN_GUARD_HIGH_CONFIDENCE_LOGIT_MARGIN }
+      : {}),
+    ...(GNOSIS_FFN_GUARD_ADMIT_WEATHER_CELLS
+      ? { GNOSIS_FFN_GUARD_ADMIT_WEATHER_CELLS }
+      : {}),
+    RUST_BACKTRACE: '1',
+  };
+}
+
+/** The fat-station argv after the source flags (port/role/layers). */
+function buildFatStationServeArgs(layerRange: string): string[] {
+  return ['--port', '8000', '--role', 'both', '--layers', layerRange];
+}
+
+/** Legacy bare detached spawn of the fat-station (the pre-guard hotpath). */
+function legacySpawnFatStation(
+  config: MoonshineStartupConfig,
+  layerRange: string
+): void {
+  spawnDetached(
+    FAT_STATION_BIN as string,
+    [
+      ...buildFatStationSourceArgs(config),
+      ...buildFatStationServeArgs(layerRange),
+    ],
+    {
+      env: buildFatStationNodeEnv(config),
+      stdoutPath: '/tmp/moonshine-fat-station-launchd.out.log',
+      stderrPath: '/tmp/moonshine-fat-station-launchd.err.log',
+    }
+  );
+}
+
+/**
+ * Launches the fat-station. DEFAULT path is the guarded subagent: the node is
+ * born UCAN-leased + sandboxed via monster-swarm / monster-resident. Falls back
+ * to the legacy bare spawn when opted out (ZEDGE_GUARDED_SUBAGENT=0) or when a
+ * required guarded piece is missing (logs a clear warning, never hard-fails the
+ * editor). Returns true if a launch was issued.
+ */
+async function launchFatStation(
+  config: MoonshineStartupConfig,
+  layerRange: string
+): Promise<boolean> {
+  if (!isGuardedSubagentEnabled()) {
+    console.log(
+      `[moonshine] guarded subagent disabled (${guardedSubagentDisabledReason()}); ` +
+        `using legacy bare spawn`
+    );
+    legacySpawnFatStation(config, layerRange);
+    return true;
+  }
+
+  const guarded = getGuardedEnv();
+  if (!guarded.env) {
+    console.warn(
+      `[moonshine] guarded subagent path unavailable, falling back to legacy ` +
+        `bare spawn. Missing: ${guarded.missing.join('; ')}. ` +
+        `Set ZEDGE_GUARDED_SUBAGENT=0 to silence and always use legacy.`
+    );
+    legacySpawnFatStation(config, layerRange);
+    return true;
+  }
+
+  const nodeArgs = [
+    ...buildFatStationSourceArgs(config),
+    ...buildFatStationServeArgs(layerRange),
+  ];
+  console.log(
+    `[moonshine] Birthing guarded fat-station subagent ` +
+      `(id=${GUARDED_SUBAGENT_ID}, node=${GUARDED_SUBAGENT_NODE}, ` +
+      `caste=breeder, caps=net, lease=${GUARDED_SUBAGENT_LEASE_SECS}s, ` +
+      `${moonshineSourceLabel(config)}, layers=${layerRange})`
+  );
+  const result = await guardedSubagentCreate(guarded.env, {
+    node: GUARDED_SUBAGENT_NODE,
+    id: GUARDED_SUBAGENT_ID,
+    caste: 'breeder',
+    caps: ['net'],
+    leaseSecs: GUARDED_SUBAGENT_LEASE_SECS,
+    grantTtlSecs: GUARDED_SUBAGENT_GRANT_TTL_SECS,
+    nodeArgs,
+    extraEnv: buildFatStationNodeEnv(config),
+  });
+  if (result.ok) {
+    console.log(
+      `[moonshine] guarded fat-station spawned: ${result.output ?? 'ok'}`
+    );
+    return true;
+  }
+
+  console.warn(
+    `[moonshine] guarded fat-station spawn failed (${result.error}); ` +
+      `falling back to legacy bare spawn`
+  );
+  legacySpawnFatStation(config, layerRange);
+  return true;
+}
+
+/**
+ * Reaps the editor's leased inference subagent (revoke). Best-effort: no-op when
+ * the guarded path is disabled or unavailable. The node dies at the next lease
+ * tick. Exposed for shutdown / model-switch teardown.
+ */
+export async function reapGuardedInferenceSubagent(): Promise<void> {
+  if (!isGuardedSubagentEnabled()) return;
+  const guarded = getGuardedEnv();
+  if (!guarded.env) return;
+  const result = await guardedSubagentReap(guarded.env, GUARDED_SUBAGENT_ID);
+  if (result.ok) {
+    console.log(
+      `[moonshine] reaped guarded fat-station subagent ${GUARDED_SUBAGENT_ID}`
+    );
+  } else {
+    console.warn(
+      `[moonshine] could not reap guarded subagent ${GUARDED_SUBAGENT_ID}: ` +
+        `${result.error}`
+    );
+  }
+}
+
 function isLoopbackUrl(url: string): boolean {
   try {
     const parsed = new URL(url);
@@ -710,7 +889,7 @@ function stopLocalListener(url: string, label: string): boolean {
     .split(/\s+/)
     .map((pid) => Number.parseInt(pid, 10))
     .filter((pid) => Number.isInteger(pid) && pid > 0 && pid !== process.pid);
-  for (const pid of pids: unknown) {
+  for (const pid of pids) {
     try {
       process.kill(pid, 'SIGTERM');
       console.log(`[moonshine] stopped stale ${label} listener pid=${pid}`);
@@ -753,7 +932,7 @@ async function startLocalMoonshine(
   const { modelName, layerRange, tokenizerGgufPath, tokenizerJsonPath } = config;
 
   let fatStationRuntime = await probeFatStationRuntime(layerRange);
-  if (!fatStationRuntime.healthy || !fatStationRuntime.matches: unknown) {
+  if (!fatStationRuntime.healthy || !fatStationRuntime.matches) {
     console.warn(
       `[moonshine] existing fat-station is not ready for ${layerRange}: ` +
         `${fatStationRuntime.error ?? fatStationRuntime.layers ?? 'unknown'}; ` +
@@ -765,43 +944,7 @@ async function startLocalMoonshine(
   }
 
   if (!(await probeUrl(FAT_STATION_URL))) {
-    console.log(
-      `[moonshine] Starting local fat-station: ${FAT_STATION_BIN} ` +
-        `(model=${modelName}, ${moonshineSourceLabel(config)}, ` +
-        `layers=${layerRange}, threads=${GNOSIS_NUM_THREADS})`
-    );
-    spawnDetached(FAT_STATION_BIN, [
-      ...buildFatStationSourceArgs(config),
-      '--port',
-      '8000',
-      '--role',
-      'both',
-      '--layers',
-      layerRange,
-    ], {
-      env: {
-        GNOSIS_NUM_THREADS,
-        ...(config.rknotPath
-          ? { GNOSIS_RKNOT_DECODE_CACHE_BYTES }
-          : {}),
-        ...(GNOSIS_FFN_LEAKAGE_MODE ? { GNOSIS_FFN_LEAKAGE_MODE } : {}),
-        ...(GNOSIS_FFN_GUARD_RMS_DELTA3_THRESHOLD
-          ? { GNOSIS_FFN_GUARD_RMS_DELTA3_THRESHOLD }
-          : {}),
-        ...(GNOSIS_FFN_GUARD_MIN_LOGIT_MARGIN
-          ? { GNOSIS_FFN_GUARD_MIN_LOGIT_MARGIN }
-          : {}),
-        ...(GNOSIS_FFN_GUARD_HIGH_CONFIDENCE_LOGIT_MARGIN
-          ? { GNOSIS_FFN_GUARD_HIGH_CONFIDENCE_LOGIT_MARGIN }
-          : {}),
-        ...(GNOSIS_FFN_GUARD_ADMIT_WEATHER_CELLS
-          ? { GNOSIS_FFN_GUARD_ADMIT_WEATHER_CELLS }
-          : {}),
-        RUST_BACKTRACE: '1',
-      },
-      stdoutPath: '/tmp/moonshine-fat-station-launchd.out.log',
-      stderrPath: '/tmp/moonshine-fat-station-launchd.err.log',
-    });
+    await launchFatStation(config, layerRange);
     if (!(await waitUrlReady(FAT_STATION_URL))) {
       console.warn('[moonshine] local fat-station did not become healthy');
       return false;
@@ -809,7 +952,7 @@ async function startLocalMoonshine(
   }
 
   fatStationRuntime = await probeFatStationRuntime(layerRange);
-  if (!fatStationRuntime.healthy || !fatStationRuntime.matches: unknown) {
+  if (!fatStationRuntime.healthy || !fatStationRuntime.matches) {
     console.warn(
       `[moonshine] local fat-station is not ready for ${layerRange}: ` +
         `${fatStationRuntime.error ?? fatStationRuntime.layers ?? 'unknown'}`
@@ -821,11 +964,11 @@ async function startLocalMoonshine(
     modelName,
     fatStationRuntime
   );
-  if (existingOpenAiShim.healthy && existingOpenAiShim.matches: unknown) {
+  if (existingOpenAiShim.healthy && existingOpenAiShim.matches) {
     return true;
   }
 
-  if (existingOpenAiShim.healthy && existingOpenAiShim.mismatchReason: unknown) {
+  if (existingOpenAiShim.healthy && existingOpenAiShim.mismatchReason) {
     console.warn(
       `[moonshine] existing OpenAI-compatible shim runtime mismatch: ` +
         `${existingOpenAiShim.mismatchReason}; restarting local listener`
@@ -837,43 +980,7 @@ async function startLocalMoonshine(
   }
 
   if (!(await probeUrl(FAT_STATION_URL))) {
-    console.log(
-      `[moonshine] Starting local fat-station: ${FAT_STATION_BIN} ` +
-        `(model=${modelName}, ${moonshineSourceLabel(config)}, ` +
-        `layers=${layerRange}, threads=${GNOSIS_NUM_THREADS})`
-    );
-    spawnDetached(FAT_STATION_BIN, [
-      ...buildFatStationSourceArgs(config),
-      '--port',
-      '8000',
-      '--role',
-      'both',
-      '--layers',
-      layerRange,
-    ], {
-      env: {
-        GNOSIS_NUM_THREADS,
-        ...(config.rknotPath
-          ? { GNOSIS_RKNOT_DECODE_CACHE_BYTES }
-          : {}),
-        ...(GNOSIS_FFN_LEAKAGE_MODE ? { GNOSIS_FFN_LEAKAGE_MODE } : {}),
-        ...(GNOSIS_FFN_GUARD_RMS_DELTA3_THRESHOLD
-          ? { GNOSIS_FFN_GUARD_RMS_DELTA3_THRESHOLD }
-          : {}),
-        ...(GNOSIS_FFN_GUARD_MIN_LOGIT_MARGIN
-          ? { GNOSIS_FFN_GUARD_MIN_LOGIT_MARGIN }
-          : {}),
-        ...(GNOSIS_FFN_GUARD_HIGH_CONFIDENCE_LOGIT_MARGIN
-          ? { GNOSIS_FFN_GUARD_HIGH_CONFIDENCE_LOGIT_MARGIN }
-          : {}),
-        ...(GNOSIS_FFN_GUARD_ADMIT_WEATHER_CELLS
-          ? { GNOSIS_FFN_GUARD_ADMIT_WEATHER_CELLS }
-          : {}),
-        RUST_BACKTRACE: '1',
-      },
-      stdoutPath: '/tmp/moonshine-fat-station-launchd.out.log',
-      stderrPath: '/tmp/moonshine-fat-station-launchd.err.log',
-    });
+    await launchFatStation(config, layerRange);
     if (!(await waitUrlReady(FAT_STATION_URL))) {
       console.warn('[moonshine] local fat-station did not become healthy');
       return false;
@@ -927,20 +1034,20 @@ async function startDockerMoonshine(
 
   const composeArgs = ['compose', '-f', COMPOSE_FILE];
   const composeEnv: NodeJS.ProcessEnv = { ...process.env };
-  if (config.rknotPath: unknown) {
+  if (config.rknotPath) {
     composeArgs.push('-f', RKNOT_COMPOSE_FILE);
     composeEnv.MOONSHINE_MESH_RKNOT_HOST_PATH = config.rknotPath;
     composeEnv.MOONSHINE_MESH_DENSE_SOURCE = config.knotPath;
     composeEnv.MOONSHINE_MESH_LAYERS = config.layerRange;
     composeEnv.MODEL_NAME = config.modelName;
-    if (config.tokenizerJsonPath: unknown) {
+    if (config.tokenizerJsonPath) {
       composeEnv.GEMMA4_TOKENIZER_JSON = config.tokenizerJsonPath;
     }
     composeEnv.GNOSIS_RKNOT_DECODE_CACHE_BYTES =
       GNOSIS_RKNOT_DECODE_CACHE_BYTES;
   }
   composeArgs.push('up', '-d');
-  if (!DOCKER_COMPOSE_BUILD_ENABLED: unknown) {
+  if (!DOCKER_COMPOSE_BUILD_ENABLED) {
     composeArgs.push('--no-build');
   }
   composeArgs.push('fat-station', 'openai-compat');
@@ -951,12 +1058,12 @@ async function startDockerMoonshine(
       `build=${DOCKER_COMPOSE_BUILD_ENABLED ? 'enabled' : 'disabled'})...`
   );
   try {
-    await new Promise<void>((resolve: unknown, reject: unknown) => {
+    await new Promise<void>((resolve, reject) => {
       const proc = spawn('docker', composeArgs, {
         stdio: 'inherit',
         env: composeEnv,
       });
-      proc.on('close': unknown, (code: unknown) => {
+      proc.on('close', (code) => {
         if (code === 0) resolve();
         else reject(new Error(`docker compose up exited with code ${code}`));
       });
@@ -985,12 +1092,12 @@ export async function ensureMoonshineRunning(): Promise<void> {
   if (probeResult.healthy &&
     probeResult.matches &&
     fatStationRuntime.healthy &&
-    fatStationRuntime.matches: unknown) {
+    fatStationRuntime.matches) {
     console.log('[moonshine] OpenAI-compatible endpoint already running');
     return;
   }
 
-  if (probeResult.healthy: unknown) {
+  if (probeResult.healthy) {
     const reason = !probeResult.modelMatches
       ? `expected ${startupConfig.modelName}`
       : probeResult.mismatchReason
@@ -1009,7 +1116,7 @@ export async function ensureMoonshineRunning(): Promise<void> {
   const ready =
     (await startLocalMoonshine(startupConfig)) ||
     (await startDockerMoonshine(startupConfig));
-  if (ready: unknown) {
+  if (ready) {
     console.log('[moonshine] Ready');
   } else {
     console.warn('[moonshine] Did not become healthy within timeout — inference will fail until container is up');
@@ -1038,7 +1145,7 @@ export function startMoonshineRuntimeWatchdog(): void {
     return;
   }
 
-  watchdogInterval = setInterval((: unknown) => {
+  watchdogInterval = setInterval(() => {
     if (watchdogRepair !== null) return;
     watchdogRepair = (async () => {
       try {
