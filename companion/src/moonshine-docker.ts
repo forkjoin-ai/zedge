@@ -205,12 +205,18 @@ const LOCAL_MOONSHINE_MODELS: Record<string, LocalMoonshineModelSpec> = {
     defaultLayers: '0..1',
   },
   // New mesh knots (dense, on R2; layers auto-detected from knot metadata).
-  // The 1-tensor falcon-mamba-7b / gemma3-4b-it are excluded until re-encoded.
   'smollm2-360m': meshKnotSpec('smollm2-360m'),
   'gemma3-1b-it': meshKnotSpec('gemma3-1b-it'),
   'deepseek-r1-1.5b': meshKnotSpec('deepseek-r1-1.5b'),
   'phi-3.5-mini': meshKnotSpec('phi-3.5-mini'),
   'mamba-2.8b': meshKnotSpec('mamba-2.8b'),
+  // Landed + config-QA'd (4.4 GB, qwen2/NativeLlama, 28 layers / 3584 hidden).
+  'qwen2.5-7b': meshKnotSpec('qwen2.5-7b'),
+  // Re-encoded + config-QA'd (7.6 GB, falcon-mamba/model_mamba, 64 layers /
+  // 4096 hidden / 643 tensors). Same SSM path as the served mamba-2.8b.
+  'falcon-mamba-7b': meshKnotSpec('falcon-mamba-7b'),
+  // Re-encode (70658317) FIXED config (34/2560/444t); gemma3 -> model_gemma4.
+  'gemma3-4b-it': meshKnotSpec('gemma3-4b-it'),
   // ── Exotic (non-transformer) knots — runtime arches are wired (rwkv7 ->
   //    model_rwkv7.rs, jamba -> model_hybrid.rs) and the encode-ssm-models.py
   //    converter round-trip is audited GREEN (tensor names + arch + config all

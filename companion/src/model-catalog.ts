@@ -89,6 +89,38 @@ const KNOWN_ZEDGE_MODELS: KnownZedgeModel[] = [
     ownedBy: 'gnosis',
     forkjoinTier: true,
   },
+  {
+    // Landed + config-QA'd on R2 (4.4 GB, arch qwen2 [loader default], 28
+    // layers / 3584 hidden / 339 tensors). Same arch as the proven
+    // qwen-coder-7b (Paris gate verified), so the NativeLlama path serves it.
+    id: 'qwen2.5-7b',
+    displayName: 'Qwen2.5 7B Instruct (Moonshine)',
+    maxTokens: 8192,
+    ownedBy: 'gnosis',
+    forkjoinTier: true,
+  },
+  {
+    // Re-encoded + config-QA'd on R2 (7.6 GB, arch falcon-mamba, 64 layers /
+    // 4096 hidden / 643 tensors / d_state 16). SSM -> model_mamba, the same
+    // served path as mamba-2.8b. (SSM functional gate pending: native smoke is
+    // NativeLlama-only; gate via fat-station MambaPipeline when disk allows.)
+    id: 'falcon-mamba-7b',
+    displayName: 'Falcon-Mamba 7B (Moonshine SSM)',
+    maxTokens: 8192,
+    ownedBy: 'gnosis',
+    forkjoinTier: true,
+  },
+  {
+    // Re-encode (70658317) landed with FIXED config (encode-knot.py raw->text_cfg
+    // fix): 34 layers / 2560 hidden / 444 tensors / vocab 262208. gemma3 ->
+    // model_gemma4, same served path as gemma3-1b-it. (Earlier 4.1G knot had a
+    // 1B config block 26/1152; config-QA caught it, the fix corrected it.)
+    id: 'gemma3-4b-it',
+    displayName: 'Gemma3 4B Instruct (Moonshine)',
+    maxTokens: 8192,
+    ownedBy: 'gnosis',
+    forkjoinTier: true,
+  },
 ];
 
 const KNOWN_ZEDGE_MODELS_BY_ID = new Map(
