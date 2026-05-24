@@ -68,13 +68,18 @@ const KNOWN_ZEDGE_MODELS: KnownZedgeModel[] = [
     ownedBy: 'gnosis',
     forkjoinTier: true,
   },
-  {
-    id: 'deepseek-r1-1.5b',
-    displayName: 'DeepSeek-R1 Distill Qwen 1.5B (Moonshine)',
-    maxTokens: 4096,
-    ownedBy: 'gnosis',
-    forkjoinTier: true,
-  },
+  // deepseek-r1-1.5b UN-WIRED: config is correct (qwen2, 28L/1536h) but the knot
+  // FAILS the monster-swarm admission gate -- residual goes all-NaN at layer 0,
+  // so every logit is NaN (sentinel argmax). Was wired since R+21 but never
+  // functionally tested ("prose on the wire"). Re-promote only after re-knot +
+  // a passing paris qspec admission.
+  // {
+  //   id: 'deepseek-r1-1.5b',
+  //   displayName: 'DeepSeek-R1 Distill Qwen 1.5B (Moonshine)',
+  //   maxTokens: 4096,
+  //   ownedBy: 'gnosis',
+  //   forkjoinTier: true,
+  // },
   {
     id: 'phi-3.5-mini',
     displayName: 'Phi-3.5 Mini (Moonshine)',
@@ -83,6 +88,10 @@ const KNOWN_ZEDGE_MODELS: KnownZedgeModel[] = [
     forkjoinTier: true,
   },
   {
+    // ADMITTED (Paris 7785 rank0, nan=0) after the full SSM fix chain: Q8 loader
+    // (34-byte), a_log F32, A-discretization, causal-conv1d reorder, and the
+    // tied-lm_head fallback (mamba ties lm_head to the embedding; the loader was
+    // returning an all-zero output_weight). mamba arch -> MambaPipeline.
     id: 'mamba-2.8b',
     displayName: 'Mamba 2.8B (Moonshine SSM)',
     maxTokens: 2048,
@@ -100,16 +109,55 @@ const KNOWN_ZEDGE_MODELS: KnownZedgeModel[] = [
     forkjoinTier: true,
   },
   {
-    // Re-encoded + config-QA'd on R2 (7.6 GB, arch falcon-mamba, 64 layers /
-    // 4096 hidden / 643 tensors / d_state 16). SSM -> model_mamba, the same
-    // served path as mamba-2.8b. (SSM functional gate pending: native smoke is
-    // NativeLlama-only; gate via fat-station MambaPipeline when disk allows.)
-    id: 'falcon-mamba-7b',
-    displayName: 'Falcon-Mamba 7B (Moonshine SSM)',
+    // Re-encoded 34-byte Q8_0; ADMITTED via monster-guard (Paris token 6233 rank
+    // 0, reject 1040 fails) after the runtime bowl_q_filter fix. mistral = qwen2
+    // arch -> NativeLlama. See monster-swarm/ADMITTED_MODELS.md.
+    id: 'mistral-7b',
+    displayName: 'Mistral 7B Instruct v0.3 (Moonshine)',
     maxTokens: 8192,
     ownedBy: 'gnosis',
     forkjoinTier: true,
   },
+  {
+    // Re-encoded with the rope_theta-from-rope_scaling fix (500000, was 10000)
+    // + bowl_q_filter runtime fix. ADMITTED via monster-guard (Paris 12366 rank0,
+    // reject 279 fails). arch=llama -> NativeLlama (28L / 3072h / 254 tensors).
+    id: 'llama-3.2-3b',
+    displayName: 'Llama 3.2 3B Instruct (Moonshine)',
+    maxTokens: 8192,
+    ownedBy: 'gnosis',
+    forkjoinTier: true,
+  },
+  {
+    // ADMITTED via monster-guard (Paris 12095 rank0, logit 20.69) after the
+    // amplituhedron-hotpath fix (it corrupted qwen3's qkv_dim!=hidden_dim path).
+    // qwen3 dense -> NativeLlama with per-head q/k-norm (36L / 2560h / 32 heads).
+    id: 'qwen3-4b',
+    displayName: 'Qwen3 4B (Moonshine)',
+    maxTokens: 8192,
+    ownedBy: 'gnosis',
+    forkjoinTier: true,
+  },
+  {
+    // ADMITTED via monster-guard (Paris 12095 rank0, logit 21.95) after the
+    // amplituhedron-hotpath fix. qwen3 dense -> NativeLlama + per-head q/k-norm.
+    id: 'qwen3-8b',
+    displayName: 'Qwen3 8B (Moonshine)',
+    maxTokens: 8192,
+    ownedBy: 'gnosis',
+    forkjoinTier: true,
+  },
+  // falcon-mamba-7b UN-WIRED: same ssm_a_log Q8 bug as mamba-2.8b (a_log =
+  // d_inner*d_state = 131072, Q8'd -> OOB panic). Config was valid but it was
+  // never functionally gated (native smoke is NativeLlama-only). encode-ssm-
+  // models.py now forces a_log F32; re-promote after re-knot + paris qspec.
+  // {
+  //   id: 'falcon-mamba-7b',
+  //   displayName: 'Falcon-Mamba 7B (Moonshine SSM)',
+  //   maxTokens: 8192,
+  //   ownedBy: 'gnosis',
+  //   forkjoinTier: true,
+  // },
   {
     // Re-encode (70658317) landed with FIXED config (encode-knot.py raw->text_cfg
     // fix): 34 layers / 2560 hidden / 444 tensors / vocab 262208. gemma3 ->

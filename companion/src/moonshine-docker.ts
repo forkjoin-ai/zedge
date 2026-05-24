@@ -207,14 +207,29 @@ const LOCAL_MOONSHINE_MODELS: Record<string, LocalMoonshineModelSpec> = {
   // New mesh knots (dense, on R2; layers auto-detected from knot metadata).
   'smollm2-360m': meshKnotSpec('smollm2-360m'),
   'gemma3-1b-it': meshKnotSpec('gemma3-1b-it'),
-  'deepseek-r1-1.5b': meshKnotSpec('deepseek-r1-1.5b'),
+  // deepseek-r1-1.5b UN-WIRED: FAILS admission (residual NaN at layer 0 -> NaN
+  // logits). Re-promote after re-knot + passing paris qspec.
+  // 'deepseek-r1-1.5b': meshKnotSpec('deepseek-r1-1.5b'),
   'phi-3.5-mini': meshKnotSpec('phi-3.5-mini'),
+  // ADMITTED (Paris 7785 rank0) after the SSM fix chain (Q8 loader, a_log F32,
+  // A-disc, conv1d reorder, tied-lm_head fallback). mamba -> MambaPipeline.
   'mamba-2.8b': meshKnotSpec('mamba-2.8b'),
   // Landed + config-QA'd (4.4 GB, qwen2/NativeLlama, 28 layers / 3584 hidden).
   'qwen2.5-7b': meshKnotSpec('qwen2.5-7b'),
+  // ADMITTED (monster-guard PASS, Paris 6233 rank0) after bowl_q_filter fix.
+  // 34-byte Q8_0, mistral = qwen2 arch / NativeLlama (32 layers / 4096 hidden).
+  'mistral-7b': meshKnotSpec('mistral-7b'),
+  // ADMITTED (monster-guard PASS, Paris 12366 rank0) after rope_theta re-encode
+  // (500000) + bowl_q_filter fix. arch=llama / NativeLlama (28L / 3072h).
+  'llama-3.2-3b': meshKnotSpec('llama-3.2-3b'),
+  // ADMITTED (monster-guard PASS, Paris 12095 rank0) after the amplituhedron
+  // hotpath fix. qwen3 dense / NativeLlama + per-head q/k-norm (36L / 2560h).
+  'qwen3-4b': meshKnotSpec('qwen3-4b'),
+  // ADMITTED (monster-guard PASS, Paris 12095 rank0) after amplituhedron fix.
+  'qwen3-8b': meshKnotSpec('qwen3-8b'),
   // Re-encoded + config-QA'd (7.6 GB, falcon-mamba/model_mamba, 64 layers /
-  // 4096 hidden / 643 tensors). Same SSM path as the served mamba-2.8b.
-  'falcon-mamba-7b': meshKnotSpec('falcon-mamba-7b'),
+  // 4096 hidden / 643 tensors). UN-WIRED: same ssm_a_log Q8 OOB panic as mamba; reknot pending.
+  // 'falcon-mamba-7b': meshKnotSpec('falcon-mamba-7b'),
   // Re-encode (70658317) FIXED config (34/2560/444t); gemma3 -> model_gemma4.
   'gemma3-4b-it': meshKnotSpec('gemma3-4b-it'),
   // ── Exotic (non-transformer) knots — runtime arches are wired (rwkv7 ->
