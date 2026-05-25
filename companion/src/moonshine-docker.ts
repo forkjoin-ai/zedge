@@ -206,10 +206,15 @@ const LOCAL_MOONSHINE_MODELS: Record<string, LocalMoonshineModelSpec> = {
   },
   // New mesh knots (dense, on R2; layers auto-detected from knot metadata).
   'smollm2-360m': meshKnotSpec('smollm2-360m'),
-  'gemma3-1b-it': meshKnotSpec('gemma3-1b-it'),
-  // deepseek-r1-1.5b UN-WIRED: FAILS admission (residual NaN at layer 0 -> NaN
-  // logits). Re-promote after re-knot + passing paris qspec.
-  // 'deepseek-r1-1.5b': meshKnotSpec('deepseek-r1-1.5b'),
+  // UN-WIRED 2026-05-24: the R2 gemma3-1b-it.knot is BROKEN — gate gives
+  // 262144/262144 NaN logits (config 26L/1152h; all-NaN = pre-Q8-fix 36-byte
+  // encode). NOT a pipeline bug (gemma3-4b passes the same Gemma4Pipeline).
+  // Re-encode with the fixed encoder (cloudbuild has an encode-gemma3-1b step),
+  // re-gate (gemma tokens 2,818,5279,529,7001,563 -> 9079), then re-wire.
+  // 'gemma3-1b-it': meshKnotSpec('gemma3-1b-it'),
+  // ADMITTED (monster-guard PASS, Paris 12095 rank0) after re-knot fixed
+  // rope_theta 1e6→10000. qwen2->NativeLlama.
+  'deepseek-r1-1.5b': meshKnotSpec('deepseek-r1-1.5b'),
   'phi-3.5-mini': meshKnotSpec('phi-3.5-mini'),
   // ADMITTED (Paris 7785 rank0) after the SSM fix chain (Q8 loader, a_log F32,
   // A-disc, conv1d reorder, tied-lm_head fallback). mamba -> MambaPipeline.
@@ -227,10 +232,14 @@ const LOCAL_MOONSHINE_MODELS: Record<string, LocalMoonshineModelSpec> = {
   'qwen3-4b': meshKnotSpec('qwen3-4b'),
   // ADMITTED (monster-guard PASS, Paris 12095 rank0) after amplituhedron fix.
   'qwen3-8b': meshKnotSpec('qwen3-8b'),
-  // Re-encoded + config-QA'd (7.6 GB, falcon-mamba/model_mamba, 64 layers /
-  // 4096 hidden / 643 tensors). UN-WIRED: same ssm_a_log Q8 OOB panic as mamba; reknot pending.
-  // 'falcon-mamba-7b': meshKnotSpec('falcon-mamba-7b'),
-  // Re-encode (70658317) FIXED config (34/2560/444t); gemma3 -> model_gemma4.
+  // ADMITTED (Paris 6671 rank0) after d_inner-from-weights + weightless B/C/dt
+  // RMSNorms (FalconMamba is Mamba-1 + those norms). falcon-mamba->MambaPipeline.
+  'falcon-mamba-7b': meshKnotSpec('falcon-mamba-7b'),
+  // ADMITTED 2026-05-24 (Paris 9079 rank0, logit 21.25 == HF; monster-guard PASS
+  // w/ reject 506). Root cause was SWAPPED gemma3 sandwich norms: the knot's
+  // ffn_norm IS HF post_attention_layernorm and post_attention_norm IS HF
+  // pre_feedforward_layernorm (llama.cpp gemma GGUF naming) — model_gemma4.rs
+  // fetched them backwards. gemma3 -> Gemma4Pipeline.
   'gemma3-4b-it': meshKnotSpec('gemma3-4b-it'),
   // ── Exotic (non-transformer) knots — runtime arches are wired (rwkv7 ->
   //    model_rwkv7.rs, jamba -> model_hybrid.rs) and the encode-ssm-models.py
@@ -244,8 +253,14 @@ const LOCAL_MOONSHINE_MODELS: Record<string, LocalMoonshineModelSpec> = {
   //    falcon-h1r-7b is blocked: upstream ships fused QKV; the converter now
   //    refuses it (needs a fused->split q/k/v step) rather than shipping zeroed
   //    attention.
-  // 'rwkv7-2.9b': meshKnotSpec('rwkv7-2.9b'),
-  // 'jamba-1.5-mini': meshKnotSpec('jamba-1.5-mini'),
+  // ADMITTED 2026-05-24 (Paris 37138 rank0, nan=0; R2 200). rwkv7->RWKV7Pipeline.
+  'rwkv7-2.9b': meshKnotSpec('rwkv7-2.9b'),
+  // ADMITTED 2026-05-24 (vision-language). Re-encode (9da8efe5, 4.32GB) carries the
+  // Qwen2.5-VL vision tower; ViT (model_qwen2vl_vit.rs) -> visual tokens -> NativeLlama.
+  // Real face-image caption passed the looser coherence gate. Image input via the
+  // fat-station /vision-embed + /vision-chat routes.
+  'qwen2.5-vl-3b': meshKnotSpec('qwen2.5-vl-3b'),
+  // 'jamba-1.5-mini': meshKnotSpec('jamba-1.5-mini'),  // MESH-GATE PENDING (54GB)
 };
 
 interface MoonshineProbeResult {

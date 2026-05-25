@@ -61,25 +61,26 @@ const KNOWN_ZEDGE_MODELS: KnownZedgeModel[] = [
     ownedBy: 'gnosis',
     forkjoinTier: true,
   },
-  {
-    id: 'gemma3-1b-it',
-    displayName: 'Gemma3 1B Instruct (Moonshine)',
-    maxTokens: 8192,
-    ownedBy: 'gnosis',
-    forkjoinTier: true,
-  },
-  // deepseek-r1-1.5b UN-WIRED: config is correct (qwen2, 28L/1536h) but the knot
-  // FAILS the monster-swarm admission gate -- residual goes all-NaN at layer 0,
-  // so every logit is NaN (sentinel argmax). Was wired since R+21 but never
-  // functionally tested ("prose on the wire"). Re-promote only after re-knot +
-  // a passing paris qspec admission.
+  // UN-WIRED 2026-05-24: the R2 gemma3-1b-it.knot is BROKEN (gate = 262144/262144
+  // NaN logits; pre-Q8-fix 36-byte encode, config 26L/1152h). NOT a pipeline bug —
+  // gemma3-4b passes the same Gemma4Pipeline. Re-encode + re-gate, then re-add.
   // {
-  //   id: 'deepseek-r1-1.5b',
-  //   displayName: 'DeepSeek-R1 Distill Qwen 1.5B (Moonshine)',
-  //   maxTokens: 4096,
+  //   id: 'gemma3-1b-it',
+  //   displayName: 'Gemma3 1B Instruct (Moonshine)',
+  //   maxTokens: 8192,
   //   ownedBy: 'gnosis',
   //   forkjoinTier: true,
   // },
+  {
+    // ADMITTED (monster-guard PASS, Paris 12095 rank0 logit11.30). Re-knot fixed
+    // rope_theta: 1e6→10000 (encoder qwen2 branch now uses _resolve_rope_theta;
+    // transformers v5 nests rope_theta under rope_scaling). qwen2->NativeLlama.
+    id: 'deepseek-r1-1.5b',
+    displayName: 'DeepSeek-R1 Distill Qwen 1.5B (Moonshine)',
+    maxTokens: 4096,
+    ownedBy: 'gnosis',
+    forkjoinTier: true,
+  },
   {
     id: 'phi-3.5-mini',
     displayName: 'Phi-3.5 Mini (Moonshine)',
@@ -147,24 +148,46 @@ const KNOWN_ZEDGE_MODELS: KnownZedgeModel[] = [
     ownedBy: 'gnosis',
     forkjoinTier: true,
   },
-  // falcon-mamba-7b UN-WIRED: same ssm_a_log Q8 bug as mamba-2.8b (a_log =
-  // d_inner*d_state = 131072, Q8'd -> OOB panic). Config was valid but it was
-  // never functionally gated (native smoke is NativeLlama-only). encode-ssm-
-  // models.py now forces a_log F32; re-promote after re-knot + paris qspec.
-  // {
-  //   id: 'falcon-mamba-7b',
-  //   displayName: 'Falcon-Mamba 7B (Moonshine SSM)',
-  //   maxTokens: 8192,
-  //   ownedBy: 'gnosis',
-  //   forkjoinTier: true,
-  // },
   {
-    // Re-encode (70658317) landed with FIXED config (encode-knot.py raw->text_cfg
-    // fix): 34 layers / 2560 hidden / 444 tensors / vocab 262208. gemma3 ->
-    // model_gemma4, same served path as gemma3-1b-it. (Earlier 4.1G knot had a
-    // 1B config block 26/1152; config-QA caught it, the fix corrected it.)
+    // ADMITTED (Paris 6671 rank0, nan=0). Falcon-Mamba is Mamba-1 + weightless
+    // RMSNorms on B/C/dt (FalconMamba's stability addition); fixes: d_inner
+    // derived from conv weight (config expand=16 was wrong→8192), and the
+    // weightless b/c/dt rms applied in mamba1_s6_step. falcon-mamba->MambaPipeline.
+    id: 'falcon-mamba-7b',
+    displayName: 'Falcon-Mamba 7B (Moonshine SSM)',
+    maxTokens: 8192,
+    ownedBy: 'gnosis',
+    forkjoinTier: true,
+  },
+  {
+    // ADMITTED 2026-05-24 (Paris 9079 rank0, logit 21.25 == HF; monster-guard PASS).
+    // Fixed the SWAPPED gemma3 sandwich norms in model_gemma4.rs: the knot's
+    // ffn_norm IS HF post_attention_layernorm and post_attention_norm IS HF
+    // pre_feedforward_layernorm (llama.cpp gemma naming) — were fetched backwards.
     id: 'gemma3-4b-it',
     displayName: 'Gemma3 4B Instruct (Moonshine)',
+    maxTokens: 8192,
+    ownedBy: 'gnosis',
+    forkjoinTier: true,
+  },
+  {
+    // ADMITTED (Paris 37138 rank0, nan=0). RWKV-7 recurrent (no attention).
+    // Fixes: 8 Goose loader bugs (name aliases, *_bias, low-rank dims, channel-mix,
+    // v_first) + head partition derived n_heads=hidden/64 (40x64, was 32x80).
+    // rwkv7 -> RWKV7Pipeline. See monster-swarm/ADMITTED_MODELS.md.
+    id: 'rwkv7-2.9b',
+    displayName: 'RWKV-7 2.9B (Moonshine recurrent)',
+    maxTokens: 4096,
+    ownedBy: 'gnosis',
+    forkjoinTier: true,
+  },
+  {
+    // ADMITTED 2026-05-24 (vision-language / image-understanding). Real caption of
+    // a test face image, coherent + on-topic. Re-encode carries the Qwen2.5-VL
+    // vision tower (build 9da8efe5, 4.32GB); model_qwen2vl_vit.rs ViT -> 256 visual
+    // tokens spliced before text -> NativeLlama. Text backbone arch=qwen2.
+    id: 'qwen2.5-vl-3b',
+    displayName: 'Qwen2.5-VL 3B (Moonshine vision)',
     maxTokens: 8192,
     ownedBy: 'gnosis',
     forkjoinTier: true,
