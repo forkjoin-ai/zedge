@@ -65,6 +65,16 @@ export interface ZedgeConfig {
    * Enable when Zed ships the fix.
    */
   reasoningContent?: boolean;
+  /**
+   * Override the skymesh global cache URL for Tier -1 teleportation.
+   * Defaults to https://www-edgework-app.edgework.ai (edgework prod).
+   */
+  skyMeshCacheUrl?: string;
+  /**
+   * Explicitly enable/disable Tier -1 skymesh cache teleportation.
+   * true = on (default), false = off. Also controlled by ZEDGE_SKYMESH_TELEPORT env.
+   */
+  skyMeshTeleport?: boolean;
 }
 
 type PartialZedgeConfig = Omit<

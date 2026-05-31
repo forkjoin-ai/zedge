@@ -2438,6 +2438,25 @@ export async function handleWebRequest(req: Request): Promise<Response> {
     return jsonResponse(getMeshStatus());
   }
 
+  if (path === '/skymesh/status' && req.method === 'GET') {
+    const { isSkymeshTeleportEnabled, SKYMESH_DEFAULT_CACHE_URL } = await import(
+      './skymesh-cache.ts'
+    );
+    return jsonResponse({
+      enabled: isSkymeshTeleportEnabled(),
+      cacheUrl:
+        process.env.ZEDGE_SKYMESH_CACHE_URL ??
+        getZedgeConfig().skyMeshCacheUrl ??
+        SKYMESH_DEFAULT_CACHE_URL,
+      qspecId: 'skymesh-query/v1',
+      fatStationUrl:
+        process.env.ZEDGE_FAT_STATION_URL ??
+        process.env.FAT_STATION_URL ??
+        'http://127.0.0.1:8000',
+      envOverride: process.env.ZEDGE_SKYMESH_TELEPORT ?? null,
+    });
+  }
+
   // Peer-to-peer inference endpoint (called by other mesh nodes)
   if (path === '/mesh/infer' && req.method === 'POST') {
     // Only accept mesh inference when the mesh is running
@@ -4724,6 +4743,7 @@ export async function startServer(): Promise<void> {
     `[zedge] Superinference: POST http://localhost:${port}/v1/superinference`
   );
   console.log(`[zedge] Mesh: http://localhost:${port}/mesh/status`);
+  console.log(`[zedge] Skymesh: http://localhost:${port}/skymesh/status`);
   console.log(`[zedge] Agent: POST http://localhost:${port}/agent/session`);
   console.log(`[zedge] Forge: http://localhost:${port}/forge/status`);
   console.log(`[zedge] Health: http://localhost:${port}/health`);

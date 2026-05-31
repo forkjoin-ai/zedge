@@ -9,6 +9,7 @@
 
 import { getApiBaseUrl, getAuthHeaders, getZedgeConfig } from './config.ts';
 import { CLOUD_RUN_COORDINATORS } from './coordinator-urls.ts';
+import { isSkymeshTeleportEnabled, trySkymeshCacheTeleport, SKYMESH_DEFAULT_CACHE_URL } from './skymesh-cache.ts';
 import { appendFileSync, mkdirSync, writeFileSync } from 'fs';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
@@ -143,6 +144,7 @@ export interface ModelInfo {
 const REMOTE_EMBEDDING_MODELS = new Set(['text-embedding-3-small']);
 
 export type InferenceTier =
+  | 'skymesh'
   | 'forkjoin'
   | 'mesh'
   | 'edge'
@@ -271,6 +273,14 @@ function getForkjoinBaseUrl(): string {
 
 function getForkjoinTimeoutMs(): number {
   return Number(process.env.ZEDGE_FORKJOIN_TIMEOUT_MS ?? 90_000);
+}
+
+function getSkymeshCacheUrl(): string {
+  return (
+    process.env.ZEDGE_SKYMESH_CACHE_URL ??
+    getZedgeConfig().skyMeshCacheUrl ??
+    SKYMESH_DEFAULT_CACHE_URL
+  );
 }
 
 /**
@@ -2601,6 +2611,69 @@ export async function infer(
       request.stream ?? false
     } msgs=${request.messages.length} last="${msgPreview}"`
   );
+
+  // Tier -1: Skymesh global cache-key teleportation (default-on).
+  // On verified hit: returns cached answer with zero inference (geodesicLength=0).
+  // On miss / fat-station down / error: falls through silently.
+  if (isSkymeshTeleportEnabled()) {
+    const t0 = Date.now();
+    try {
+      const lastUserContent =
+        [...request.messages]
+          .reverse()
+          .find((m) => m.role === 'user')?.content ?? '';
+      if (lastUserContent.trim().length > 0) {
+        const answerText = await trySkymeshCacheTeleport(
+          lastUserContent,
+          request.model,
+          FAT_STATION_BASE_URL,
+          getSkymeshCacheUrl()
+        );
+        if (answerText !== null) {
+          attempts.push({ tier: 'skymesh', status: 'ok', ms: Date.now() - t0 });
+          logInference(
+            `model=${request.model} tier=skymesh status=ok (teleport hit) ms=${Date.now() - t0}`
+          );
+          return {
+            tier: 'skymesh',
+            response: createJsonChatCompletionResponse(request.model, answerText, {
+              id: `chatcmpl-skymesh-${Date.now()}`,
+              headers: {
+                'X-Zedge-Tier': 'skymesh',
+                'X-Skymesh-Teleport': 'hit',
+              },
+            }),
+            upstreamHeaders: {
+              'X-Zedge-Tier': 'skymesh',
+              'X-Skymesh-Teleport': 'hit',
+            },
+            attempts,
+          };
+        }
+        attempts.push({
+          tier: 'skymesh',
+          status: 'skipped',
+          ms: Date.now() - t0,
+          detail: 'miss',
+        });
+      } else {
+        attempts.push({
+          tier: 'skymesh',
+          status: 'skipped',
+          ms: 0,
+          detail: 'no user content',
+        });
+      }
+    } catch (err) {
+      attempts.push({
+        tier: 'skymesh',
+        status: 'error',
+        ms: Date.now() - t0,
+        detail: String(err),
+      });
+      logInference(`[skymesh] teleport error: ${String(err)}`);
+    }
+  }
 
   // Tier 0 (primary): Forkjoin own-runtime distributed-inference mesh.
   // Passthrough to the mesh OpenAI-compatible endpoint. Falls through to
