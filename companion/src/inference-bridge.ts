@@ -1845,7 +1845,7 @@ function echoFallback(request: ChatCompletionRequest): Response {
     id: `chatcmpl-echo-${Date.now()}`,
     object: 'chat.completion',
     created: Math.floor(Date.now() / 1000),
-    model: 'echo-fallback',
+    model: request.model,
     choices: [
       {
         index: 0,
