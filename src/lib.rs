@@ -98,6 +98,8 @@ impl zed::Extension for EdgeAiExtension {
             "edgework" => slash_commands::run_edgework(&_args),
             "edge-admin" => slash_commands::run_admin(&_args),
             "edge-mesh" => slash_commands::run_mesh(&_args),
+            "edge-skymesh" => slash_commands::run_skymesh(&_args),
+            "edge-team" => slash_commands::run_team(&_args),
             "edge-crdt" => slash_commands::run_crdt(&_args),
             "edge-forge" => slash_commands::run_forge(&_args),
             "edge-kernel" => slash_commands::run_kernel(&_args),

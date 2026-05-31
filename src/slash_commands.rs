@@ -790,32 +790,248 @@ pub fn run_mesh(args: &[String]) -> Result<SlashCommandOutput, String> {
             )),
             Err(e) => Ok(output_with_section(format!("**Error**: {e}"), "Mesh Stop")),
         },
-        _ => match companion_get("/mesh/status") {
-            Ok(body) => {
+        _ => {
+            let mut all_output = String::new();
+
+            // LAN Mesh section
+            if let Ok(body) = companion_get("/mesh/status") {
                 if let Ok(v) = serde_json::from_str::<serde_json::Value>(&body) {
                     let running = v["running"].as_bool().unwrap_or(false);
                     let peers = v["peers"].as_array().map(|a| a.len()).unwrap_or(0);
                     let node_id = v["nodeId"].as_str().unwrap_or("none");
+                    all_output.push_str("## P2P Inference Mesh (LAN)\n");
+                    all_output.push_str(&format!(
+                        "**Status**: {}\n",
+                        if running { "running" } else { "stopped" }
+                    ));
+                    all_output.push_str(&format!("**Node ID**: `{}`\n", node_id));
+                    all_output.push_str(&format!("**Peers**: {}\n", peers));
+                    if !running {
+                        all_output.push_str("\nStart with: `/edge-mesh start`\n");
+                    }
+                }
+            }
+
+            all_output.push_str("\n---\n\n");
+
+            // Global Skymesh Bridge section
+            if let Ok(body) = companion_get("/skymesh/bridge/status") {
+                if let Ok(v) = serde_json::from_str::<serde_json::Value>(&body) {
+                    let running = v["running"].as_bool().unwrap_or(false);
+                    let mesh_id = v["meshId"].as_str().unwrap_or("none");
+                    let admitted = v["admitted"].as_bool().unwrap_or(false);
+                    let lan_peers = v["lanPeers"].as_u64().unwrap_or(0);
+                    all_output.push_str("## Global Skymesh Bridge\n");
+                    all_output.push_str(&format!(
+                        "**Status**: {}\n",
+                        if running { "running" } else { "stopped" }
+                    ));
+                    all_output.push_str(&format!("**Mesh**: `{}`\n", mesh_id));
+                    all_output.push_str(&format!("**Admitted**: {}\n", if admitted { "yes" } else { "no" }));
+                    all_output.push_str(&format!("**LAN Peers**: {}\n", lan_peers));
+                    if !running {
+                        all_output.push_str("\nStart with: `/edge-skymesh start`\n");
+                    }
+                }
+            }
+
+            Ok(output_with_section(all_output, "Mesh"))
+        },
+    }
+}
+
+/// /edge-skymesh — Global skymesh bridge control
+pub fn run_skymesh(args: &[String]) -> Result<SlashCommandOutput, String> {
+    let sub = args.first().map(|s| s.as_str()).unwrap_or("status");
+    match sub {
+        "start" => match companion_post("/skymesh/bridge/start") {
+            Ok(body) => Ok(output_with_section(
+                format!("Skymesh bridge started.\n\n```json\n{body}\n```"),
+                "Skymesh Start",
+            )),
+            Err(e) => Ok(output_with_section(format!("**Error**: {e}"), "Skymesh Start")),
+        },
+        "stop" => match companion_post("/skymesh/bridge/stop") {
+            Ok(body) => Ok(output_with_section(
+                format!("Skymesh bridge stopped.\n\n```json\n{body}\n```"),
+                "Skymesh Stop",
+            )),
+            Err(e) => Ok(output_with_section(format!("**Error**: {e}"), "Skymesh Stop")),
+        },
+        "warm" => {
+            if args.len() < 2 {
+                return Ok(output_with_section(
+                    "Usage: `/edge-skymesh warm <prompt>`".to_string(),
+                    "Skymesh Warm",
+                ));
+            }
+            let prompt = args[1..].join(" ");
+            match companion_post_json("/skymesh/warm", serde_json::json!({
+                "prompt": prompt,
+                "model": "qwen2-0.5b-instruct"
+            })) {
+                Ok(body) => {
+                    if let Ok(v) = serde_json::from_str::<serde_json::Value>(&body) {
+                        let hit = v["hit"].as_bool().unwrap_or(false);
+                        let fp48 = v["fp48"].as_str().unwrap_or("?");
+                        Ok(output_with_section(
+                            format!(
+                                "Cache hit: {}\nFingerprint: `{}`",
+                                if hit { "**yes**" } else { "no" },
+                                fp48
+                            ),
+                            "Skymesh Warm",
+                        ))
+                    } else {
+                        Ok(output_with_section(format!("```json\n{body}\n```"), "Skymesh Warm"))
+                    }
+                }
+                Err(e) => Ok(output_with_section(format!("**Error**: {e}"), "Skymesh Warm")),
+            }
+        }
+        _ => match companion_get("/skymesh/bridge/status") {
+            Ok(body) => {
+                if let Ok(v) = serde_json::from_str::<serde_json::Value>(&body) {
+                    let running = v["running"].as_bool().unwrap_or(false);
+                    let mesh_id = v["meshId"].as_str().unwrap_or("none");
+                    let admitted = v["admitted"].as_bool().unwrap_or(false);
+                    let reconnect_count = v["reconnectCount"].as_u64().unwrap_or(0);
+                    let lan_peers = v["lanPeers"].as_u64().unwrap_or(0);
                     let mut parts = vec![
-                        "## P2P Inference Mesh\n".to_string(),
+                        "## Global Skymesh Bridge\n".to_string(),
                         format!(
                             "**Status**: {}",
                             if running { "running" } else { "stopped" }
                         ),
-                        format!("**Node ID**: `{node_id}`"),
-                        format!("**Peers**: {peers}"),
+                        format!("**Mesh**: `{mesh_id}`"),
+                        format!("**Admitted**: {}", if admitted { "yes" } else { "no" }),
+                        format!("**Reconnects**: {reconnect_count}"),
+                        format!("**LAN Peers**: {lan_peers}"),
                     ];
                     if !running {
-                        parts.push("\nStart with: `/zedge-mesh start`".to_string());
+                        parts.push("\nStart with: `/edge-skymesh start`".to_string());
                     }
-                    Ok(output_with_section(parts.join("\n"), "Mesh"))
+                    Ok(output_with_section(parts.join("\n"), "Skymesh"))
                 } else {
-                    Ok(output_with_section(format!("```json\n{body}\n```"), "Mesh"))
+                    Ok(output_with_section(format!("```json\n{body}\n```"), "Skymesh"))
                 }
             }
             Err(e) => Ok(output_with_section(
                 format!("**Companion offline**: {e}"),
-                "Mesh",
+                "Skymesh",
+            )),
+        },
+    }
+}
+
+/// /edge-team — Team-scoped shared inference & CRDT workspace
+pub fn run_team(args: &[String]) -> Result<SlashCommandOutput, String> {
+    let sub = args.first().map(|s| s.as_str()).unwrap_or("status");
+    match sub {
+        "create" => {
+            if args.len() < 2 {
+                return Ok(output_with_section(
+                    "Usage: `/edge-team create <name>`".to_string(),
+                    "Team Create",
+                ));
+            }
+            let name = args[1..].join(" ");
+            match companion_post_json("/teams/create", serde_json::json!({ "name": name })) {
+                Ok(body) => {
+                    if let Ok(v) = serde_json::from_str::<serde_json::Value>(&body) {
+                        let team_id = v["team"]["id"].as_str().unwrap_or("?");
+                        let team_name = v["team"]["name"].as_str().unwrap_or("?");
+                        let invite_link = v["inviteDeepLink"].as_str().unwrap_or("");
+                        Ok(output_with_section(
+                            format!(
+                                "Team created: `{}`\n\nInvite link:\n```\n{invite_link}\n```",
+                                team_id
+                            ),
+                            "Team Create",
+                        ))
+                    } else {
+                        Ok(output_with_section(format!("```json\n{body}\n```"), "Team Create"))
+                    }
+                }
+                Err(e) => Ok(output_with_section(format!("**Error**: {e}"), "Team Create")),
+            }
+        }
+        "join" => {
+            if args.len() < 2 {
+                return Ok(output_with_section(
+                    "Usage: `/edge-team join <teamId> [token]`".to_string(),
+                    "Team Join",
+                ));
+            }
+            let team_id = args[1].to_string();
+            let token = args.get(2).map(|s| s.to_string());
+            let mut payload = serde_json::json!({ "teamId": team_id });
+            if let Some(t) = token {
+                payload["token"] = serde_json::Value::String(t);
+            }
+            match companion_post_json("/teams/join", payload) {
+                Ok(body) => {
+                    if let Ok(v) = serde_json::from_str::<serde_json::Value>(&body) {
+                        let name = v["name"].as_str().unwrap_or("?");
+                        Ok(output_with_section(
+                            format!("Joined team: `{}`", name),
+                            "Team Join",
+                        ))
+                    } else {
+                        Ok(output_with_section(format!("```json\n{body}\n```"), "Team Join"))
+                    }
+                }
+                Err(e) => Ok(output_with_section(format!("**Error**: {e}"), "Team Join")),
+            }
+        }
+        "leave" => match companion_post("/teams/leave") {
+            Ok(_) => Ok(output_with_section(
+                "Left the team.".to_string(),
+                "Team Leave",
+            )),
+            Err(e) => Ok(output_with_section(format!("**Error**: {e}"), "Team Leave")),
+        },
+        "invite" => match companion_get("/teams/invite") {
+            Ok(body) => {
+                if let Ok(v) = serde_json::from_str::<serde_json::Value>(&body) {
+                    let deep_link = v["deepLink"].as_str().unwrap_or("");
+                    let expires_at = v["expiresAt"].as_str().unwrap_or("?");
+                    Ok(output_with_section(
+                        format!(
+                            "Invite link (expires {expires_at}):\n```\n{deep_link}\n```"
+                        ),
+                        "Team Invite",
+                    ))
+                } else {
+                    Ok(output_with_section(format!("```json\n{body}\n```"), "Team Invite"))
+                }
+            }
+            Err(e) => Ok(output_with_section(format!("**Error**: {e}"), "Team Invite")),
+        },
+        _ => match companion_get("/teams/status") {
+            Ok(body) => {
+                if let Ok(v) = serde_json::from_str::<serde_json::Value>(&body) {
+                    let team_id = v["team"]["id"].as_str().unwrap_or("none");
+                    let team_name = v["team"]["name"].as_str().unwrap_or("?");
+                    let member_count = v["memberCount"].as_u64().unwrap_or(1);
+                    let bridge_admitted = v["bridgeStatus"]["admitted"].as_bool().unwrap_or(false);
+                    let lan_peers = v["lanPeers"].as_u64().unwrap_or(0);
+                    let mut parts = vec![
+                        "## Team Status\n".to_string(),
+                        format!("**Team**: `{}` ({})", team_id, team_name),
+                        format!("**Members**: {}", member_count),
+                        format!("**Bridge**: {}", if bridge_admitted { "admitted" } else { "pending" }),
+                        format!("**LAN Peers**: {}", lan_peers),
+                    ];
+                    parts.push("\nCreate with: `/edge-team create <name>`".to_string());
+                    Ok(output_with_section(parts.join("\n"), "Team"))
+                } else {
+                    Ok(output_with_section(format!("```json\n{body}\n```"), "Team"))
+                }
+            }
+            Err(e) => Ok(output_with_section(
+                format!("**Companion offline**: {e}"),
+                "Team",
             )),
         },
     }

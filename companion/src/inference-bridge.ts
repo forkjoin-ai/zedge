@@ -230,9 +230,9 @@ export interface TierResult {
 }
 
 // Moonshine container (docker-compose.moonshine.yml openai-compat service)
-const MOONSHINE_BASE_URL =
+export const MOONSHINE_BASE_URL =
   process.env.ZEDGE_MOONSHINE_URL ?? 'http://127.0.0.1:8080';
-const FAT_STATION_BASE_URL =
+export const FAT_STATION_BASE_URL =
   process.env.ZEDGE_FAT_STATION_URL ??
   process.env.FAT_STATION_URL ??
   'http://127.0.0.1:8000';
