@@ -346,3 +346,109 @@ export async function trySkymeshCacheTeleport(
     return null;
   }
 }
+
+// --- Streaming Cache Hits ---
+
+/**
+ * Returns a ReadableStream that emits SSE chat.completion.chunk events for a cached answer.
+ * Mimics the format of createSSEProxyStream so Zed's OpenAI parser handles it identically.
+ */
+export function streamCachedAnswer(
+  answerText: string,
+  model: string,
+  requestId: string,
+): ReadableStream<Uint8Array> {
+  return new ReadableStream<Uint8Array>((controller) => {
+    const encoder = new TextEncoder();
+    const chunkSize = 4;
+    let index = 0;
+
+    const sendChunk = (): void => {
+      if (index >= answerText.length) {
+        controller.enqueue(encoder.encode('data: [DONE]\n\n'));
+        controller.close();
+        return;
+      }
+
+      const chunk = answerText.substring(index, index + chunkSize);
+      index += chunkSize;
+
+      const sseChunk = {
+        id: `chatcmpl-${requestId}`,
+        object: 'text_completion.chunk',
+        created: Math.floor(Date.now() / 1000),
+        model,
+        choices: [{ index: 0, delta: { content: chunk }, finish_reason: null }],
+      };
+
+      controller.enqueue(encoder.encode(`data: ${JSON.stringify(sseChunk)}\n\n`));
+      setTimeout(sendChunk, 15);
+    };
+
+    sendChunk();
+  });
+}
+
+// --- Cache Writing ---
+
+export async function warmSkymeshCache(opts: {
+  queryTokens: number[];
+  answerText: string;
+  answerTokens?: number[];
+  model: string;
+  cacheUrl: string;
+  fatStationBaseUrl: string;
+}): Promise<void> {
+  try {
+    const fp48 = canonicalQueryHash(opts.queryTokens, opts.model, SKYMESH_QSPEC_ID);
+
+    await fetch(`${opts.cacheUrl}/api/v1/cache/store`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Protocol69-Projection': PROTOCOL69_HEADER_VALUE,
+        'Cache-Control': 'no-store',
+      },
+      body: JSON.stringify({
+        q: fp48,
+        model: opts.model,
+        qspec: SKYMESH_QSPEC_ID,
+        tokens: opts.queryTokens,
+        answerText: opts.answerText,
+        answerTokens: opts.answerTokens ?? [],
+        attestation: { pass: true, admitted: true, sig: `zedge-${Date.now()}` },
+      }),
+      signal: AbortSignal.timeout(5000),
+    });
+  } catch {
+    // Silently fail
+  }
+}
+
+export async function prewarmSkymeshTeleport(
+  prompt: string,
+  model: string,
+  fatStationBaseUrl: string,
+  cacheUrl: string,
+): Promise<{ hit: boolean; fp48: string } | null> {
+  try {
+    const tokens = await trySkymeshTokenize(prompt, fatStationBaseUrl);
+    if (!tokens) return null;
+
+    const fp48 = canonicalQueryHash(tokens, model, SKYMESH_QSPEC_ID);
+    const lookupUrl = `${cacheUrl}/api/v1/cache/lookup?q=${encodeURIComponent(fp48)}&model=${encodeURIComponent(model)}&qspec=${encodeURIComponent(SKYMESH_QSPEC_ID)}&tokens=${encodeURIComponent(tokens.join(','))}&_=${Date.now()}`;
+
+    const res = await fetch(lookupUrl, {
+      method: 'GET',
+      headers: { 'Cache-Control': 'no-store', 'X-Protocol69-Projection': PROTOCOL69_HEADER_VALUE },
+      signal: AbortSignal.timeout(SKYMESH_CACHE_LOOKUP_TIMEOUT_MS),
+    });
+
+    if (!res.ok) return { hit: false, fp48 };
+
+    const body = (await res.json()) as { hit?: boolean };
+    return { hit: body.hit === true, fp48 };
+  } catch {
+    return null;
+  }
+}
