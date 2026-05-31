@@ -16,6 +16,7 @@ import { recordServedRequest } from './compute-node.ts';
 import type { ChatCompletionRequest } from './inference-bridge.ts';
 import { createSocket, type Socket } from 'dgram';
 import { hostname, cpus, totalmem, freemem } from 'os';
+import { notifySkymeshBridgeOfLanPeer, removeLanPeerFromBridge } from './skymesh-bridge.ts';
 import {
   meshTransport,
   FRAME_INFERENCE,
@@ -376,18 +377,21 @@ function handleDiscoveryMessage(msg: Buffer, rinfo: { address: string }): void {
 
     if (data.type === 'announce' && data.capabilities && data.port) {
       const existing = meshState.peers.get(data.nodeId);
-      meshState.peers.set(data.nodeId, {
+      const peer = {
         id: data.nodeId,
         hostname: data.hostname ?? 'unknown',
         address: rinfo.address,
         port: data.port,
         capabilities: data.capabilities,
         lastSeen: Date.now(),
-        latencyMs: existing?.latencyMs ?? 50, // Estimate until measured
+        latencyMs: existing?.latencyMs ?? 50,
         load: data.load ?? 0.5,
-      });
+      };
+      meshState.peers.set(data.nodeId, peer);
+      notifySkymeshBridgeOfLanPeer();
     } else if (data.type === 'departure') {
       meshState.peers.delete(data.nodeId);
+      removeLanPeerFromBridge();
     }
   } catch {
     // Invalid message, ignore

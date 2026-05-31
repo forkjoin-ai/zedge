@@ -9,7 +9,7 @@
 
 import { getApiBaseUrl, getAuthHeaders, getZedgeConfig } from './config.ts';
 import { CLOUD_RUN_COORDINATORS } from './coordinator-urls.ts';
-import { isSkymeshTeleportEnabled, trySkymeshCacheTeleport, SKYMESH_DEFAULT_CACHE_URL } from './skymesh-cache.ts';
+import { isSkymeshTeleportEnabled, trySkymeshCacheTeleport, SKYMESH_DEFAULT_CACHE_URL, warmSkymeshCache, prewarmSkymeshTeleport, streamCachedAnswer } from './skymesh-cache.ts';
 import { appendFileSync, mkdirSync, writeFileSync } from 'fs';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
@@ -1289,6 +1289,18 @@ export async function prewarmMoonshinePrompt(
     max_tokens: 0,
   };
   return await tryMoonshineInference(warmRequest, signal);
+}
+
+export async function prewarmSkymeshGlobalCache(
+  prompt: string,
+  model: string,
+  signal?: AbortSignal
+): Promise<void> {
+  try {
+    await prewarmSkymeshTeleport(prompt, model, FAT_STATION_BASE_URL, getSkymeshCacheUrl());
+  } catch {
+    // Silently fail — prewarming is best-effort
+  }
 }
 
 /**
@@ -2634,15 +2646,33 @@ export async function infer(
           logInference(
             `model=${request.model} tier=skymesh status=ok (teleport hit) ms=${Date.now() - t0}`
           );
-          return {
-            tier: 'skymesh',
-            response: createJsonChatCompletionResponse(request.model, answerText, {
+
+          // Handle streaming vs non-streaming
+          let response: Response;
+          if (request.stream === true) {
+            const stream = streamCachedAnswer(answerText, request.model, `chatcmpl-skymesh-${Date.now()}`);
+            response = new Response(stream, {
+              status: 200,
+              headers: {
+                'Content-Type': 'text/event-stream',
+                'Cache-Control': 'no-cache',
+                'X-Zedge-Tier': 'skymesh',
+                'X-Skymesh-Teleport': 'hit',
+              },
+            });
+          } else {
+            response = createJsonChatCompletionResponse(request.model, answerText, {
               id: `chatcmpl-skymesh-${Date.now()}`,
               headers: {
                 'X-Zedge-Tier': 'skymesh',
                 'X-Skymesh-Teleport': 'hit',
               },
-            }),
+            });
+          }
+
+          return {
+            tier: 'skymesh',
+            response,
             upstreamHeaders: {
               'X-Zedge-Tier': 'skymesh',
               'X-Skymesh-Teleport': 'hit',
@@ -2754,6 +2784,56 @@ export async function infer(
             Date.now() - t0
           }`
         );
+
+        // Background: warm global skymesh cache (fire-and-forget)
+        queueMicrotask(async () => {
+          try {
+            const lastUserContent = [...request.messages]
+              .reverse()
+              .find((m) => m.role === 'user')?.content ?? '';
+            if (lastUserContent.trim().length > 0) {
+              const tokens = await (async () => {
+                try {
+                  const tr = await fetch(`${FAT_STATION_BASE_URL}/tokenize`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ text: lastUserContent }),
+                    signal: AbortSignal.timeout(500),
+                  });
+                  if (!tr.ok) return null;
+                  const tb = (await tr.json()) as Record<string, unknown>;
+                  return Array.isArray(tb.tokens) ? (tb.tokens as number[]) : null;
+                } catch {
+                  return null;
+                }
+              })();
+
+              if (tokens && tokens.length > 0) {
+                // Extract response text from the successful Moonshine response
+                if (!resp.bodyUsed) {
+                  const rb = (await resp.clone().json()) as Record<string, unknown>;
+                  const choices = Array.isArray(rb.choices) ? rb.choices : [];
+                  const choice = choices[0] as Record<string, unknown> | undefined;
+                  const message = choice?.message as Record<string, unknown> | undefined;
+                  const answerText = message?.content as string | undefined;
+
+                  if (answerText) {
+                    await warmSkymeshCache({
+                      queryTokens: tokens,
+                      answerText,
+                      model: request.model,
+                      cacheUrl: getSkymeshCacheUrl(),
+                      fatStationBaseUrl: FAT_STATION_BASE_URL,
+                    });
+                  }
+                }
+              }
+            }
+          } catch {
+            // Best-effort, silently fail
+          }
+        });
+
         return {
           tier: 'moonshine',
           response: resp,

@@ -2206,6 +2206,26 @@ export async function handleWebRequest(req: Request): Promise<Response> {
       resolvedModel,
       result.attempts
     );
+
+    // Warn loudly when inference fails and falls back to echo
+    if (result.tier === 'echo') {
+      console.error(
+        '\n🚨 ZEDGE INFERENCE FAILURE 🚨',
+        `\n  Model: ${request.model}`,
+        `\n  All inference tiers failed. Using echo fallback only.`,
+        `\n  Attempts: ${result.attempts.map((a) => `${a.tier}(${a.status})`).join(', ')}`,
+        `\n  User will see only their message echoed back.`,
+        '\n'
+      );
+    } else if (result.tier === 'wasm') {
+      console.warn(
+        '\n⚠️  ZEDGE FALLBACK TO LOCAL WASM',
+        `\n  Model: ${request.model} → ${resolvedModel}`,
+        `\n  Inference tiers failed, using local WASM (lower quality)`,
+        '\n'
+      );
+    }
+
     const decoratedData = prependFallbackNoticeToContent(data, fallbackNotice);
 
     // Auto-learn from this conversation (non-blocking)
@@ -2455,6 +2475,104 @@ export async function handleWebRequest(req: Request): Promise<Response> {
         'http://127.0.0.1:8000',
       envOverride: process.env.ZEDGE_SKYMESH_TELEPORT ?? null,
     });
+  }
+
+  if (path === '/skymesh/bridge/start' && req.method === 'POST') {
+    const { startSkymeshBridge } = await import('./skymesh-bridge.ts');
+    const cfg = getZedgeConfig();
+    startSkymeshBridge({
+      meshId: process.env.ZEDGE_SKYMESH_MESH_ID ?? cfg.skyMeshId ?? 'skymesh-global',
+      bridgeToken: process.env.ZEDGE_SKYMESH_BRIDGE_TOKEN ?? cfg.skyMeshBridgeToken,
+      models: cfg.computePool.allowedModels,
+      port: cfg.port,
+    });
+    const { getSkymeshBridgeStatus } = await import('./skymesh-bridge.ts');
+    return jsonResponse(getSkymeshBridgeStatus());
+  }
+
+  if (path === '/skymesh/bridge/stop' && req.method === 'POST') {
+    const { stopSkymeshBridge, getSkymeshBridgeStatus } = await import('./skymesh-bridge.ts');
+    stopSkymeshBridge();
+    return jsonResponse(getSkymeshBridgeStatus());
+  }
+
+  if (path === '/skymesh/bridge/status' && req.method === 'GET') {
+    const { getSkymeshBridgeStatus } = await import('./skymesh-bridge.ts');
+    return jsonResponse(getSkymeshBridgeStatus());
+  }
+
+  if (path === '/skymesh/warm' && req.method === 'POST') {
+    const body = (await req.json()) as Record<string, unknown>;
+    const prompt = body.prompt as string | undefined;
+    const model = (body.model ?? 'default') as string;
+    if (prompt) {
+      const { prewarmSkymeshTeleport } = await import('./skymesh-cache.ts');
+      const result = await prewarmSkymeshTeleport(
+        prompt,
+        model,
+        process.env.ZEDGE_FAT_STATION_URL ?? 'http://127.0.0.1:8000',
+        process.env.ZEDGE_SKYMESH_CACHE_URL ?? 'https://www-edgework-app.edgework.ai'
+      );
+      return jsonResponse(result ?? { hit: false });
+    }
+    return jsonResponse({ error: 'missing prompt' }, 400);
+  }
+
+  if (path === '/teams/create' && req.method === 'POST') {
+    const body = (await req.json()) as Record<string, unknown>;
+    const name = body.name as string | undefined;
+    if (!name) {
+      return jsonResponse({ error: 'missing team name' }, 400);
+    }
+    const { getTeamsManager } = await import('./teams.ts');
+    const tm = getTeamsManager();
+    try {
+      const { team, inviteDeepLink } = tm.createTeam(name);
+      return jsonResponse({ team, inviteDeepLink });
+    } catch (err) {
+      return jsonResponse({ error: String(err) }, 400);
+    }
+  }
+
+  if (path === '/teams/join' && req.method === 'POST') {
+    const body = (await req.json()) as Record<string, unknown>;
+    const teamId = body.teamId as string | undefined;
+    const token = body.token as string | undefined;
+    if (!teamId) {
+      return jsonResponse({ error: 'missing teamId' }, 400);
+    }
+    const { getTeamsManager } = await import('./teams.ts');
+    const tm = getTeamsManager();
+    try {
+      const team = tm.joinTeam(teamId, token);
+      return jsonResponse({ team });
+    } catch (err) {
+      return jsonResponse({ error: String(err) }, 400);
+    }
+  }
+
+  if (path === '/teams/leave' && req.method === 'POST') {
+    const { getTeamsManager } = await import('./teams.ts');
+    const tm = getTeamsManager();
+    tm.leaveTeam();
+    return jsonResponse({ ok: true });
+  }
+
+  if (path === '/teams/invite' && req.method === 'GET') {
+    const { getTeamsManager } = await import('./teams.ts');
+    const tm = getTeamsManager();
+    try {
+      const result = tm.inviteToTeam();
+      return jsonResponse(result);
+    } catch (err) {
+      return jsonResponse({ error: String(err) }, 400);
+    }
+  }
+
+  if (path === '/teams/status' && req.method === 'GET') {
+    const { getTeamsManager } = await import('./teams.ts');
+    const tm = getTeamsManager();
+    return jsonResponse(tm.getTeamStatus());
   }
 
   // Peer-to-peer inference endpoint (called by other mesh nodes)
@@ -4738,12 +4856,25 @@ export async function startServer(): Promise<void> {
     );
   }
 
+  // Auto-start skymesh bridge if enabled
+  if (getZedgeConfig().skyMeshBridgeEnabled !== false) {
+    const { startSkymeshBridge } = await import('./skymesh-bridge.ts');
+    const cfg = getZedgeConfig();
+    startSkymeshBridge({
+      meshId: process.env.ZEDGE_SKYMESH_MESH_ID ?? cfg.skyMeshId ?? cfg.teamId ?? 'skymesh-global',
+      bridgeToken: process.env.ZEDGE_SKYMESH_BRIDGE_TOKEN ?? cfg.skyMeshBridgeToken,
+      models: cfg.computePool.allowedModels,
+      port: cfg.port,
+    });
+  }
+
   console.log(`[zedge] OpenAI-compatible API: http://localhost:${port}/v1`);
   console.log(
     `[zedge] Superinference: POST http://localhost:${port}/v1/superinference`
   );
   console.log(`[zedge] Mesh: http://localhost:${port}/mesh/status`);
   console.log(`[zedge] Skymesh: http://localhost:${port}/skymesh/status`);
+  console.log(`[zedge] Teams: http://localhost:${port}/teams/status`);
   console.log(`[zedge] Agent: POST http://localhost:${port}/agent/session`);
   console.log(`[zedge] Forge: http://localhost:${port}/forge/status`);
   console.log(`[zedge] Health: http://localhost:${port}/health`);

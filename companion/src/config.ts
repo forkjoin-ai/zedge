@@ -75,6 +75,18 @@ export interface ZedgeConfig {
    * true = on (default), false = off. Also controlled by ZEDGE_SKYMESH_TELEPORT env.
    */
   skyMeshTeleport?: boolean;
+  /** Mesh room name for skymesh bridge (default: 'skymesh-global') */
+  skyMeshId?: string;
+  /** Auto-start WS bridge on companion startup (default: true) */
+  skyMeshBridgeEnabled?: boolean;
+  /** BRIDGE_TOKEN for the skymesh relay authentication */
+  skyMeshBridgeToken?: string;
+  /** Contribute inference results to global cache (default: true) */
+  skyMeshCacheStore?: boolean;
+  /** Current team ID (persisted from teams.ts) */
+  teamId?: string;
+  /** Current team name (for display) */
+  teamName?: string;
 }
 
 type PartialZedgeConfig = Omit<
