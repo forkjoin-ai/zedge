@@ -80,7 +80,19 @@ smoke_chat() {
     2>/dev/null | sed -n 's/.*"content":"\([^"]*\)".*/\1/p' | head -1
 }
 
+build_companion_dist() {
+  BUILD_SCRIPT="${WORKSPACE_ROOT}/open-source/zedge/companion/scripts/build-companion-dist.mjs"
+  if [ ! -f "${BUILD_SCRIPT}" ]; then
+    return 1
+  fi
+  if command -v node >/dev/null 2>&1; then
+    node "${BUILD_SCRIPT}" >/dev/null 2>&1 && ok "companion dist built (supervisor binary)" && return 0
+  fi
+  return 1
+}
+
 run_repair() {
+  build_companion_dist || yellow "  ○ companion dist build skipped"
   yellow "Repairing Moonshine stack..."
   if curl -fsS -m 3 "${COMPANION_URL}/health" >/dev/null 2>&1; then
     repair_body=$(curl -fsS -m 180 -X POST "${COMPANION_URL}/probe/doctor/repair" 2>/dev/null || true)
