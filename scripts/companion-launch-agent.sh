@@ -271,8 +271,8 @@ write_plist() {
     <string>$(escape_xml "${HOME}")</string>
     <key>AEON_ROOT</key>
     <string>${WD_XML}</string>
-    <key>ZEDGE_COMPANION_DIST</key>
-    <string>1</string>
+    <key>ZEDGE_COMPANION_USE_DIST</key>
+    <string>0</string>
     <key>ZEDGE_API_KEY</key>
     <string>$(escape_xml "${LOCAL_ZED_API_KEY}")</string>
     <key>OPENAI_API_KEY</key>

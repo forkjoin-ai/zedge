@@ -40,7 +40,9 @@ export function resolveCompanionEntryPath(
   repoRoot: string | undefined,
   cwd: string
 ): string {
-  const preferDist = process.env.ZEDGE_COMPANION_DIST !== '0';
+  // Bundled dist/companion.mjs still expects hoisted node_modules; use src+tsx
+  // until the dist bundle is fully self-contained (set ZEDGE_COMPANION_USE_DIST=1).
+  const preferDist = process.env.ZEDGE_COMPANION_USE_DIST === '1';
   const roots = [
     repoRoot,
     cwd,
