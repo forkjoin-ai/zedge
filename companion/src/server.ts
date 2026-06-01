@@ -344,9 +344,9 @@ async function getReadinessProbePayload(): Promise<{
     };
   }
 
-  const ready = controlPlane.ready && moonshine.ready;
+  const ready = controlPlane.ready;
   return {
-    status: ready ? 'ready' : 'degraded',
+    status: ready && moonshine.ready ? 'ready' : 'degraded',
     ready,
     checks: {
       controlPlane,
