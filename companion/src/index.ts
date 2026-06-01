@@ -81,19 +81,31 @@ function isAddressInUseError(error: unknown): boolean {
 
 /** Refreshes the live model catalog and writes it into Zed's static picker config. */
 async function syncZedSettingsFromModelCatalog(): Promise<void> {
-  const [{ getModels }, { syncZedSettingsModelCatalog }] = await Promise.all([
-    import('./inference-bridge.ts'),
-    import('./zed-settings.ts'),
-  ]);
+  const [{ getModels }, { syncZedgeProviderAccess }, { getCompanionPort }] =
+    await Promise.all([
+      import('./inference-bridge.ts'),
+      import('./zed-provider-sync.ts'),
+      import('./config.ts'),
+    ]);
+  const port = getCompanionPort();
   const models = await getModels({ refresh: true, refreshTimeoutMs: 5_000 });
-  const syncResult = syncZedSettingsModelCatalog(
-    models.map((model) => model.id)
+  const syncResult = syncZedgeProviderAccess(
+    port,
+    models.map((model) => model.id),
+    process.env.ZEDGE_MOONSHINE_MODEL
   );
-  if (syncResult.updatedPaths.length > 0) {
+  if (syncResult.keychain.updated) {
     console.log(
-      `[zedge] Synced ${
-        models.length
-      } models into Zed settings: ${syncResult.updatedPaths.join(', ')}`
+      `[zedge] Seeded Zedge API key in macOS keychain for ${syncResult.keychain.apiUrl}`
+    );
+  } else if (syncResult.keychain.error) {
+    console.warn(
+      `[zedge] Keychain seed skipped: ${syncResult.keychain.error}`
+    );
+  }
+  if (syncResult.settings.updatedPaths.length > 0) {
+    console.log(
+      `[zedge] Synced Zedge provider settings: ${syncResult.settings.updatedPaths.join(', ')}`
     );
   }
 }

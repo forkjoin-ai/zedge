@@ -83,6 +83,17 @@ export function getOwnedCompanionActivity(
   return activity;
 }
 
+/** True when any companion process holds the inference lock (moonshine/forkjoin chat). */
+export function isCompanionInferenceBusy(
+  now = Date.now()
+): boolean {
+  const activity = readCompanionActivity();
+  if (!activity || activity.busyUntil <= now) {
+    return false;
+  }
+  return activity.kind === 'moonshine-chat' || activity.kind === 'forkjoin-chat';
+}
+
 export function markCompanionActivity(
   kind: CompanionActivityKind,
   busyWindowMs: number,

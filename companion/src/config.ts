@@ -160,6 +160,15 @@ function normalizeAllowedModels(modelIds: string[] | undefined): string[] {
     : [...DEFAULT_ZEDGE_CONFIG.computePool.allowedModels];
 }
 
+function getMoonshineModelEnvOverride(): string | null {
+  const envModel = process.env.ZEDGE_MOONSHINE_MODEL?.trim();
+  if (!envModel) {
+    return null;
+  }
+  // Launch-agent Moonshine model — not subject to retired Edgework picker rules.
+  return envModel;
+}
+
 function getZedPreferredModelOverride(): string | null {
   const selection = readZedModelSelection();
   if (!selection) {
@@ -167,12 +176,21 @@ function getZedPreferredModelOverride(): string | null {
   }
 
   const availableModels = normalizeAllowedModels(selection.availableModels);
-  const selectedModel = normalizePreferredModel(selection.defaultModel);
-  if (availableModels.includes(selectedModel)) {
+  const selectedModel = selection.defaultModel?.trim();
+  if (
+    typeof selectedModel === 'string' &&
+    selectedModel.length > 0 &&
+    availableModels.includes(selectedModel)
+  ) {
     return selectedModel;
   }
 
-  return availableModels[0] ?? selectedModel;
+  const normalizedFallback = normalizePreferredModel(selection.defaultModel);
+  if (availableModels.includes(normalizedFallback)) {
+    return normalizedFallback;
+  }
+
+  return availableModels[0] ?? normalizedFallback;
 }
 
 function getZedAllowedModelsOverride(): string[] | null {
@@ -229,7 +247,9 @@ function mergeZedgeConfig(config: PartialZedgeConfig | undefined): ZedgeConfig {
       DEFAULT_ZEDGE_CONFIG.computePool.allowedModels,
   };
   const preferredModel =
-    getZedPreferredModelOverride() ?? normalizePreferredModel(config?.preferredModel);
+    getMoonshineModelEnvOverride() ??
+    getZedPreferredModelOverride() ??
+    normalizePreferredModel(config?.preferredModel);
 
   return {
     ...DEFAULT_ZEDGE_CONFIG,

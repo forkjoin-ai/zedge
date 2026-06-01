@@ -13,6 +13,7 @@ import { execFileSync, spawn } from 'child_process';
 import { closeSync, existsSync, openSync, readSync } from 'fs';
 import { homedir } from 'os';
 import { basename, join, dirname } from 'path';
+import { isCompanionInferenceBusy } from './companion-activity.ts';
 import { fileURLToPath } from 'url';
 import { readZedModelSelection } from './zed-settings.ts';
 import {
@@ -64,6 +65,12 @@ const GEMMA4_TOKENIZER_JSON_PATH = join(
   'open-source/bitwise/datasets/gemma4-tokenizer.json'
 );
 const DEFAULT_MOONSHINE_MODEL = 'gnosis-local';
+/** Cached locally on most dev machines; avoids R2 when DNS/network is down. */
+export const DEFAULT_OFFLINE_MOONSHINE_MODEL = 'qwen2.5-0.5b-instruct';
+/** Models that advertise on R2 but need a non-default fat-station pipeline. */
+const MOONSHINE_STARTUP_BLOCKLIST = new Set([
+  'phi-3.5-mini', // requires Phi3Pipeline; NativeLlama panics on arch=phi3
+]);
 const QWEN_CODER_MOONSHINE_MODEL = 'qwen-coder-7b';
 const GEMMA4_MOONSHINE_MODEL = 'gemma4-31b-it';
 const FAT_STATION_URL =
@@ -71,14 +78,7 @@ const FAT_STATION_URL =
 const FAT_STATION_BIN =
   process.env.ZEDGE_FAT_STATION_BIN ??
   [
-    join(
-      REPO_ROOT,
-      'open-source/gnosis/distributed-inference/target/release/fat-station-memo'
-    ),
-    join(
-      REPO_ROOT,
-      'open-source/gnosis/distributed-inference/target/debug/fat-station-memo'
-    ),
+    // Prefer full fat-station when present — it always exposes /decode-next.
     join(
       REPO_ROOT,
       'open-source/gnosis/distributed-inference/target/release/fat-station'
@@ -86,6 +86,14 @@ const FAT_STATION_BIN =
     join(
       REPO_ROOT,
       'open-source/gnosis/distributed-inference/target/debug/fat-station'
+    ),
+    join(
+      REPO_ROOT,
+      'open-source/gnosis/distributed-inference/target/release/fat-station-memo'
+    ),
+    join(
+      REPO_ROOT,
+      'open-source/gnosis/distributed-inference/target/debug/fat-station-memo'
     ),
   ].find((candidate) => existsSync(candidate));
 const OPENAI_COMPAT_ENTRY = join(
@@ -110,7 +118,10 @@ const DOCKER_COMPOSE_BUILD_ENABLED =
 const GNOSIS_NUM_THREADS =
   process.env.ZEDGE_GNOSIS_NUM_THREADS ??
   process.env.GNOSIS_NUM_THREADS ??
-  '4';
+  '8';
+const FAT_STATION_EMBED_PROBE_MAX_MS = Number(
+  process.env.ZEDGE_FAT_STATION_EMBED_PROBE_MAX_MS ?? 8_000
+);
 const GNOSIS_FFN_LEAKAGE_MODE =
   process.env.ZEDGE_GNOSIS_FFN_LEAKAGE_MODE ??
   process.env.GNOSIS_FFN_LEAKAGE_MODE;
@@ -143,7 +154,12 @@ type KnotMetadata = Record<string, unknown>;
 
 let watchdogInterval: ReturnType<typeof setInterval> | null = null;
 let watchdogRepair: Promise<void> | null = null;
+let ensureMoonshineInFlight: Promise<void> | null = null;
 let watchdogConsecutiveFailures = 0;
+let dockerDaemonAvailable: boolean | null = null;
+let dockerDaemonProbeAt = 0;
+let dockerDaemonWarned = false;
+const DOCKER_DAEMON_PROBE_TTL_MS = 60_000;
 
 interface MoonshineStartupConfig {
   knotPath: string;
@@ -215,6 +231,17 @@ const LOCAL_MOONSHINE_MODELS: Record<string, LocalMoonshineModelSpec> = {
   // ADMITTED (monster-guard PASS, Paris 12095 rank0) after re-knot fixed
   // rope_theta 1e6→10000. qwen2->NativeLlama.
   'deepseek-r1-1.5b': meshKnotSpec('deepseek-r1-1.5b'),
+  // Fast local default: ~392 MB knot + GGUF tokenizer in ~/.edgework/models/.
+  'qwen2.5-0.5b-instruct': {
+    modelName: 'qwen2.5-0.5b-instruct',
+    knotPath: join(homedir(), '.edgework', 'models', 'qwen2.5-0.5b-instruct.knot'),
+    tokenizerGgufPath: join(
+      homedir(),
+      '.edgework',
+      'models',
+      'Qwen2.5-0.5B-Instruct-Q4_K_M.gguf'
+    ),
+  },
   'phi-3.5-mini': meshKnotSpec('phi-3.5-mini'),
   // ADMITTED (Paris 7785 rank0) after the SSM fix chain (Q8 loader, a_log F32,
   // A-disc, conv1d reorder, tied-lm_head fallback). mamba -> MambaPipeline.
@@ -306,6 +333,9 @@ function isExplicitGemma4Selection(): boolean {
 }
 
 function canUseModelSpec(spec: LocalMoonshineModelSpec): boolean {
+  if (MOONSHINE_STARTUP_BLOCKLIST.has(spec.modelName)) {
+    return false;
+  }
   if (spec.modelName === GEMMA4_MOONSHINE_MODEL) {
     return (
       isExplicitGemma4Selection() ||
@@ -385,6 +415,62 @@ function resolveZedLocalModelSpec(): LocalMoonshineModelSpec | null {
   }
 
   return null;
+}
+
+function localKnotAvailable(spec: LocalMoonshineModelSpec): boolean {
+  if (spec.knotPath && existsSync(spec.knotPath)) {
+    return true;
+  }
+  if (spec.rknotPath && existsSync(spec.rknotPath)) {
+    return true;
+  }
+  return false;
+}
+
+function denseSourceRequiresNetwork(spec?: LocalMoonshineModelSpec): boolean {
+  return isHttpUrl(resolveDenseSource(spec));
+}
+
+/** Launch-agent `ZEDGE_MOONSHINE_MODEL` wins over Zed settings for knot selection. */
+function resolveStartupModelSpec(): LocalMoonshineModelSpec | null {
+  const configuredModel = process.env.ZEDGE_MOONSHINE_MODEL?.trim();
+  if (configuredModel) {
+    const envSpec = LOCAL_MOONSHINE_MODELS[configuredModel];
+    if (envSpec && canUseModelSpec(envSpec)) {
+      return envSpec;
+    }
+    console.warn(
+      `[moonshine] ZEDGE_MOONSHINE_MODEL=${configuredModel} is not runnable locally ` +
+        `(missing knot or blocklisted); falling back to Zed settings`
+    );
+  }
+
+  const zedSpec = resolveZedLocalModelSpec();
+  if (
+    zedSpec &&
+    (!denseSourceRequiresNetwork(zedSpec) || localKnotAvailable(zedSpec))
+  ) {
+    return zedSpec;
+  }
+
+  if (zedSpec && denseSourceRequiresNetwork(zedSpec)) {
+    console.warn(
+      `[moonshine] Zed-selected ${zedSpec.modelName} requires R2/network; ` +
+        `trying offline fallback ${DEFAULT_OFFLINE_MOONSHINE_MODEL}`
+    );
+  }
+
+  const offlineSpec = LOCAL_MOONSHINE_MODELS[DEFAULT_OFFLINE_MOONSHINE_MODEL];
+  if (offlineSpec && localKnotAvailable(offlineSpec)) {
+    return offlineSpec;
+  }
+
+  return zedSpec;
+}
+
+/** Model name the companion will (or did) start Moonshine with. */
+export function getResolvedMoonshineStartupModelName(): string {
+  return resolveStartupConfig().modelName;
 }
 
 function resolveDenseSource(spec?: LocalMoonshineModelSpec): string {
@@ -492,7 +578,7 @@ function resolveTokenizerJsonPath(
 function resolveStartupConfig(): MoonshineStartupConfig {
   const spec = process.env.ZEDGE_MOONSHINE_KNOT?.trim()
     ? undefined
-    : resolveZedLocalModelSpec() ?? undefined;
+    : resolveStartupModelSpec() ?? undefined;
   const knotPath = resolveDenseSource(spec);
   const rknotPath = resolveMoonshineRknotPath(spec);
   const knotMetadata = readKnotMetadata(knotPath);
@@ -981,7 +1067,156 @@ function stopLocalListener(url: string, label: string): boolean {
     }
   }
 
+  if (pids.length > 0) {
+    try {
+      const stillListening = execFileSync('lsof', [`-tiTCP:${port}`, '-sTCP:LISTEN'], {
+        encoding: 'utf8',
+        stdio: ['ignore', 'pipe', 'ignore'],
+      });
+      const stubborn = stillListening
+        .split(/\s+/)
+        .map((pid) => Number.parseInt(pid, 10))
+        .filter((pid) => Number.isInteger(pid) && pid > 0);
+      for (const pid of stubborn) {
+        try {
+          process.kill(pid, 'SIGKILL');
+          console.log(`[moonshine] SIGKILL stale ${label} listener pid=${pid}`);
+        } catch {
+          // ignore
+        }
+      }
+    } catch {
+      // port is free
+    }
+  }
+
   return pids.length > 0;
+}
+
+async function probeFatStationEmbedHealth(
+  maxMs = FAT_STATION_EMBED_PROBE_MAX_MS
+): Promise<{ ok: boolean; elapsedMs: number; error?: string }> {
+  const t0 = Date.now();
+  try {
+    const tokens = new Uint32Array([1, 2, 3]);
+    const resp = await fetch(`${FAT_STATION_URL}/embed`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/octet-stream',
+        'X-Position': '0',
+        'X-Token-Count': '3',
+        'X-Request-Id': 'zedge-embed-probe',
+      },
+      body: tokens,
+      signal: AbortSignal.timeout(maxMs),
+    });
+    const elapsedMs = Date.now() - t0;
+    if (!resp.ok) {
+      return {
+        ok: false,
+        elapsedMs,
+        error: `embed HTTP ${resp.status}`,
+      };
+    }
+    const buf = await resp.arrayBuffer();
+    if (buf.byteLength === 0) {
+      return { ok: false, elapsedMs, error: 'embed returned empty body' };
+    }
+    if (elapsedMs > maxMs) {
+      return {
+        ok: false,
+        elapsedMs,
+        error: `embed slow (${elapsedMs}ms > ${maxMs}ms)`,
+      };
+    }
+    return { ok: true, elapsedMs };
+  } catch (error) {
+    return {
+      ok: false,
+      elapsedMs: Date.now() - t0,
+      error: error instanceof Error ? error.message : String(error),
+    };
+  }
+}
+
+function moonshineInferenceBusy(): boolean {
+  return isCompanionInferenceBusy();
+}
+
+async function ensureFatStationResponsive(
+  config: MoonshineStartupConfig,
+  layerRange: string
+): Promise<FatStationProbeResult> {
+  let runtime = await probeFatStationRuntime(layerRange);
+  if (moonshineInferenceBusy()) {
+    if (runtime.healthy && runtime.matches) {
+      return runtime;
+    }
+    console.log(
+      '[moonshine] fat-station probe deferred — generation in progress'
+    );
+    return runtime;
+  }
+
+  if (!runtime.healthy) {
+    if (await waitUrlReady(FAT_STATION_URL, 30_000)) {
+      runtime = await probeFatStationRuntime(layerRange);
+    }
+  }
+
+  const embedHealth = runtime.healthy
+    ? await probeFatStationEmbedHealth()
+    : { ok: false, elapsedMs: 0, error: 'health probe failed' };
+  if (runtime.healthy && runtime.matches && embedHealth.ok) {
+    return runtime;
+  }
+
+  if (moonshineInferenceBusy()) {
+    console.log(
+      '[moonshine] fat-station probe deferred — generation in progress'
+    );
+    return runtime;
+  }
+
+  const reason =
+    embedHealth.error ??
+    runtime.error ??
+    runtime.layers ??
+    'unknown fat-station fault';
+  console.warn(
+    `[moonshine] fat-station not responsive (${reason}); restarting local listener`
+  );
+  if (stopLocalListener(FAT_STATION_URL, 'fat-station')) {
+    await allowStoppedPortsToClose();
+  }
+  await launchFatStation(config, layerRange);
+  if (!(await waitUrlReady(FAT_STATION_URL))) {
+    return {
+      healthy: false,
+      matches: false,
+      error: 'fat-station did not become healthy after restart',
+    };
+  }
+
+  runtime = await probeFatStationRuntime(layerRange);
+  const embedAfterRestart = runtime.healthy
+    ? await probeFatStationEmbedHealth()
+    : embedHealth;
+  if (!runtime.healthy || !runtime.matches || !embedAfterRestart.ok) {
+    return {
+      ...runtime,
+      healthy: false,
+      matches: false,
+      error:
+        embedAfterRestart.error ??
+        runtime.error ??
+        'fat-station embed probe failed after restart',
+    };
+  }
+  console.log(
+    `[moonshine] fat-station embed probe ok in ${embedAfterRestart.elapsedMs}ms`
+  );
+  return runtime;
 }
 
 async function allowStoppedPortsToClose(): Promise<void> {
@@ -1010,27 +1245,7 @@ async function startLocalMoonshine(
 
   const { modelName, layerRange, tokenizerGgufPath, tokenizerJsonPath } = config;
 
-  let fatStationRuntime = await probeFatStationRuntime(layerRange);
-  if (!fatStationRuntime.healthy || !fatStationRuntime.matches) {
-    console.warn(
-      `[moonshine] existing fat-station is not ready for ${layerRange}: ` +
-        `${fatStationRuntime.error ?? fatStationRuntime.layers ?? 'unknown'}; ` +
-        `restarting local listener`
-    );
-    if (stopLocalListener(FAT_STATION_URL, 'fat-station')) {
-      await allowStoppedPortsToClose();
-    }
-  }
-
-  if (!(await probeUrl(FAT_STATION_URL))) {
-    await launchFatStation(config, layerRange);
-    if (!(await waitUrlReady(FAT_STATION_URL))) {
-      console.warn('[moonshine] local fat-station did not become healthy');
-      return false;
-    }
-  }
-
-  fatStationRuntime = await probeFatStationRuntime(layerRange);
+  let fatStationRuntime = await ensureFatStationResponsive(config, layerRange);
   if (!fatStationRuntime.healthy || !fatStationRuntime.matches) {
     console.warn(
       `[moonshine] local fat-station is not ready for ${layerRange}: ` +
@@ -1043,7 +1258,12 @@ async function startLocalMoonshine(
     modelName,
     fatStationRuntime
   );
-  if (existingOpenAiShim.healthy && existingOpenAiShim.matches) {
+  const openAiPortListening = await probeUrl(MOONSHINE_URL);
+  if (
+    openAiPortListening &&
+    existingOpenAiShim.healthy &&
+    existingOpenAiShim.matches
+  ) {
     return true;
   }
 
@@ -1054,8 +1274,13 @@ async function startLocalMoonshine(
     );
   }
 
-  if (stopLocalListener(MOONSHINE_URL, 'OpenAI-compatible')) {
-    await allowStoppedPortsToClose();
+  stopLocalListener(MOONSHINE_URL, 'OpenAI-compatible');
+  await allowStoppedPortsToClose();
+  if (await probeUrl(MOONSHINE_URL)) {
+    console.warn(
+      '[moonshine] port 8080 still occupied after stop; deferring shim spawn'
+    );
+    return false;
   }
 
   if (!(await probeUrl(FAT_STATION_URL))) {
@@ -1074,8 +1299,13 @@ async function startLocalMoonshine(
       PORT: '8080',
       MODEL_NAME: modelName,
       AGENTIC: '0',
+      // fat-station-memo lacks /amplituhedron/* — disable coordinator overhead.
+      GNOSIS_AMPLITUHEDRON_COORDINATOR: '0',
+      // Single-window prefill can wedge under concurrent Zed requests.
+      MOONSHINE_PREFILL_WINDOWS: '0',
+      TERMINAL_PROSODY: 'off',
       MOONSHINE_MEMO_ENABLED:
-        process.env.ZEDGE_MOONSHINE_MEMO_ENABLED ?? '1',
+        process.env.ZEDGE_MOONSHINE_MEMO_ENABLED ?? '0',
       MOONSHINE_MEMO_TAU_SQUARED:
         process.env.ZEDGE_MOONSHINE_MEMO_TAU_SQUARED ?? '0',
       MOONSHINE_MEMO_MAX_ENTRIES:
@@ -1096,9 +1326,74 @@ async function startLocalMoonshine(
   return await waitReadyForModel(modelName, fatStationRuntime);
 }
 
+async function isDockerDaemonAvailable(): Promise<boolean> {
+  const now = Date.now();
+  if (
+    dockerDaemonAvailable !== null &&
+    now - dockerDaemonProbeAt < DOCKER_DAEMON_PROBE_TTL_MS
+  ) {
+    return dockerDaemonAvailable;
+  }
+  dockerDaemonProbeAt = now;
+  try {
+    await new Promise<void>((resolve, reject) => {
+      const proc = spawn('docker', ['info'], {
+        stdio: 'ignore',
+      });
+      proc.on('close', (code) => {
+        if (code === 0) resolve();
+        else reject(new Error(`docker info exited ${code ?? 'unknown'}`));
+      });
+      proc.on('error', reject);
+    });
+    dockerDaemonAvailable = true;
+  } catch {
+    dockerDaemonAvailable = false;
+    if (!dockerDaemonWarned) {
+      dockerDaemonWarned = true;
+      console.warn(
+        '[moonshine] Docker daemon is not running — skipping container startup. ' +
+          'Start Docker Desktop, or build the local fat-station binary ' +
+          '(`pnpm run a0 -- run distributed-inference:build`). ' +
+          'Run `pnpm run zedge:doctor` for a full diagnosis.'
+      );
+    }
+  }
+  return dockerDaemonAvailable;
+}
+
+export interface MoonshineStartupDiagnostics {
+  fatStationBinary: string | null;
+  dockerDaemon: boolean;
+  moonshineUrl: string;
+  fatStationUrl: string;
+  composeFile: string;
+  startupModel: string;
+  knotPath: string;
+  knotPresentLocally: boolean;
+}
+
+/** Summarize why Moonshine may not start (for /probe/doctor and CLI). */
+export async function getMoonshineStartupDiagnostics(): Promise<MoonshineStartupDiagnostics> {
+  const config = resolveStartupConfig();
+  return {
+    fatStationBinary: FAT_STATION_BIN ?? null,
+    dockerDaemon: await isDockerDaemonAvailable(),
+    moonshineUrl: MOONSHINE_URL,
+    fatStationUrl: FAT_STATION_URL,
+    composeFile: COMPOSE_FILE,
+    startupModel: config.modelName,
+    knotPath: config.knotPath,
+    knotPresentLocally: !isHttpUrl(config.knotPath) && existsSync(config.knotPath),
+  };
+}
+
 async function startDockerMoonshine(
   config = resolveStartupConfig()
 ): Promise<boolean> {
+  if (!(await isDockerDaemonAvailable())) {
+    return false;
+  }
   if (!existsSync(COMPOSE_FILE)) {
     console.warn(`[moonshine] compose file not found: ${COMPOSE_FILE} — set ZEDGE_MOONSHINE_COMPOSE_FILE to override`);
     return false;
@@ -1158,6 +1453,25 @@ async function startDockerMoonshine(
 }
 
 export async function ensureMoonshineRunning(): Promise<void> {
+  if (ensureMoonshineInFlight) {
+    await ensureMoonshineInFlight;
+    return;
+  }
+  ensureMoonshineInFlight = ensureMoonshineRunningInner();
+  try {
+    await ensureMoonshineInFlight;
+  } finally {
+    ensureMoonshineInFlight = null;
+  }
+}
+
+async function ensureMoonshineRunningInner(): Promise<void> {
+  if (moonshineInferenceBusy()) {
+    console.log(
+      '[moonshine] generation in progress; deferring listener repair'
+    );
+    return;
+  }
   const startupConfig = resolveStartupConfig();
   const fatStationRuntime = await probeFatStationRuntime(
     startupConfig.layerRange
@@ -1232,8 +1546,21 @@ export function startMoonshineRuntimeWatchdog(): void {
           watchdogConsecutiveFailures = 0;
           return;
         }
+        if (moonshineInferenceBusy()) {
+          return;
+        }
         watchdogConsecutiveFailures += 1;
-        if (watchdogConsecutiveFailures < 2) return;
+        if (watchdogConsecutiveFailures < 1) return;
+        if (!FAT_STATION_BIN && !(await isDockerDaemonAvailable())) {
+          if (watchdogConsecutiveFailures === 2) {
+            console.warn(
+              '[moonshine] runtime still down (no fat-station binary, Docker off); ' +
+                'pausing repair attempts until `pnpm run zedge:doctor` fixes the host'
+            );
+          }
+          watchdogConsecutiveFailures = 99;
+          return;
+        }
         watchdogConsecutiveFailures = 0;
         console.warn('[moonshine] runtime degraded; repairing local listeners');
         await ensureMoonshineRunning();

@@ -22,6 +22,8 @@
       "@a0n/distributed-inference-host/*": [
         "open-source/gnosis/distributed-inference-host/src/*"
       ],
+      "@a0n/bitwise": ["open-source/bitwise/index.ts"],
+      "@a0n/bitwise/*": ["open-source/bitwise/src/*", "open-source/bitwise/*"],
       "@a0n/gnosis": ["open-source/gnosis/src/lib.ts"],
       "@a0n/gnosis/*": ["open-source/gnosis/src/*"],
       "@a0n/shared-utils": ["shared-utils/src/index.ts"],

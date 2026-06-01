@@ -48,9 +48,14 @@ pnpm install
 pnpm run zedge:launch-agent:install
 ```
 
-That registers a launch agent with **KeepAlive**, so the sidecar comes back after reboots and you do not need to remember commands.
+That registers a launch agent with **KeepAlive**, so the sidecar comes back after reboots and you do not need to remember commands. The launch agent defaults Moonshine to **`deepseek-r1-1.5b`** using the cached knot at `~/.edgework/models/deepseek-r1-1.5b.knot` so inference works offline (no R2 fetch). Override with `ZEDGE_MOONSHINE_MODEL` in the plist or env.
 
-**Then in Zed:** set the OpenAI-compatible base URL to `http://127.0.0.1:7331/v1` (**not** `http://localhost:7331/...` — on many Macs `localhost` resolves to IPv6 `::1` while the sidecar listens on IPv4, so Zed shows “error sending request”). Moonshine does not require authentication; Zed's OpenAI-compatible client still requires a provider key value, so the launch-agent install seeds a non-secret `ZEDGE_API_KEY=zedge-local` environment value for Zed. If you already set a real `ZEDGE_API_KEY`, the script leaves it alone. The companion ignores `zedge-local` as real Edgework auth.
+**Then in Zed:** the companion **auto-configures** Zedge at startup:
+
+- **`settings.json`**: `api_url` + model catalog (`~/.config/zed/settings.json` on macOS)
+- **macOS Keychain** or **`ZEDGE_API_KEY`**: the API key Zed actually reads for `openai_compatible` providers (settings.json `api_key` is ignored)
+
+Placeholder key: `zedge-local`. If the Agent panel still says “No API key”, run `pnpm run zedge:restart` or `pnpm run zedge:doctor`.
 
 The install also creates a tiny login helper at `~/Library/LaunchAgents/ai.forkjoin.zedge.sidecar.zed-env.plist` so the placeholder key is restored after an OS reload. `uninstall` removes that helper and unsets `ZEDGE_API_KEY` only when it is still the placeholder.
 
@@ -61,6 +66,7 @@ After the companion starts, it rewrites `localhost:7331` to `127.0.0.1` in your 
 **Check / kill / restart / logs / uninstall:**
 
 ```bash
+pnpm run zedge:doctor            # diagnose Moonshine / disk / :7331 / :8080
 pnpm run zedge:launch-agent:status
 pnpm run zedge:kill              # stop launch agent + kill :7331 (stuck/manual too)
 pnpm run zedge:restart           # kill then relaunch via launch agent (needs prior install)

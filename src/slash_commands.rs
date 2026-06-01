@@ -104,9 +104,20 @@ That installs a **launch agent** so the sidecar starts at login and stays runnin
 
 ### Then in Zed
 
-Set the OpenAI-compatible API base URL to:
+The companion seeds Zedge automatically at startup:
 
-`http://127.0.0.1:7331/v1`
+- **Base URL** → written to `~/.config/zed/settings.json`
+- **API key** → macOS Keychain (keyed by that URL) and/or `ZEDGE_API_KEY` env
+
+Zed's `openai_compatible` provider does **not** read `api_key` from settings.json — only keychain/env.
+
+If the Agent panel still says \"No API key\", restart the sidecar:
+
+```bash
+pnpm run zedge:restart
+```
+
+Manual fallback — Agent Panel → Zedge → API key: `zedge-local`
 
 ### Verify
 

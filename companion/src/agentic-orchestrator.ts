@@ -12,7 +12,7 @@ import {
   type ToolExecutionResult,
 } from '@a0n/distributed-inference-host/agentic-chat';
 import type { ChatCompletionRequest } from './inference-bridge.ts';
-import { appendInferenceDiagnostic } from './inference-bridge.ts';
+import { appendInferenceDiagnostic, infer } from './inference-bridge.ts';
 import {
   callLocalTool,
   preflightLocalTools,
@@ -250,28 +250,80 @@ class CompanionMcpClient implements AgenticMcpClient {
   }
 }
 
+function moonshineUnavailableMessage(cause: string): string {
+  return (
+    `Moonshine local inference is not running (${cause}). ` +
+    'Run `pnpm run zedge:doctor` for fixes. Start Docker Desktop, or free disk space and run ' +
+    '`pnpm run a0 -- run distributed-inference:build`, then `pnpm run zedge:restart`.'
+  );
+}
+
+async function runCompanionInferFallback(
+  request: TextGenerationRequest,
+  reason: string,
+): Promise<TextGenerationResult> {
+  appendInferenceDiagnostic(
+    `[agentic] moonshine unavailable (${reason}); using companion infer() fallback`
+  );
+  const inferRequest: ChatCompletionRequest = {
+    model: request.model,
+    messages: request.messages.map((message) => ({
+      role: message.role,
+      content: message.content ?? '',
+    })),
+    stream: false,
+    ...(request.temperature !== undefined
+      ? { temperature: request.temperature }
+      : {}),
+    ...(request.maxTokens !== undefined ? { max_tokens: request.maxTokens } : {}),
+  };
+  const result = await infer(inferRequest);
+  const data = (await result.response.json()) as {
+    choices?: Array<{ message?: { content?: string } }>;
+    usage?: {
+      prompt_tokens?: number;
+      completion_tokens?: number;
+    };
+    model?: string;
+  };
+  return {
+    content: data.choices?.[0]?.message?.content ?? '',
+    promptTokens: data.usage?.prompt_tokens,
+    completionTokens: data.usage?.completion_tokens,
+    model: data.model ?? request.model,
+  };
+}
+
 async function runMoonshineBareGeneration(
   request: TextGenerationRequest,
 ): Promise<TextGenerationResult> {
-  const response = await fetch(`${MOONSHINE_BASE_URL}/v1/chat/completions`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'X-Zedge-Agentic': 'off',
-    },
-    body: JSON.stringify({
-      model: request.model,
-      messages: request.messages.map((message) => ({
-        role: message.role,
-        content: message.content ?? '',
-      })),
-      stream: false,
-      temperature: request.temperature,
-      max_tokens: request.maxTokens,
-      ...(request.responseFormat ? { response_format: request.responseFormat } : {}),
-    }),
-    signal: AbortSignal.timeout(MOONSHINE_AGENTIC_TIMEOUT_MS),
-  });
+  let response: Response;
+  try {
+    response = await fetch(`${MOONSHINE_BASE_URL}/v1/chat/completions`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Zedge-Agentic': 'off',
+      },
+      body: JSON.stringify({
+        model: request.model,
+        messages: request.messages.map((message) => ({
+          role: message.role,
+          content: message.content ?? '',
+        })),
+        stream: false,
+        temperature: request.temperature,
+        max_tokens: request.maxTokens,
+        ...(request.responseFormat
+          ? { response_format: request.responseFormat }
+          : {}),
+      }),
+      signal: AbortSignal.timeout(MOONSHINE_AGENTIC_TIMEOUT_MS),
+    });
+  } catch (error) {
+    const cause = error instanceof Error ? error.message : String(error);
+    return runCompanionInferFallback(request, cause);
+  }
 
   const data = (await response.json()) as {
     choices?: Array<{ message?: { content?: string } }>;
@@ -280,12 +332,21 @@ async function runMoonshineBareGeneration(
       completion_tokens?: number;
     };
     model?: string;
+    error?: unknown;
   };
   if (!response.ok) {
+    if (response.status === 503 || response.status === 502) {
+      return runCompanionInferFallback(
+        request,
+        `HTTP ${response.status}`
+      );
+    }
     throw new Error(
-      data && typeof data === 'object'
-        ? JSON.stringify(data)
-        : `Moonshine returned HTTP ${response.status}`,
+      data && typeof data === 'object' && data.error !== undefined
+        ? JSON.stringify(data.error)
+        : data && typeof data === 'object'
+          ? JSON.stringify(data)
+          : moonshineUnavailableMessage(`HTTP ${response.status}`)
     );
   }
 

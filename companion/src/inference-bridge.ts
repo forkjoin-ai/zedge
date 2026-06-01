@@ -240,6 +240,148 @@ const MOONSHINE_TIMEOUT_MS = Number(
   process.env.ZEDGE_MOONSHINE_TIMEOUT_MS ?? 90_000
 );
 const MOONSHINE_BUSY_BUFFER_MS = 30_000;
+const MOONSHINE_REPAIR_RETRY_MS = Number(
+  process.env.ZEDGE_MOONSHINE_REPAIR_RETRY_MS ?? 60_000
+);
+
+function moonshineFailureWorthRepair(
+  detail: string,
+  httpStatus?: number
+): boolean {
+  const lower = detail.toLowerCase();
+  if (
+    lower.includes('fetch failed') ||
+    lower.includes('econnrefused') ||
+    lower.includes('enotfound') ||
+    lower.includes('socket hang up') ||
+    lower.includes('network')
+  ) {
+    return true;
+  }
+  return (
+    httpStatus !== undefined &&
+    (httpStatus === 500 || httpStatus === 502 || httpStatus === 503)
+  );
+}
+
+async function repairMoonshineListeners(reason: string): Promise<void> {
+  logInference(`[moonshine] repairing listeners (${reason})`);
+  const { ensureMoonshineRunning } = await import('./moonshine-docker.ts');
+  await Promise.race([
+    ensureMoonshineRunning(),
+    new Promise<void>((_, reject) => {
+      setTimeout(
+        () => reject(new Error('moonshine repair timed out')),
+        MOONSHINE_REPAIR_RETRY_MS
+      );
+    }),
+  ]);
+}
+
+async function runMoonshineTier(
+  request: ChatCompletionRequest,
+  attempts: TierAttempt[]
+): Promise<TierResult | null> {
+  const t0 = Date.now();
+  const controller = new AbortController();
+  let failureDetail = '';
+  let failureStatus: number | undefined;
+
+  try {
+    const resp = await tryMoonshineInference(request, controller.signal);
+    if (resp.ok) {
+      attempts.push({ tier: 'moonshine', status: 'ok', ms: Date.now() - t0 });
+      logInference(
+        `model=${request.model} tier=moonshine status=ok ms=${
+          Date.now() - t0
+        }`
+      );
+      return {
+        tier: 'moonshine',
+        response: resp,
+        upstreamHeaders: extractUpstreamDebugHeaders(resp),
+        attempts,
+      };
+    }
+    failureStatus = resp.status;
+    failureDetail = `${resp.status} ${resp.statusText}`;
+    attempts.push({
+      tier: 'moonshine',
+      status: 'http_error',
+      ms: Date.now() - t0,
+      detail: failureDetail,
+    });
+    logInference(
+      `[moonshine] http_error ${resp.status} model=${request.model}`
+    );
+  } catch (err) {
+    const isTimeout =
+      err instanceof DOMException && err.name === 'AbortError';
+    failureDetail = String(err);
+    attempts.push({
+      tier: 'moonshine',
+      status: isTimeout ? 'timeout' : 'error',
+      ms: Date.now() - t0,
+      detail: failureDetail,
+    });
+    logInference(`[moonshine] error: ${failureDetail}`);
+  }
+
+  if (!moonshineFailureWorthRepair(failureDetail, failureStatus)) {
+    return null;
+  }
+
+  try {
+    await repairMoonshineListeners(failureDetail);
+  } catch (repairErr) {
+    logInference(`[moonshine] repair failed: ${String(repairErr)}`);
+    return null;
+  }
+
+  const retryT0 = Date.now();
+  const retryController = new AbortController();
+  try {
+    const resp = await tryMoonshineInference(request, retryController.signal);
+    if (resp.ok) {
+      attempts.push({
+        tier: 'moonshine',
+        status: 'ok',
+        ms: Date.now() - retryT0,
+        detail: 'after-repair',
+      });
+      logInference(
+        `model=${request.model} tier=moonshine status=ok (after repair) ms=${
+          Date.now() - retryT0
+        }`
+      );
+      return {
+        tier: 'moonshine',
+        response: resp,
+        upstreamHeaders: extractUpstreamDebugHeaders(resp),
+        attempts,
+      };
+    }
+    attempts.push({
+      tier: 'moonshine',
+      status: 'http_error',
+      ms: Date.now() - retryT0,
+      detail: `${resp.status} ${resp.statusText} (after repair)`,
+    });
+    logInference(
+      `[moonshine] http_error ${resp.status} model=${request.model} (after repair)`
+    );
+  } catch (err) {
+    attempts.push({
+      tier: 'moonshine',
+      status: 'error',
+      ms: Date.now() - retryT0,
+      detail: `${String(err)} (after repair)`,
+    });
+    logInference(`[moonshine] error after repair: ${String(err)}`);
+  }
+
+  return null;
+}
 
 // --- Forkjoin distributed-inference tier (OWN-runtime mesh passthrough) ---
 //
@@ -296,6 +438,20 @@ function isForkjoinTierEnabled(): boolean {
   }
   const normalized = raw.trim().toLowerCase();
   return normalized !== '0' && normalized !== 'false' && normalized !== 'off';
+}
+
+/** Local Zedge: forkjoin default URL is the Moonshine shim — skip duplicate hop. */
+function forkjoinCollidesWithMoonshine(): boolean {
+  try {
+    const forkjoin = new URL(getForkjoinBaseUrl());
+    const moonshine = new URL(MOONSHINE_BASE_URL);
+    return (
+      forkjoin.hostname === moonshine.hostname &&
+      (forkjoin.port || '80') === (moonshine.port || '80')
+    );
+  } catch {
+    return getForkjoinBaseUrl() === MOONSHINE_BASE_URL;
+  }
 }
 const MOONSHINE_DEFAULT_MAX_TOKENS = parsePositiveInteger(
   process.env.ZEDGE_MOONSHINE_DEFAULT_MAX_TOKENS,
@@ -2708,7 +2864,11 @@ export async function infer(
   // Tier 0 (primary): Forkjoin own-runtime distributed-inference mesh.
   // Passthrough to the mesh OpenAI-compatible endpoint. Falls through to
   // Moonshine then echo on any failure, so ON-by-default is safe.
-  if (isForkjoinTierEnabled() && isForkjoinTierModel(request.model)) {
+  if (
+    isForkjoinTierEnabled() &&
+    !forkjoinCollidesWithMoonshine() &&
+    isForkjoinTierModel(request.model)
+  ) {
     const t0 = Date.now();
     const controller = new AbortController();
     try {
@@ -2765,25 +2925,19 @@ export async function infer(
       tier: 'forkjoin',
       status: 'skipped',
       ms: 0,
-      detail: isForkjoinTierEnabled()
-        ? `model ${request.model} not routed to forkjoin`
-        : 'disabled',
+      detail: forkjoinCollidesWithMoonshine()
+        ? 'same endpoint as moonshine'
+        : isForkjoinTierEnabled()
+          ? `model ${request.model} not routed to forkjoin`
+          : 'disabled',
     });
   }
 
-  // Tier 1: Moonshine container
+  // Tier 1: Moonshine container (repair + one retry when the shim is down)
   {
-    const t0 = Date.now();
-    const controller = new AbortController();
-    try {
-      const resp = await tryMoonshineInference(request, controller.signal);
-      if (resp.ok) {
-        attempts.push({ tier: 'moonshine', status: 'ok', ms: Date.now() - t0 });
-        logInference(
-          `model=${request.model} tier=moonshine status=ok ms=${
-            Date.now() - t0
-          }`
-        );
+    const moonshineResult = await runMoonshineTier(request, attempts);
+    if (moonshineResult) {
+      const resp = moonshineResult.response;
 
         // Background: warm global skymesh cache (fire-and-forget)
         queueMicrotask(async () => {
@@ -2834,32 +2988,7 @@ export async function infer(
           }
         });
 
-        return {
-          tier: 'moonshine',
-          response: resp,
-          upstreamHeaders: extractUpstreamDebugHeaders(resp),
-          attempts,
-        };
-      }
-      attempts.push({
-        tier: 'moonshine',
-        status: 'http_error',
-        ms: Date.now() - t0,
-        detail: `${resp.status} ${resp.statusText}`,
-      });
-      logInference(
-        `[moonshine] http_error ${resp.status} model=${request.model}`
-      );
-    } catch (err) {
-      const isTimeout =
-        err instanceof DOMException && err.name === 'AbortError';
-      attempts.push({
-        tier: 'moonshine',
-        status: isTimeout ? 'timeout' : 'error',
-        ms: Date.now() - t0,
-        detail: String(err),
-      });
-      logInference(`[moonshine] error: ${String(err)}`);
+      return moonshineResult;
     }
   }
 

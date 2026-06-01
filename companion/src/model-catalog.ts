@@ -29,6 +29,13 @@ const KNOWN_ZEDGE_MODELS: KnownZedgeModel[] = [
     forkjoinTier: true,
   },
   {
+    id: 'qwen2.5-0.5b-instruct',
+    displayName: 'Qwen2.5 0.5B Instruct (Moonshine)',
+    maxTokens: 2048,
+    ownedBy: 'gnosis',
+    forkjoinTier: true,
+  },
+  {
     id: 'tinyllama-1.1b',
     displayName: 'TinyLlama 1.1B (Moonshine)',
     maxTokens: 2048,
@@ -201,7 +208,6 @@ const KNOWN_ZEDGE_MODELS_BY_ID = new Map(
 const LEGACY_EDGEWORK_MODEL_IDS = new Set([
   'wasm-local',
   // Demoted: knot exists neither locally nor in R2. Re-promote once produced.
-  'qwen2.5-0.5b-instruct',
   'qwen-2.5-coder-7b',
   'qwen-edit',
   'mistral-7b',
@@ -213,10 +219,7 @@ const LEGACY_EDGEWORK_MODEL_IDS = new Set([
   'gemma3-4b-it',
   'nanbeige-3b',
   'gemma3-1b-it',
-  'deepseek-r1-1.5b',
   'deepseek-r1-distill-qwen-1.5b',
-  'mamba-2.8b',
-  'smollm2-360m',
   'cog-360m',
   'cyrano-360m',
 ]);

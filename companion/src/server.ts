@@ -3076,6 +3076,85 @@ export async function handleWebRequest(req: Request): Promise<Response> {
     return jsonResponse(getTierHealth());
   }
 
+  if (path === '/probe/doctor' && req.method === 'GET') {
+    const { getMoonshineStartupDiagnostics } = await import(
+      './moonshine-docker.ts'
+    );
+    const moonshine = await getMoonshineStartupDiagnostics();
+    const readiness = await getReadinessProbePayload();
+    const disk = await (async () => {
+      try {
+        const { statfs } = await import('fs');
+        return await new Promise<{
+          path: string;
+          freeMb: number;
+          capacityPercent: number;
+        }>((resolve, reject) => {
+          statfs('/', (error, stats) => {
+            if (error) {
+              reject(error);
+              return;
+            }
+            const freeMb = Math.floor(
+              (Number(stats.bavail) * Number(stats.bsize)) / (1024 * 1024)
+            );
+            const total = Number(stats.blocks) * Number(stats.bsize);
+            const free = Number(stats.bavail) * Number(stats.bsize);
+            const capacityPercent =
+              total > 0 ? Math.round(((total - free) / total) * 100) : 0;
+            resolve({
+              path: '/',
+              freeMb,
+              capacityPercent,
+            });
+          });
+        });
+      } catch {
+        return null;
+      }
+    })();
+    return jsonResponse({
+      status: readiness.ready && moonshine.fatStationBinary
+        ? 'ready'
+        : 'degraded',
+      companion: { port: getCompanionPort(), ready: readiness.ready },
+      moonshine,
+      disk,
+      checks: readiness.checks,
+      fixes: [
+        'Free disk space if freeMb < 2048',
+        'pnpm run zedge:doctor',
+        'Start Docker Desktop OR pnpm run a0 -- run distributed-inference:build',
+        'pnpm run zedge:restart',
+        'Zed base URL: http://127.0.0.1:7331/v1',
+      ],
+    });
+  }
+
+  if (
+    path === '/zed/settings/sync' &&
+    (req.method === 'POST' || req.method === 'GET')
+  ) {
+    const { syncZedgeProviderAccess } = await import('./zed-provider-sync.ts');
+    let syncResult = syncZedgeProviderAccess(getCompanionPort());
+    try {
+      const { getModels } = await import('./inference-bridge.ts');
+      const modelList = await getModels({ refresh: false });
+      syncResult = syncZedgeProviderAccess(
+        getCompanionPort(),
+        modelList.map((model) => model.id),
+        process.env.ZEDGE_MOONSHINE_MODEL
+      );
+    } catch {
+      // Keychain + api_url seeding alone clears Zed's missing-api-key banner.
+    }
+    return jsonResponse({
+      ...syncResult,
+      apiKey: 'zedge-local',
+      note: 'Zed openai_compatible reads keys from macOS keychain or ZEDGE_API_KEY, not settings.json api_key',
+    });
+  }
+
   if (path === '/probe/ready' && req.method === 'GET') {
     const readiness = await getReadinessProbePayload();
     return jsonResponse(readiness, readiness.ready ? 200 : 503);

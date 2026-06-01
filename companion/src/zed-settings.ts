@@ -1,6 +1,6 @@
-import { existsSync, readFileSync, writeFileSync } from 'fs';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs';
 import { homedir } from 'os';
-import { join } from 'path';
+import { dirname, join } from 'path';
 import { buildZedAvailableModels } from './model-catalog.ts';
 
 interface ZedModelProviderConfig {
@@ -9,7 +9,15 @@ interface ZedModelProviderConfig {
   available_models?: unknown;
 }
 
-const LOCAL_ZED_PLACEHOLDER_API_KEY = 'zedge-local';
+export const LOCAL_ZED_PLACEHOLDER_API_KEY = 'zedge-local';
+
+export function getLocalZedgeApiUrl(port = 7331): string {
+  return `http://127.0.0.1:${port}/v1`;
+}
+
+function getLocalZedgeCompletionsUrl(port = 7331): string {
+  return `http://127.0.0.1:${port}/v1/completions`;
+}
 
 export interface ZedModelSelection {
   defaultModel: string | null;
@@ -43,6 +51,17 @@ export function parseZedSettings(text: string): Record<string, unknown> {
   >;
 }
 
+function isBrokenLocalZedgeUrl(url: string): boolean {
+  return /127\.0\.0\.1:\/|localhost:\//.test(url);
+}
+
+function repairLocalZedgeEndpoint(url: string, port: number): string {
+  if (isBrokenLocalZedgeUrl(url) || url.length === 0) {
+    return getLocalZedgeApiUrl(port);
+  }
+  return rewriteLocalhost7331(url);
+}
+
 /** Prefer IPv4 loopback — `localhost` often resolves to ::1 while the sidecar binds 127.0.0.1. */
 function rewriteLocalhost7331(url: string): string {
   if (url.startsWith('http://localhost:7331')) {
@@ -67,7 +86,7 @@ function normalizeLocalLoopbackUrls(settings: Record<string, unknown>): void {
   }
   const apiUrl = zedge.api_url;
   if (typeof apiUrl === 'string') {
-    zedge.api_url = rewriteLocalhost7331(apiUrl);
+    zedge.api_url = repairLocalZedgeEndpoint(apiUrl, 7331);
   }
 
   const editPredictions = settings.edit_predictions;
@@ -80,16 +99,86 @@ function normalizeLocalLoopbackUrls(settings: Record<string, unknown>): void {
   }
   const copilotUrl = copilot.api_url;
   if (typeof copilotUrl === 'string') {
-    copilot.api_url = rewriteLocalhost7331(copilotUrl);
+    if (isBrokenLocalZedgeUrl(copilotUrl) || copilotUrl.length === 0) {
+      copilot.api_url = getLocalZedgeCompletionsUrl(7331);
+    } else {
+      copilot.api_url = rewriteLocalhost7331(copilotUrl);
+    }
   }
 }
 
-function isLocalZedgeApiUrl(url: string | undefined): boolean {
+function isLocalZedgeApiUrl(url: string | undefined, port = 7331): boolean {
   return (
     typeof url === 'string' &&
-    (url.startsWith('http://127.0.0.1:7331') ||
-      url.startsWith('http://localhost:7331'))
+    (url.startsWith(`http://127.0.0.1:${port}`) ||
+      url.startsWith(`http://localhost:${port}`))
   );
+}
+
+function isRemoteZedgeApiUrl(url: string | undefined): boolean {
+  return (
+    typeof url === 'string' &&
+    url.length > 0 &&
+    !isLocalZedgeApiUrl(url) &&
+    !url.startsWith('http://127.0.0.1:') &&
+    !url.startsWith('http://localhost:')
+  );
+}
+
+/** Ensures Zed's OpenAI-compatible Zedge block exists for local companion use. */
+export function ensureLocalZedgeProviderBlock(
+  settings: Record<string, unknown>,
+  port = 7331
+): ZedModelProviderConfig {
+  let languageModels = settings.language_models;
+  if (!isRecord(languageModels)) {
+    languageModels = {};
+    settings.language_models = languageModels;
+  }
+
+  let openAiCompatible = languageModels.openai_compatible;
+  if (!isRecord(openAiCompatible)) {
+    openAiCompatible = {};
+    languageModels.openai_compatible = openAiCompatible;
+  }
+
+  let zedge = openAiCompatible.Zedge;
+  const hadBlock = isRecord(zedge);
+  if (!hadBlock) {
+    zedge = {};
+    openAiCompatible.Zedge = zedge;
+  }
+
+  const apiUrl = typeof zedge.api_url === 'string' ? zedge.api_url : '';
+  if (hadBlock && isRemoteZedgeApiUrl(apiUrl)) {
+    return zedge;
+  }
+
+  zedge.api_url = getLocalZedgeApiUrl(port);
+
+  let editPredictions = settings.edit_predictions;
+  if (!isRecord(editPredictions)) {
+    editPredictions = {};
+    settings.edit_predictions = editPredictions;
+  }
+
+  let copilot = editPredictions.copilot;
+  if (!isRecord(copilot)) {
+    copilot = {};
+    editPredictions.copilot = copilot;
+  }
+
+  const copilotUrl = typeof copilot.api_url === 'string' ? copilot.api_url : '';
+  if (
+    copilotUrl.length === 0 ||
+    isBrokenLocalZedgeUrl(copilotUrl) ||
+    isLocalZedgeApiUrl(copilotUrl, port) ||
+    copilotUrl.includes(':7331')
+  ) {
+    copilot.api_url = getLocalZedgeCompletionsUrl(port);
+  }
+
+  return zedge;
 }
 
 /** Finds the OpenAI-compatible Zedge provider block in settings. */
@@ -175,23 +264,33 @@ export function readZedModelSelection(): ZedModelSelection | null {
 /** Updates Zed's current default model when it still points at a retired entry. */
 function updateZedgeAgentDefaultModel(
   settings: Record<string, unknown>,
-  availableModels: Array<{ name: string }>
+  availableModels: Array<{ name: string }>,
+  preferredModelId?: string
 ): void {
-  const firstModel = availableModels[0]?.name;
-  if (!firstModel) {
-    return;
-  }
-
   const availableModelNames = new Set(
     availableModels.map((model) => model.name)
   );
-  const agent = settings.agent;
-  if (!isRecord(agent)) {
+  const preferred =
+    preferredModelId && availableModelNames.has(preferredModelId)
+      ? preferredModelId
+      : availableModels[0]?.name;
+  if (!preferred) {
     return;
   }
 
-  const defaultModel = agent.default_model;
+  let agent = settings.agent;
+  if (!isRecord(agent)) {
+    agent = {};
+    settings.agent = agent;
+  }
+
+  let defaultModel = agent.default_model;
   if (!isRecord(defaultModel)) {
+    agent.default_model = {
+      provider: 'Zedge',
+      model: preferred,
+      enable_thinking: false,
+    };
     return;
   }
 
@@ -204,61 +303,138 @@ function updateZedgeAgentDefaultModel(
     typeof currentModel !== 'string' ||
     !availableModelNames.has(currentModel)
   ) {
-    defaultModel.model = firstModel;
+    defaultModel.model = preferred;
+    return;
+  }
+
+  if (
+    preferredModelId &&
+    availableModelNames.has(preferredModelId) &&
+    currentModel !== preferredModelId
+  ) {
+    defaultModel.model = preferredModelId;
   }
 }
 
 /** Rewrites the Zedge model picker catalog inside a settings.json payload. */
 export function updateZedSettingsModelCatalog(
   settingsText: string,
-  modelIds: Iterable<string>
+  modelIds: Iterable<string>,
+  port = 7331,
+  preferredModelId?: string
 ): string | null {
   const settings = parseZedSettings(settingsText);
   normalizeLocalLoopbackUrls(settings);
-  const zedge = getZedgeProviderConfig(settings);
-  if (!zedge) {
-    return null;
-  }
+  const zedge = ensureLocalZedgeProviderBlock(settings, port);
 
   const availableModels = buildZedAvailableModels(modelIds);
-  if (isLocalZedgeApiUrl(zedge.api_url)) {
-    zedge.api_key = LOCAL_ZED_PLACEHOLDER_API_KEY;
-  }
   zedge.available_models = availableModels;
-  updateZedgeAgentDefaultModel(settings, availableModels);
+  updateZedgeAgentDefaultModel(
+    settings,
+    availableModels,
+    preferredModelId?.trim() || process.env.ZEDGE_MOONSHINE_MODEL?.trim()
+  );
 
   return JSON.stringify(settings, null, 2) + '\n';
 }
 
-/** Returns the platform-specific settings paths Zed commonly uses. */
-export function getZedSettingsPaths(): string[] {
-  const home = homedir();
-  return [
-    join(home, '.config', 'zed', 'settings.json'),
-    join(home, 'Library', 'Application Support', 'Zed', 'settings.json'),
-  ];
+function serializeZedSettings(settings: Record<string, unknown>): string {
+  return JSON.stringify(settings, null, 2) + '\n';
 }
 
-/** Syncs all discovered Zed settings files with the given live model ids. */
-export function syncZedSettingsModelCatalog(
-  modelIds: Iterable<string>
+/** Writes the local companion provider block into Zed settings and keychain. */
+export function syncZedgeLocalProviderCredentials(
+  port = 7331
 ): ZedSettingsSyncResult {
   const updatedPaths: string[] = [];
   const matchedPaths: string[] = [];
 
-  for (const path of getZedSettingsPaths()) {
+  for (const path of resolveZedSettingsTargets()) {
+    const { settings, created } = readOrCreateZedSettings(path);
+    normalizeLocalLoopbackUrls(settings);
+    const before = created ? '' : serializeZedSettings(settings);
+    ensureLocalZedgeProviderBlock(settings, port);
+    const after = serializeZedSettings(settings);
+
+    matchedPaths.push(path);
+    if (created || after !== before) {
+      writeFileSync(path, after);
+      updatedPaths.push(path);
+    }
+  }
+
+  return { updatedPaths, matchedPaths };
+}
+
+/** Returns the platform-specific settings paths Zed commonly uses. */
+export function getZedSettingsPaths(): string[] {
+  const override = process.env.ZEDGE_ZED_SETTINGS_PATHS;
+  if (override) {
+    return override.split(':').filter((path) => path.length > 0);
+  }
+
+  const home = homedir();
+  // Zed reads user settings from ~/.config/zed on macOS (see zed-industries/zed paths.rs).
+  return [join(home, '.config', 'zed', 'settings.json')];
+}
+
+function getPrimaryZedSettingsPath(): string {
+  return getZedSettingsPaths()[0]!;
+}
+
+function resolveZedSettingsTargets(): string[] {
+  const paths = getZedSettingsPaths();
+  const existing = paths.filter((path) => existsSync(path));
+  return existing.length > 0 ? existing : [getPrimaryZedSettingsPath()];
+}
+
+function readOrCreateZedSettings(path: string): {
+  settings: Record<string, unknown>;
+  created: boolean;
+} {
+  if (!existsSync(path)) {
+    mkdirSync(dirname(path), { recursive: true });
+    return { settings: {}, created: true };
+  }
+
+  return {
+    settings: parseZedSettings(readFileSync(path, 'utf-8')),
+    created: false,
+  };
+}
+
+/** Syncs all discovered Zed settings files with the given live model ids. */
+export function syncZedSettingsModelCatalog(
+  modelIds: Iterable<string>,
+  port = 7331,
+  preferredModelId?: string
+): ZedSettingsSyncResult {
+  const updatedPaths: string[] = [];
+  const matchedPaths: string[] = [];
+
+  for (const path of resolveZedSettingsTargets()) {
+    let currentText: string;
+    let created = false;
     if (!existsSync(path)) {
-      continue;
+      mkdirSync(dirname(path), { recursive: true });
+      currentText = '{}';
+      created = true;
+    } else {
+      currentText = readFileSync(path, 'utf-8');
     }
 
-    const currentText = readFileSync(path, 'utf-8');
-    const nextText = updateZedSettingsModelCatalog(currentText, modelIds);
+    const nextText = updateZedSettingsModelCatalog(
+      currentText,
+      modelIds,
+      port,
+      preferredModelId
+    );
     if (nextText === null) {
       continue;
     }
 
     matchedPaths.push(path);
-    if (nextText !== currentText) {
+    if (created || nextText !== currentText) {
       writeFileSync(path, nextText);
       updatedPaths.push(path);
     }

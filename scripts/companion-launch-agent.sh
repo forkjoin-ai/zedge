@@ -262,6 +262,12 @@ write_plist() {
     <string>$(escape_xml "${LOCAL_ZED_API_KEY}")</string>
     <key>PATH</key>
     <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+    <key>ZEDGE_MOONSHINE_MODEL</key>
+    <string>qwen2.5-0.5b-instruct</string>
+    <key>ZEDGE_MOONSHINE_TIMEOUT_MS</key>
+    <string>180000</string>
+    <key>ZEDGE_GUARDED_SUBAGENT</key>
+    <string>0</string>
   </dict>
   </dict>
 </plist>
@@ -385,6 +391,11 @@ kill_tcp_listener_port() {
   fi
 }
 
+kill_moonshine_listeners() {
+  kill_tcp_listener_port 8080
+  kill_tcp_listener_port 8000
+}
+
 kill_stale_companion_entrypoints() {
   pids=$(ps -axo pid=,command= | awk -v self="$$" '
     $1 != self &&
@@ -470,12 +481,29 @@ wait_for_health() {
   return 1
 }
 
+sync_zed_settings() {
+  curl -fsS -m 10 -X POST "http://127.0.0.1:7331/zed/settings/sync" >/dev/null 2>&1 || true
+}
+
+seed_zed_keychain() {
+  if ! command -v security >/dev/null 2>&1; then
+    return 0
+  fi
+  security add-internet-password \
+    -a Bearer \
+    -s "http://127.0.0.1:7331/v1" \
+    -w "${LOCAL_ZED_API_KEY}" \
+    -U >/dev/null 2>&1 || true
+}
+
 case "${ACTION}" in
   install)
     ensure_zed_env_loaded
     write_plist
     bootstrap_service
     wait_for_health || true
+    seed_zed_keychain
+    sync_zed_settings
     print_status
     ;;
   uninstall)
@@ -497,6 +525,8 @@ case "${ACTION}" in
       launchctl kickstart -k "${SERVICE_TARGET}"
     fi
     wait_for_health || true
+    seed_zed_keychain
+    sync_zed_settings
     print_status
     ;;
   stop)
@@ -508,6 +538,7 @@ case "${ACTION}" in
     bootout_all
     rm -f "${DOMAIN_STATE}"
     kill_stale_companion_entrypoints
+    kill_moonshine_listeners
     kill_tcp_listener_port 7331
     echo "zedge: companion listener on :7331 stopped."
     ;;
@@ -515,6 +546,7 @@ case "${ACTION}" in
     bootout_all
     rm -f "${DOMAIN_STATE}"
     kill_stale_companion_entrypoints
+    kill_moonshine_listeners
     kill_tcp_listener_port 7331
     sleep 2
     if [ -f "${PLIST_PATH}" ]; then
@@ -522,6 +554,8 @@ case "${ACTION}" in
       write_plist
       bootstrap_service
       wait_for_health || true
+      seed_zed_keychain
+      sync_zed_settings
       print_status
     else
       echo "zedge: no launch agent at ${PLIST_PATH} — nothing to relaunch. Install with: pnpm run zedge:launch-agent:install"
