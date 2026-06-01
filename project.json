@@ -16,7 +16,7 @@
     "build:companion": {
       "executor": "a0:run-commands",
       "options": {
-        "command": "pnpm exec esbuild open-source/zedge/companion/src/index.ts --bundle --outdir=open-source/zedge/companion/dist --platform=node --format=esm --minify --packages=external"
+        "command": "node open-source/zedge/companion/scripts/build-companion-dist.mjs"
       }
     },
     "test": {

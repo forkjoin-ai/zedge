@@ -12,7 +12,10 @@ import {
   decideCompanionRestart,
 } from './companion-restart-policy.ts';
 import { getOwnedCompanionActivity } from './companion-activity.ts';
-import { resolveTypeScriptEntrypointCommand } from './runtime-command.ts';
+import {
+  resolveCompanionEntryPath,
+  resolveTypeScriptEntrypointCommand,
+} from './runtime-command.ts';
 
 let childProc: ChildProcess | null = null;
 let supervisorTimer: ReturnType<typeof setInterval> | null = null;
@@ -26,24 +29,10 @@ let healthCheckInFlight = false;
 const COMPANION_STARTUP_ATTEMPTS = 240;
 
 function getCompanionEntry(): string {
-  // pnpm start runs from companion/ dir. AEON_ROOT and monorepo-root
-  // invocations must still resolve to the companion entrypoint, not
-  // `<repo>/src/index.ts`.
-  if (process.env.AEON_ROOT) {
-    return resolve(
-      process.env.AEON_ROOT,
-      'open-source/zedge/companion/src/index.ts'
-    );
-  }
-  const cwdEntry = resolve(process.cwd(), 'src/index.ts');
-  const monorepoEntry = resolve(
-    process.cwd(),
-    'open-source/zedge/companion/src/index.ts'
+  return resolveCompanionEntryPath(
+    process.env.AEON_ROOT,
+    process.cwd()
   );
-  if (process.cwd().endsWith('open-source/zedge/companion')) {
-    return cwdEntry;
-  }
-  return monorepoEntry;
 }
 
 function getCompanionBase(): string {

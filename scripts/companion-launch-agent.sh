@@ -203,6 +203,20 @@ resolve_service_target() {
   return 1
 }
 
+build_companion_dist() {
+  NODE_BIN="$(resolve_node_for_plist)" || return 1
+  BUILD_SCRIPT="${WORKSPACE_ROOT}/open-source/zedge/companion/scripts/build-companion-dist.mjs"
+  if [ ! -f "${BUILD_SCRIPT}" ]; then
+    return 1
+  fi
+  echo "zedge: building companion dist (stable launchd binary)..."
+  if ! "${NODE_BIN}" "${BUILD_SCRIPT}"; then
+    echo "zedge: companion dist build failed — launch agent will use tsx fallback" >&2
+    return 1
+  fi
+  return 0
+}
+
 write_plist() {
   NODE_BIN="$(resolve_node_for_plist)" || exit 127
   if [ ! -f "${WORKSPACE_ROOT}/${SUPERVISOR_REL}" ]; then
@@ -210,12 +224,76 @@ write_plist() {
     exit 1
   fi
 
+  COMPANION_DIST="${WORKSPACE_ROOT}/open-source/zedge/companion/dist/companion-supervisor.mjs"
+  USE_DIST=0
+  if [ -f "${COMPANION_DIST}" ] || build_companion_dist; then
+    if [ -f "${COMPANION_DIST}" ]; then
+      USE_DIST=1
+    fi
+  fi
+
   WD_XML="$(escape_xml "${WORKSPACE_ROOT}")"
   NODE_XML="$(escape_xml "${NODE_BIN}")"
-  TSX_LOADER_XML="$(escape_xml "$(resolve_tsx_loader_for_plist)")"
-  SUPERVISOR_IMPORT_XML="$(escape_xml "import(\"./${SUPERVISOR_REL}\").then((m) => m.main())")"
 
   mkdir -p "${LAUNCH_AGENT_DIR}"
+  if [ "${USE_DIST}" -eq 1 ]; then
+    SUPERVISOR_ENTRY_XML="$(escape_xml "${COMPANION_DIST}")"
+    cat >"${PLIST_PATH}" <<EOF
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>${LABEL}</string>
+
+  <key>ProgramArguments</key>
+  <array>
+    <string>${NODE_XML}</string>
+    <string>${SUPERVISOR_ENTRY_XML}</string>
+  </array>
+
+  <key>RunAtLoad</key>
+  <true/>
+  <key>KeepAlive</key>
+  <true/>
+
+  <key>WorkingDirectory</key>
+  <string>${WD_XML}</string>
+
+  <key>StandardOutPath</key>
+  <string>${OUT_LOG}</string>
+  <key>StandardErrorPath</key>
+  <string>${ERR_LOG}</string>
+
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>HOME</key>
+    <string>$(escape_xml "${HOME}")</string>
+    <key>AEON_ROOT</key>
+    <string>${WD_XML}</string>
+    <key>ZEDGE_COMPANION_DIST</key>
+    <string>1</string>
+    <key>ZEDGE_API_KEY</key>
+    <string>$(escape_xml "${LOCAL_ZED_API_KEY}")</string>
+    <key>OPENAI_API_KEY</key>
+    <string>$(escape_xml "${LOCAL_ZED_API_KEY}")</string>
+    <key>ZED_OPEN_AI_COMPATIBLE_API_KEY</key>
+    <string>$(escape_xml "${LOCAL_ZED_API_KEY}")</string>
+    <key>PATH</key>
+    <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+    <key>ZEDGE_MOONSHINE_MODEL</key>
+    <string>qwen2.5-0.5b-instruct</string>
+    <key>ZEDGE_MOONSHINE_TIMEOUT_MS</key>
+    <string>180000</string>
+    <key>ZEDGE_GUARDED_SUBAGENT</key>
+    <string>0</string>
+  </dict>
+  </dict>
+</plist>
+EOF
+  else
+  TSX_LOADER_XML="$(escape_xml "$(resolve_tsx_loader_for_plist)")"
+  SUPERVISOR_IMPORT_XML="$(escape_xml "import(\"./${SUPERVISOR_REL}\").then((m) => m.main())")"
   cat >"${PLIST_PATH}" <<EOF
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -272,6 +350,7 @@ write_plist() {
   </dict>
 </plist>
 EOF
+  fi
   if ! plutil -lint "${PLIST_PATH}" >/dev/null 2>&1; then
     echo "zedge: plist failed validation; run: plutil -lint ${PLIST_PATH}" >&2
     plutil -lint "${PLIST_PATH}" >&2 || true
