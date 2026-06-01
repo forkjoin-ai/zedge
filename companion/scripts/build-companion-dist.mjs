@@ -50,7 +50,7 @@ const externalizeWasmAndBitwise = {
   },
 };
 
-const shared = {
+const supervisorBuild = {
   platform: 'node',
   format: 'esm',
   target: 'node22',
@@ -64,16 +64,13 @@ const shared = {
 };
 
 await esbuild.build({
-  ...shared,
+  ...supervisorBuild,
   entryPoints: [join(companionRoot, 'src/companion-supervisor.ts')],
   outfile: join(distDir, 'companion-supervisor.mjs'),
-  banner: {
-    js: `import { createRequire } from 'module'; globalThis.require = createRequire(import.meta.url);`,
-  },
 });
 
 await esbuild.build({
-  ...shared,
+  ...supervisorBuild,
   entryPoints: [join(companionRoot, 'src/index.ts')],
   outfile: join(distDir, 'companion.mjs'),
 });

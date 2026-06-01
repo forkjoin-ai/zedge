@@ -94,9 +94,25 @@ function spawnCompanion(): void {
   console.log(
     `[zedge:supervisor] Spawning companion: ${runtimeCommand.display}`
   );
+  const repoRoot = process.env.AEON_ROOT ?? process.cwd();
+  const nodePath = [
+    process.env.NODE_PATH,
+    `${repoRoot}/node_modules`,
+    `${repoRoot}/open-source/zedge/companion/node_modules`,
+  ]
+    .filter(Boolean)
+    .join(':');
+
   const child = spawn(runtimeCommand.command, [...runtimeCommand.args], {
     stdio: ['ignore', 'inherit', 'inherit'],
-    env: { ...process.env },
+    cwd: runtimeCommand.args[0]?.endsWith('.mjs')
+      ? `${repoRoot}/open-source/zedge/companion/dist`
+      : repoRoot,
+    env: {
+      ...process.env,
+      AEON_ROOT: repoRoot,
+      NODE_PATH: nodePath,
+    },
   });
   childProc = child;
   childSpawnedAt = Date.now();
