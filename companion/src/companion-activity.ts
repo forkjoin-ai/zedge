@@ -1,6 +1,6 @@
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'fs';
-import { dirname, join } from 'path';
-import { fileURLToPath } from 'url';
+import { homedir } from 'os';
+import { join } from 'path';
 
 export type CompanionActivityKind =
   | 'forkjoin-chat'
@@ -19,10 +19,9 @@ export interface CompanionActivityRecord {
   busyUntil: number;
 }
 
-const __dirname = dirname(fileURLToPath(import.meta.url));
-const DEFAULT_ACTIVITY_DIR = join(__dirname, '..', '..', '.edgework');
 const DEFAULT_ACTIVITY_FILE = join(
-  DEFAULT_ACTIVITY_DIR,
+  homedir(),
+  '.edgework',
   'companion-activity.json'
 );
 

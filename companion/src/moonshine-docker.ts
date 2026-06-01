@@ -122,6 +122,10 @@ const GNOSIS_NUM_THREADS =
 const FAT_STATION_EMBED_PROBE_MAX_MS = Number(
   process.env.ZEDGE_FAT_STATION_EMBED_PROBE_MAX_MS ?? 8_000
 );
+/** Off by default — embed holds the pipeline mutex and false timeouts restart fat-station mid-chat. */
+const FAT_STATION_EMBED_PROBE_ENABLED =
+  process.env.ZEDGE_FAT_STATION_EMBED_PROBE === '1' ||
+  process.env.ZEDGE_FAT_STATION_EMBED_PROBE === 'true';
 const GNOSIS_FFN_LEAKAGE_MODE =
   process.env.ZEDGE_GNOSIS_FFN_LEAKAGE_MODE ??
   process.env.GNOSIS_FFN_LEAKAGE_MODE;
@@ -1164,9 +1168,10 @@ async function ensureFatStationResponsive(
     }
   }
 
-  const embedHealth = runtime.healthy
-    ? await probeFatStationEmbedHealth()
-    : { ok: false, elapsedMs: 0, error: 'health probe failed' };
+  const embedHealth =
+    runtime.healthy && FAT_STATION_EMBED_PROBE_ENABLED
+      ? await probeFatStationEmbedHealth()
+      : { ok: runtime.healthy, elapsedMs: 0 };
   if (runtime.healthy && runtime.matches && embedHealth.ok) {
     return runtime;
   }
@@ -1199,9 +1204,10 @@ async function ensureFatStationResponsive(
   }
 
   runtime = await probeFatStationRuntime(layerRange);
-  const embedAfterRestart = runtime.healthy
-    ? await probeFatStationEmbedHealth()
-    : embedHealth;
+  const embedAfterRestart =
+    runtime.healthy && FAT_STATION_EMBED_PROBE_ENABLED
+      ? await probeFatStationEmbedHealth()
+      : { ok: runtime.healthy, elapsedMs: 0 };
   if (!runtime.healthy || !runtime.matches || !embedAfterRestart.ok) {
     return {
       ...runtime,
@@ -1213,10 +1219,69 @@ async function ensureFatStationResponsive(
         'fat-station embed probe failed after restart',
     };
   }
-  console.log(
-    `[moonshine] fat-station embed probe ok in ${embedAfterRestart.elapsedMs}ms`
-  );
+  if (FAT_STATION_EMBED_PROBE_ENABLED) {
+    console.log(
+      `[moonshine] fat-station embed probe ok in ${embedAfterRestart.elapsedMs}ms`
+    );
+  }
   return runtime;
+}
+
+export interface MoonshineRepairResult {
+  ok: boolean;
+  deferred?: boolean;
+  steps: string[];
+  error?: string;
+  startupModel?: string;
+}
+
+/** Hard-reset local Moonshine listeners and wait for the configured model (doctor / CLI). */
+export async function repairMoonshineStack(): Promise<MoonshineRepairResult> {
+  const steps: string[] = [];
+  if (moonshineInferenceBusy()) {
+    return {
+      ok: false,
+      deferred: true,
+      steps,
+      error: 'inference in progress — retry after the active chat finishes',
+    };
+  }
+
+  const config = resolveStartupConfig();
+  steps.push(`target model: ${config.modelName}`);
+
+  if (stopLocalListener(MOONSHINE_URL, 'OpenAI-compatible')) {
+    steps.push('stopped listener on :8080');
+  }
+  if (stopLocalListener(FAT_STATION_URL, 'fat-station')) {
+    steps.push('stopped listener on :8000');
+  }
+  await allowStoppedPortsToClose();
+  steps.push('waiting for ports to close');
+
+  try {
+    await ensureMoonshineRunning();
+  } catch (error: unknown) {
+    return {
+      ok: false,
+      steps,
+      startupModel: config.modelName,
+      error: error instanceof Error ? error.message : String(error),
+    };
+  }
+
+  const ready = await isMoonshineRuntimeReady(config);
+  if (!ready) {
+    return {
+      ok: false,
+      steps: [...steps, 'ensureMoonshineRunning completed but runtime not ready'],
+      startupModel: config.modelName,
+      error: 'moonshine runtime not ready after repair',
+    };
+  }
+
+  steps.push('moonshine runtime ready');
+  return { ok: true, steps, startupModel: config.modelName };
 }
 
 async function allowStoppedPortsToClose(): Promise<void> {
@@ -1371,6 +1436,8 @@ export interface MoonshineStartupDiagnostics {
   startupModel: string;
   knotPath: string;
   knotPresentLocally: boolean;
+  embedProbeEnabled: boolean;
+  inferenceBusy: boolean;
 }
 
 /** Summarize why Moonshine may not start (for /probe/doctor and CLI). */
@@ -1385,6 +1452,8 @@ export async function getMoonshineStartupDiagnostics(): Promise<MoonshineStartup
     startupModel: config.modelName,
     knotPath: config.knotPath,
     knotPresentLocally: !isHttpUrl(config.knotPath) && existsSync(config.knotPath),
+    embedProbeEnabled: FAT_STATION_EMBED_PROBE_ENABLED,
+    inferenceBusy: moonshineInferenceBusy(),
   };
 }
 

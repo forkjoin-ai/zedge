@@ -66,7 +66,8 @@ After the companion starts, it rewrites `localhost:7331` to `127.0.0.1` in your 
 **Check / kill / restart / logs / uninstall:**
 
 ```bash
-pnpm run zedge:doctor            # diagnose Moonshine / disk / :7331 / :8080
+pnpm run zedge:doctor            # diagnose Moonshine / disk / :7331 / :8080 / :8000
+pnpm run zedge:doctor -- --fix   # diagnose + repair stack + smoke-test hello
 pnpm run zedge:launch-agent:status
 pnpm run zedge:kill              # stop launch agent + kill :7331 (stuck/manual too)
 pnpm run zedge:restart           # kill then relaunch via launch agent (needs prior install)

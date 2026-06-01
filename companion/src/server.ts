@@ -3076,6 +3076,17 @@ export async function handleWebRequest(req: Request): Promise<Response> {
     return jsonResponse(getTierHealth());
   }
 
+  if (path === '/probe/doctor/repair' && req.method === 'POST') {
+    const { repairMoonshineStack } = await import('./moonshine-docker.ts');
+    const repair = await repairMoonshineStack();
+    const readiness = await getReadinessProbePayload();
+    return jsonResponse({
+      status: repair.ok ? 'ok' : repair.deferred ? 'deferred' : 'error',
+      repair,
+      checks: readiness.checks,
+    });
+  }
+
   if (path === '/probe/doctor' && req.method === 'GET') {
     const { getMoonshineStartupDiagnostics } = await import(
       './moonshine-docker.ts'
