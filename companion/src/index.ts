@@ -139,6 +139,11 @@ export async function main(): Promise<void> {
 
 async function runCompanionBootstrap(): Promise<void> {
   try {
+    const { clearCompanionActivityOnBoot } = await import(
+      './companion-activity.ts'
+    );
+    clearCompanionActivityOnBoot();
+
     if (await companionAlreadyRunning()) {
       console.log('[zedge] Companion already running; direct launch exiting.');
       return;

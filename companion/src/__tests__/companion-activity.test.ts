@@ -1,10 +1,13 @@
 import { afterEach, beforeEach, describe, expect, test } from '@a0n/gnosis/test';
-import { mkdtempSync } from 'fs';
+import { mkdtempSync, readFileSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
 import {
   clearCompanionActivity,
+  clearCompanionActivityOnBoot,
+  clearStaleCompanionActivity,
   getOwnedCompanionActivity,
+  isCompanionInferenceBusy,
   markCompanionActivity,
   readCompanionActivity,
 } from '../companion-activity';
@@ -55,5 +58,47 @@ describe('companion activity tracking', () => {
     clearCompanionActivity(first.activityId, first.pid);
 
     expect(readCompanionActivity()).toEqual(second);
+  });
+
+  test('clearCompanionActivityOnBoot removes an existing lock file', () => {
+    markCompanionActivity('moonshine-chat', 5_000, 'stuck');
+
+    clearCompanionActivityOnBoot();
+
+    expect(readCompanionActivity()).toBeNull();
+  });
+
+  test('clearStaleCompanionActivity drops foreign-pid locks', () => {
+    markCompanionActivity('moonshine-chat', 60_000, 'other-process');
+    const filePath = process.env.ZEDGE_COMPANION_ACTIVITY_FILE!;
+    const raw = JSON.parse(readFileSync(filePath, 'utf-8') as string) as {
+      pid: number;
+    };
+    writeFileSync(
+      filePath,
+      JSON.stringify({ ...raw, pid: process.pid + 9_999 })
+    );
+
+    expect(clearStaleCompanionActivity()).toBe(true);
+    expect(readCompanionActivity()).toBeNull();
+  });
+
+  test('isCompanionInferenceBusy ignores locks owned by another pid', () => {
+    const filePath = process.env.ZEDGE_COMPANION_ACTIVITY_FILE!;
+    markCompanionActivity('moonshine-chat', 60_000, 'stuck');
+    const record = JSON.parse(readFileSync(filePath, 'utf-8') as string) as {
+      pid: number;
+      busyUntil: number;
+    };
+    writeFileSync(
+      filePath,
+      JSON.stringify({
+        ...record,
+        pid: process.pid + 9_999,
+        busyUntil: Date.now() + 60_000,
+      })
+    );
+
+    expect(isCompanionInferenceBusy()).toBe(false);
   });
 });

@@ -122,10 +122,20 @@ const GNOSIS_NUM_THREADS =
 const FAT_STATION_EMBED_PROBE_MAX_MS = Number(
   process.env.ZEDGE_FAT_STATION_EMBED_PROBE_MAX_MS ?? 8_000
 );
-/** Off by default — embed holds the pipeline mutex and false timeouts restart fat-station mid-chat. */
-const FAT_STATION_EMBED_PROBE_ENABLED =
-  process.env.ZEDGE_FAT_STATION_EMBED_PROBE === '1' ||
-  process.env.ZEDGE_FAT_STATION_EMBED_PROBE === 'true';
+/** Force embed probe on or off. When unset, probe runs only while inference is idle. */
+function fatStationEmbedProbeForced(): boolean | null {
+  const raw = process.env.ZEDGE_FAT_STATION_EMBED_PROBE?.trim().toLowerCase();
+  if (raw === '1' || raw === 'true') return true;
+  if (raw === '0' || raw === 'false') return false;
+  return null;
+}
+
+/** Detect fat-station mutex deadlocks (/health alone stays green). Skip during active chat. */
+function shouldRunFatStationEmbedProbe(): boolean {
+  const forced = fatStationEmbedProbeForced();
+  if (forced !== null) return forced;
+  return !moonshineInferenceBusy();
+}
 const GNOSIS_FFN_LEAKAGE_MODE =
   process.env.ZEDGE_GNOSIS_FFN_LEAKAGE_MODE ??
   process.env.GNOSIS_FFN_LEAKAGE_MODE;
@@ -1108,7 +1118,6 @@ async function probeFatStationEmbedHealth(
       headers: {
         'Content-Type': 'application/octet-stream',
         'X-Position': '0',
-        'X-Token-Count': '3',
         'X-Request-Id': 'zedge-embed-probe',
       },
       body: tokens,
@@ -1169,7 +1178,7 @@ async function ensureFatStationResponsive(
   }
 
   const embedHealth =
-    runtime.healthy && FAT_STATION_EMBED_PROBE_ENABLED
+    runtime.healthy && shouldRunFatStationEmbedProbe()
       ? await probeFatStationEmbedHealth()
       : { ok: runtime.healthy, elapsedMs: 0 };
   if (runtime.healthy && runtime.matches && embedHealth.ok) {
@@ -1205,7 +1214,7 @@ async function ensureFatStationResponsive(
 
   runtime = await probeFatStationRuntime(layerRange);
   const embedAfterRestart =
-    runtime.healthy && FAT_STATION_EMBED_PROBE_ENABLED
+    runtime.healthy && shouldRunFatStationEmbedProbe()
       ? await probeFatStationEmbedHealth()
       : { ok: runtime.healthy, elapsedMs: 0 };
   if (!runtime.healthy || !runtime.matches || !embedAfterRestart.ok) {
@@ -1219,7 +1228,7 @@ async function ensureFatStationResponsive(
         'fat-station embed probe failed after restart',
     };
   }
-  if (FAT_STATION_EMBED_PROBE_ENABLED) {
+  if (shouldRunFatStationEmbedProbe()) {
     console.log(
       `[moonshine] fat-station embed probe ok in ${embedAfterRestart.elapsedMs}ms`
     );
@@ -1452,7 +1461,7 @@ export async function getMoonshineStartupDiagnostics(): Promise<MoonshineStartup
     startupModel: config.modelName,
     knotPath: config.knotPath,
     knotPresentLocally: !isHttpUrl(config.knotPath) && existsSync(config.knotPath),
-    embedProbeEnabled: FAT_STATION_EMBED_PROBE_ENABLED,
+    embedProbeEnabled: shouldRunFatStationEmbedProbe(),
     inferenceBusy: moonshineInferenceBusy(),
   };
 }
@@ -1592,6 +1601,13 @@ async function isMoonshineRuntimeReady(
     startupConfig.layerRange
   );
   if (!fatStationRuntime.healthy || !fatStationRuntime.matches) return false;
+
+  if (shouldRunFatStationEmbedProbe()) {
+    const embedHealth = await probeFatStationEmbedHealth();
+    if (!embedHealth.ok) {
+      return false;
+    }
+  }
 
   const probeResult = await probeExpectedModel(
     startupConfig.modelName,

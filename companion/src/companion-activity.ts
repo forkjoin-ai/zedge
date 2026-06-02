@@ -1,6 +1,6 @@
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'fs';
 import { homedir } from 'os';
-import { join } from 'path';
+import { dirname, join } from 'path';
 
 export type CompanionActivityKind =
   | 'forkjoin-chat'
@@ -51,7 +51,48 @@ function isCompanionActivityRecord(
   );
 }
 
-export function readCompanionActivity(): CompanionActivityRecord | null {
+function isStaleCompanionActivity(
+  activity: CompanionActivityRecord,
+  now = Date.now()
+): boolean {
+  if (activity.busyUntil <= now) {
+    return true;
+  }
+  return activity.pid !== process.pid;
+}
+
+/**
+ * Remove a leftover activity file from a prior companion or hung inference.
+ * Call on companion/supervisor boot before accepting traffic.
+ */
+export function clearCompanionActivityOnBoot(): void {
+  const filePath = getActivityFilePath();
+  if (!existsSync(filePath)) {
+    return;
+  }
+
+  try {
+    const raw = readFileSync(filePath, 'utf-8');
+    const parsed = JSON.parse(raw) as unknown;
+    if (isCompanionActivityRecord(parsed)) {
+      console.log(
+        `[zedge:activity] clearing activity lock on boot (pid=${parsed.pid} kind=${parsed.kind} busyUntil=${parsed.busyUntil})`
+      );
+    } else {
+      console.log('[zedge:activity] clearing invalid activity lock on boot');
+    }
+  } catch {
+    console.log('[zedge:activity] clearing unreadable activity lock on boot');
+  }
+
+  try {
+    rmSync(filePath, { force: true });
+  } catch {
+    // Best effort only.
+  }
+}
+
+function readCompanionActivityRecord(): CompanionActivityRecord | null {
   const filePath = getActivityFilePath();
   if (!existsSync(filePath)) {
     return null;
@@ -64,6 +105,27 @@ export function readCompanionActivity(): CompanionActivityRecord | null {
   } catch {
     return null;
   }
+}
+
+/** Drop expired or foreign-pid activity records without requiring a restart. */
+export function clearStaleCompanionActivity(now = Date.now()): boolean {
+  const filePath = getActivityFilePath();
+  const activity = readCompanionActivityRecord();
+  if (!activity || !isStaleCompanionActivity(activity, now)) {
+    return false;
+  }
+
+  try {
+    rmSync(filePath, { force: true });
+  } catch {
+    return false;
+  }
+  return true;
+}
+
+export function readCompanionActivity(): CompanionActivityRecord | null {
+  clearStaleCompanionActivity();
+  return readCompanionActivityRecord();
 }
 
 export function getOwnedCompanionActivity(
@@ -82,12 +144,16 @@ export function getOwnedCompanionActivity(
   return activity;
 }
 
-/** True when any companion process holds the inference lock (moonshine/forkjoin chat). */
+/** True when this process holds the inference lock (moonshine/forkjoin chat). */
 export function isCompanionInferenceBusy(
   now = Date.now()
 ): boolean {
   const activity = readCompanionActivity();
-  if (!activity || activity.busyUntil <= now) {
+  if (
+    !activity ||
+    activity.pid !== process.pid ||
+    activity.busyUntil <= now
+  ) {
     return false;
   }
   return activity.kind === 'moonshine-chat' || activity.kind === 'forkjoin-chat';

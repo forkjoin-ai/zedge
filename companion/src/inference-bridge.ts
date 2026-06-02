@@ -254,7 +254,9 @@ function moonshineFailureWorthRepair(
     lower.includes('econnrefused') ||
     lower.includes('enotfound') ||
     lower.includes('socket hang up') ||
-    lower.includes('network')
+    lower.includes('network') ||
+    lower.includes('aborted') ||
+    lower.includes('timeout')
   ) {
     return true;
   }

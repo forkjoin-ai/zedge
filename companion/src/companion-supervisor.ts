@@ -11,7 +11,10 @@ import {
   HEALTH_CHECK_TIMEOUT_MS,
   decideCompanionRestart,
 } from './companion-restart-policy.ts';
-import { getOwnedCompanionActivity } from './companion-activity.ts';
+import {
+  clearCompanionActivityOnBoot,
+  getOwnedCompanionActivity,
+} from './companion-activity.ts';
 import {
   resolveCompanionEntryPath,
   resolveTypeScriptEntrypointCommand,
@@ -87,6 +90,8 @@ function spawnCompanion(): void {
     );
     return;
   }
+
+  clearCompanionActivityOnBoot();
 
   const runtimeCommand = resolveTypeScriptEntrypointCommand(
     getCompanionEntry()
@@ -297,6 +302,8 @@ function startSupervisor(): void {
 }
 
 async function runSupervisor(): Promise<void> {
+  clearCompanionActivityOnBoot();
+
   if (await isCompanionProcessHealthy()) {
     console.log(
       `[zedge:supervisor] Companion already process-healthy at ${getCompanionBase()}; adopting as unowned (will restart on process failure)`
