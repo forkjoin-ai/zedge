@@ -3,9 +3,19 @@
   "version": "5.0.0",
   "description": "Zedge companion sidecar — inference bridge + compute pool node",
   "type": "module",
-  "main": "src/index.ts",
+  "main": "dist/companion.mjs",
+  "exports": {
+    ".": "./dist/companion.mjs",
+    "./supervisor": "./dist/companion-supervisor.mjs",
+    "./source": "./src/index.ts"
+  },
+  "files": [
+    "dist",
+    "src"
+  ],
   "scripts": {
     "start": "../scripts/run-ts-entry.sh src/companion-supervisor.ts",
+    "start:dist": "node dist/companion-supervisor.mjs",
     "direct": "../scripts/run-ts-entry.sh src/index.ts",
     "dev": "node --watch ../../gnosis/bin/monster run src/index.ts --export main",
     "mcp": "../scripts/run-ts-entry.sh src/mcp-stdio.ts",
@@ -20,8 +30,8 @@
     "build": "node scripts/build-companion-dist.mjs",
     "build:legacy": "pnpm exec esbuild src/index.ts --bundle --outdir=dist --platform=node --format=esm --minify --packages=external",
     "build:mcp": "pnpm exec esbuild src/mcp-stdio.ts --bundle --outfile=dist/mcp-stdio.mjs --platform=node --format=esm --minify --packages=external",
-    "type-check": "tsc --noEmit",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "type-check": "npm run typecheck"
   },
   "dependencies": {
     "yjs": "^13.6.0",

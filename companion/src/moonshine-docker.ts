@@ -55,7 +55,7 @@ const GEMMA4_DENSE_KNOT_PATH = join(
 );
 const GEMMA4_DENSE_KNOT_URL =
   process.env.ZEDGE_GEMMA4_DENSE_KNOT_URL ??
-  'https://edgework.ai/api/v1/r2/distributed-inference/models/gemma4-31b-it.knot';
+  'https://www-edgework-app.edgework.ai/api/v1/r2/distributed-inference/models/gemma4-31b-it.knot';
 const GEMMA4_RKNOT_PATH = join(
   REPO_ROOT,
   'open-source/bitwise/datasets/gemma4-31b-it.k10-b8.rknot'
@@ -203,7 +203,7 @@ interface LocalMoonshineModelSpec {
 // count from the knot metadata (0..<metadataLayerCount>), so each arch self-sizes.
 const R2_DENSE_KNOT_BASE =
   process.env.ZEDGE_R2_KNOT_BASE?.trim() ??
-  'https://edgework.ai/api/v1/r2/distributed-inference/models';
+  'https://www-edgework-app.edgework.ai/api/v1/r2/distributed-inference/models';
 function meshKnotSpec(id: string): LocalMoonshineModelSpec {
   return {
     modelName: id,

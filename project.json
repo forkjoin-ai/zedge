@@ -19,6 +19,30 @@
         "command": "node open-source/zedge/companion/scripts/build-companion-dist.mjs"
       }
     },
+    "dev": {
+      "executor": "a0:run-commands",
+      "options": {
+        "command": "open-source/zedge/scripts/run-ts-entry.sh open-source/zedge/companion/src/companion-supervisor.ts",
+        "cwd": "."
+      }
+    },
+    "start": {
+      "executor": "a0:run-commands",
+      "dependsOn": [
+        "build:companion"
+      ],
+      "options": {
+        "command": "node open-source/zedge/companion/dist/companion-supervisor.mjs",
+        "cwd": "."
+      }
+    },
+    "doctor": {
+      "executor": "a0:run-commands",
+      "options": {
+        "command": "open-source/zedge/scripts/zedge-doctor.sh",
+        "cwd": "."
+      }
+    },
     "test": {
       "executor": "a0:run-commands",
       "options": {

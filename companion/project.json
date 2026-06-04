@@ -13,7 +13,38 @@
       ],
       "options": {
         "cwd": "open-source/zedge/companion",
-        "command": "bun run build"
+        "command": "node scripts/build-companion-dist.mjs"
+      }
+    },
+    "dev": {
+      "executor": "a0:run-commands",
+      "options": {
+        "cwd": "open-source/zedge/companion",
+        "command": "../scripts/run-ts-entry.sh src/index.ts"
+      }
+    },
+    "start": {
+      "executor": "a0:run-commands",
+      "dependsOn": [
+        "build"
+      ],
+      "options": {
+        "cwd": "open-source/zedge/companion",
+        "command": "node dist/companion-supervisor.mjs"
+      }
+    },
+    "mcp": {
+      "executor": "a0:run-commands",
+      "options": {
+        "cwd": "open-source/zedge/companion",
+        "command": "../scripts/run-ts-entry.sh src/mcp-stdio.ts"
+      }
+    },
+    "lint": {
+      "executor": "a0:run-commands",
+      "options": {
+        "command": "pnpm exec eslint open-source/zedge/companion/src --ext .ts",
+        "cwd": "."
       }
     },
     "typecheck": {
@@ -22,8 +53,8 @@
         "^typecheck"
       ],
       "options": {
-        "cwd": "Users/buley/Documents/Code",
-        "command": "bun run tsc --noEmit"
+        "command": "pnpm exec tsc -p open-source/zedge/companion/tsconfig.typecheck.json --noEmit",
+        "cwd": "."
       }
     }
   }
