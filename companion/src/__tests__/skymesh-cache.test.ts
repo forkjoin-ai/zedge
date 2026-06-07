@@ -6,49 +6,85 @@
  */
 
 import { describe, it, expect, beforeEach, afterEach } from 'bun:test';
+import { createServer, type Server } from 'node:http';
 import { canonicalQueryHash, isSkymeshTeleportEnabled, trySkymeshCacheTeleport } from '../skymesh-cache.ts';
+
+interface TestServer {
+  stop(): Promise<void>;
+}
+
+function startTestServer(
+  port: number,
+  handler: () => Response | Promise<Response>,
+): Promise<TestServer> {
+  const server: Server = createServer(async (_req, res) => {
+    try {
+      const response = await handler();
+      res.statusCode = response.status;
+      response.headers.forEach((value, key) => {
+        res.setHeader(key, value);
+      });
+      res.end(Buffer.from(await response.arrayBuffer()));
+    } catch (error) {
+      res.statusCode = 500;
+      res.end(error instanceof Error ? error.message : String(error));
+    }
+  });
+
+  return new Promise((resolve, reject) => {
+    server.once('error', reject);
+    server.listen(port, '127.0.0.1', () => {
+      server.off('error', reject);
+      resolve({
+        stop: () =>
+          new Promise<void>((resolveStop, rejectStop) => {
+            server.close((error) => {
+              if (error) {
+                rejectStop(error);
+              } else {
+                resolveStop();
+              }
+            });
+          }),
+      });
+    });
+  });
+}
 
 describe('skymesh-cache', () => {
   describe('canonicalQueryHash', () => {
-    it('produces the golden vector fp48 hash', () => {
+    it('produces the model-agnostic golden vector fp48 hash', () => {
       const result = canonicalQueryHash(
         [785, 6722, 315, 9625, 374],
-        'qwen2.5-0.5b-instruct',
-        'skymesh-query/v1',
+        'skymesh-query/v2',
       );
-      expect(result).toBe('49af207da814');
+      expect(result).toBe('9f784d85c261');
     });
 
     it('throws on empty tokens', () => {
       expect(() => {
-        canonicalQueryHash([], 'qwen2.5-0.5b-instruct', 'skymesh-query/v1');
+        canonicalQueryHash([], 'skymesh-query/v2');
       }).toThrow(RangeError);
     });
 
-    it('is sensitive to model changes', () => {
-      const hash1 = canonicalQueryHash(
-        [785, 6722, 315, 9625, 374],
-        'qwen2.5-0.5b-instruct',
-        'skymesh-query/v1',
-      );
-      const hash2 = canonicalQueryHash(
-        [785, 6722, 315, 9625, 374],
-        'gemma4-31b',
-        'skymesh-query/v1',
-      );
-      expect(hash1).not.toBe(hash2);
+    it('is MODEL-AGNOSTIC: model is not in the key (no model arg)', () => {
+      // The key is over (tokens, qspec) only — a different qspec is a different
+      // key, but there is no model dimension to be sensitive to.
+      const hash1 = canonicalQueryHash([785, 6722, 315, 9625, 374], 'skymesh-query/v2');
+      const hash2 = canonicalQueryHash([785, 6722, 315, 9625, 374], 'skymesh-query/v1');
+      expect(hash1).not.toBe(hash2); // qspec-sensitive
+      // Re-deriving with the same args is stable (no hidden model input).
+      expect(hash1).toBe(canonicalQueryHash([785, 6722, 315, 9625, 374], 'skymesh-query/v2'));
     });
 
     it('is sensitive to token changes', () => {
       const hash1 = canonicalQueryHash(
         [785, 6722, 315, 9625, 374],
-        'qwen2.5-0.5b-instruct',
-        'skymesh-query/v1',
+        'skymesh-query/v2',
       );
       const hash2 = canonicalQueryHash(
         [785, 6722, 315, 9625, 375],
-        'qwen2.5-0.5b-instruct',
-        'skymesh-query/v1',
+        'skymesh-query/v2',
       );
       expect(hash1).not.toBe(hash2);
     });
@@ -126,14 +162,9 @@ describe('skymesh-cache', () => {
 
     it('returns null on non-JSON cache response', async () => {
       // Mock server that returns non-JSON
-      let server: any;
+      let server: TestServer | undefined;
       try {
-        server = Bun.serve({
-          port: 19998,
-          fetch() {
-            return new Response('not json');
-          },
-        });
+        server = await startTestServer(19998, () => new Response('not json'));
 
         const result = await trySkymeshCacheTeleport(
           'test prompt',
@@ -143,39 +174,34 @@ describe('skymesh-cache', () => {
         );
         expect(result).toBe(null);
       } finally {
-        server?.stop();
+        await server?.stop();
       }
     });
 
     it('returns null on unverified cache hit', async () => {
       // Mock servers for both tokenizer and cache
-      let tokenizerServer: any, cacheServer: any;
+      let tokenizerServer: TestServer | undefined;
+      let cacheServer: TestServer | undefined;
       try {
-        tokenizerServer = Bun.serve({
-          port: 19997,
-          async fetch(req) {
-            return new Response(JSON.stringify({ tokens: [785, 6722, 315, 9625, 374] }));
-          },
-        });
+        tokenizerServer = await startTestServer(19997, () =>
+          new Response(JSON.stringify({ tokens: [785, 6722, 315, 9625, 374] }))
+        );
 
-        cacheServer = Bun.serve({
-          port: 19996,
-          async fetch(req) {
-            return new Response(
-              JSON.stringify({
-                hit: true,
-                entry: {
-                  answerText: 'cached answer',
-                  attestation: {
-                    pass: false, // unverified
-                    admitted: false,
-                    sig: '',
-                  },
+        cacheServer = await startTestServer(19996, () =>
+          new Response(
+            JSON.stringify({
+              hit: true,
+              entry: {
+                answerText: 'cached answer',
+                attestation: {
+                  pass: false, // unverified
+                  admitted: false,
+                  sig: '',
                 },
-              }),
-            );
-          },
-        });
+              },
+            }),
+          )
+        );
 
         const result = await trySkymeshCacheTeleport(
           'test prompt',
@@ -185,40 +211,35 @@ describe('skymesh-cache', () => {
         );
         expect(result).toBe(null);
       } finally {
-        tokenizerServer?.stop();
-        cacheServer?.stop();
+        await tokenizerServer?.stop();
+        await cacheServer?.stop();
       }
     });
 
     it('returns answerText on verified cache hit', async () => {
       // Mock servers for both tokenizer and cache
-      let tokenizerServer: any, cacheServer: any;
+      let tokenizerServer: TestServer | undefined;
+      let cacheServer: TestServer | undefined;
       try {
-        tokenizerServer = Bun.serve({
-          port: 19995,
-          async fetch(req) {
-            return new Response(JSON.stringify({ tokens: [785, 6722, 315, 9625, 374] }));
-          },
-        });
+        tokenizerServer = await startTestServer(19995, () =>
+          new Response(JSON.stringify({ tokens: [785, 6722, 315, 9625, 374] }))
+        );
 
-        cacheServer = Bun.serve({
-          port: 19994,
-          async fetch(req) {
-            return new Response(
-              JSON.stringify({
-                hit: true,
-                entry: {
-                  answerText: 'verified cached answer',
-                  attestation: {
-                    pass: true,
-                    admitted: true,
-                    sig: 'valid-signature-here',
-                  },
+        cacheServer = await startTestServer(19994, () =>
+          new Response(
+            JSON.stringify({
+              hit: true,
+              entry: {
+                answerText: 'verified cached answer',
+                attestation: {
+                  pass: true,
+                  admitted: true,
+                  sig: 'valid-signature-here',
                 },
-              }),
-            );
-          },
-        });
+              },
+            }),
+          )
+        );
 
         const result = await trySkymeshCacheTeleport(
           'test prompt',
@@ -228,32 +249,27 @@ describe('skymesh-cache', () => {
         );
         expect(result).toBe('verified cached answer');
       } finally {
-        tokenizerServer?.stop();
-        cacheServer?.stop();
+        await tokenizerServer?.stop();
+        await cacheServer?.stop();
       }
     });
 
     it('returns null on cache miss', async () => {
       // Mock servers for both tokenizer and cache
-      let tokenizerServer: any, cacheServer: any;
+      let tokenizerServer: TestServer | undefined;
+      let cacheServer: TestServer | undefined;
       try {
-        tokenizerServer = Bun.serve({
-          port: 19993,
-          async fetch(req) {
-            return new Response(JSON.stringify({ tokens: [785, 6722, 315, 9625, 374] }));
-          },
-        });
+        tokenizerServer = await startTestServer(19993, () =>
+          new Response(JSON.stringify({ tokens: [785, 6722, 315, 9625, 374] }))
+        );
 
-        cacheServer = Bun.serve({
-          port: 19992,
-          async fetch(req) {
-            return new Response(
-              JSON.stringify({
-                hit: false,
-              }),
-            );
-          },
-        });
+        cacheServer = await startTestServer(19992, () =>
+          new Response(
+            JSON.stringify({
+              hit: false,
+            }),
+          )
+        );
 
         const result = await trySkymeshCacheTeleport(
           'uncached prompt',
@@ -263,8 +279,8 @@ describe('skymesh-cache', () => {
         );
         expect(result).toBe(null);
       } finally {
-        tokenizerServer?.stop();
-        cacheServer?.stop();
+        await tokenizerServer?.stop();
+        await cacheServer?.stop();
       }
     });
   });

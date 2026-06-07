@@ -126,22 +126,18 @@ function cacheFingerprint48HexSync(input: Uint8Array): string {
 const CACHE_TOKEN_SEP = 0x00;
 
 /**
- * Canonical key bytes: model utf8 | 0x00 | qspecId utf8 | 0x00 | token[i] LE u32.
- * Byte-for-byte identical to the bridge's canonicalQueryKeyBytes.
+ * Canonical key bytes: qspecId utf8 | 0x00 | token[i] LE u32. MODEL-AGNOSTIC —
+ * model is NOT in the key (provenance only). Byte-for-byte identical to the
+ * bridge's + knotgraph's canonicalQueryKeyBytes.
  */
 function canonicalQueryKeyBytes(
   queryTokens: readonly number[],
-  model: string,
   qspecId: string,
 ): Uint8Array {
   const enc = new TextEncoder();
-  const modelBytes = enc.encode(model);
   const qspecBytes = enc.encode(qspecId);
-  const out = new Uint8Array(modelBytes.length + 1 + qspecBytes.length + 1 + queryTokens.length * 4);
+  const out = new Uint8Array(qspecBytes.length + 1 + queryTokens.length * 4);
   let offset = 0;
-  out.set(modelBytes, offset);
-  offset += modelBytes.length;
-  out[offset++] = CACHE_TOKEN_SEP;
   out.set(qspecBytes, offset);
   offset += qspecBytes.length;
   out[offset++] = CACHE_TOKEN_SEP;
@@ -153,21 +149,23 @@ function canonicalQueryKeyBytes(
   return out;
 }
 
-/** The KEY: fp48 canonical query hash (12 hex). Throws on empty tokens. */
+/**
+ * The KEY: fp48 canonical query hash (12 hex) over (queryTokens, qspecId).
+ * MODEL-AGNOSTIC. Throws on empty tokens.
+ */
 export function canonicalQueryHash(
   queryTokens: readonly number[],
-  model: string,
   qspecId: string,
 ): string {
   if (queryTokens.length === 0) {
     throw new RangeError('canonicalQueryHash: empty queryTokens (clinamen_swerve guard)');
   }
-  return cacheFingerprint48HexSync(canonicalQueryKeyBytes(queryTokens, model, qspecId));
+  return cacheFingerprint48HexSync(canonicalQueryKeyBytes(queryTokens, qspecId));
 }
 
 // --- Configuration & Timeouts ---
 
-export const SKYMESH_QSPEC_ID = 'skymesh-query/v1';
+export const SKYMESH_QSPEC_ID = 'skymesh-query/v2';
 export const SKYMESH_DEFAULT_CACHE_URL = 'https://www-edgework-app.edgework.ai';
 const SKYMESH_TOKENIZE_TIMEOUT_MS = 500;
 const SKYMESH_CACHE_LOOKUP_TIMEOUT_MS = 2500;
@@ -292,7 +290,7 @@ export async function trySkymeshCacheTeleport(
   // Step 2: Compute canonical query hash
   let fp48: string;
   try {
-    fp48 = canonicalQueryHash(tokens, model, SKYMESH_QSPEC_ID);
+    fp48 = canonicalQueryHash(tokens, SKYMESH_QSPEC_ID);
   } catch {
     return null;
   }
@@ -400,7 +398,7 @@ export async function warmSkymeshCache(opts: {
   fatStationBaseUrl: string;
 }): Promise<void> {
   try {
-    const fp48 = canonicalQueryHash(opts.queryTokens, opts.model, SKYMESH_QSPEC_ID);
+    const fp48 = canonicalQueryHash(opts.queryTokens, SKYMESH_QSPEC_ID);
 
     await fetch(`${opts.cacheUrl}/api/v1/cache/store`, {
       method: 'POST',
@@ -435,7 +433,7 @@ export async function prewarmSkymeshTeleport(
     const tokens = await trySkymeshTokenize(prompt, fatStationBaseUrl);
     if (!tokens) return null;
 
-    const fp48 = canonicalQueryHash(tokens, model, SKYMESH_QSPEC_ID);
+    const fp48 = canonicalQueryHash(tokens, SKYMESH_QSPEC_ID);
     const lookupUrl = `${cacheUrl}/api/v1/cache/lookup?q=${encodeURIComponent(fp48)}&model=${encodeURIComponent(model)}&qspec=${encodeURIComponent(SKYMESH_QSPEC_ID)}&tokens=${encodeURIComponent(tokens.join(','))}&_=${Date.now()}`;
 
     const res = await fetch(lookupUrl, {
