@@ -10,7 +10,7 @@ recorded here. Use this file to judge that diff.
 
 ## Command
 
-Run from the repository root (`/Users/buley/Documents/Code/emotions`). The
+Run from the repository root (`.`). The
 typecheck config's `baseUrl` is `../../..`, so the resolver expects repo root as
 the working directory:
 
