@@ -4,6 +4,11 @@ export interface KnownZedgeModel {
   maxTokens: number;
   ownedBy: string;
   /**
+   * Sensitive model category. Sensitive entries stay out of the default Zed
+   * picker and require an explicit ZEDGE_MODELS allowlist.
+   */
+  sensitiveContent?: 'adult';
+  /**
    * Whether this model is served by the Forkjoin own-runtime distributed
    * inference mesh (fat-station / knots / WASM worker). When true, the
    * 'forkjoin' tier passes chat-completion requests through to the mesh's
@@ -137,6 +142,16 @@ const KNOWN_ZEDGE_MODELS: KnownZedgeModel[] = [
     forkjoinTier: true,
   },
   {
+    // Adult-content research model. Keep hidden unless ZEDGE_MODELS explicitly
+    // names it, then route through the same Llama/NativeLlama KNOT sidecar path.
+    id: 'loki-erotica-8b',
+    displayName: 'Loki v2.75b 8B Erotica (local research)',
+    maxTokens: 128,
+    ownedBy: 'mradermacher/MrRobotoAI',
+    sensitiveContent: 'adult',
+    forkjoinTier: true,
+  },
+  {
     // ADMITTED via monster-guard (Paris 12095 rank0, logit 20.69) after the
     // amplituhedron-hotpath fix (it corrupted qwen3's qkv_dim!=hidden_dim path).
     // qwen3 dense -> NativeLlama with per-head q/k-norm (36L / 2560h / 32 heads).
@@ -248,6 +263,11 @@ export function isModelVisible(modelId: string): boolean {
 
   if (shouldShowAllModels()) {
     return true;
+  }
+
+  const known = getKnownZedgeModel(modelId);
+  if (known?.sensitiveContent === 'adult') {
+    return false;
   }
 
   return !isLegacyEdgeworkModelId(modelId);

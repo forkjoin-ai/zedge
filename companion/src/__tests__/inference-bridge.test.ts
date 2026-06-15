@@ -8,6 +8,7 @@ import {
   getModels,
   embed,
   infer,
+  resolveMoonshineTimeoutMsForModel,
 } from '../inference-bridge';
 import type {
   InferenceTier,
@@ -145,6 +146,11 @@ describe('Inference Bridge', () => {
   test('InferenceTier type covers the Forkjoin + Moonshine chat tiers', () => {
     const tiers: InferenceTier[] = ['forkjoin', 'moonshine', 'echo'];
     expect(tiers.length).toBe(3);
+  });
+
+  test('Loki uses the slow Moonshine timeout budget', () => {
+    expect(resolveMoonshineTimeoutMsForModel('gnosis-local')).toBe(90_000);
+    expect(resolveMoonshineTimeoutMsForModel('loki-erotica-8b')).toBe(300_000);
   });
 
   test('infer preserves streaming and honors requested Moonshine token budgets', async () => {

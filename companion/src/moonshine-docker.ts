@@ -73,6 +73,7 @@ const MOONSHINE_STARTUP_BLOCKLIST = new Set([
 ]);
 const QWEN_CODER_MOONSHINE_MODEL = 'qwen-coder-7b';
 const GEMMA4_MOONSHINE_MODEL = 'gemma4-31b-it';
+const LOKI_EROTICA_MOONSHINE_MODEL = 'loki-erotica-8b';
 const FAT_STATION_URL =
   process.env.ZEDGE_FAT_STATION_URL ?? 'http://127.0.0.1:8000';
 const FAT_STATION_BIN =
@@ -268,6 +269,19 @@ const LOCAL_MOONSHINE_MODELS: Record<string, LocalMoonshineModelSpec> = {
   // ADMITTED (monster-guard PASS, Paris 12366 rank0) after rope_theta re-encode
   // (500000) + bowl_q_filter fix. arch=llama / NativeLlama (28L / 3072h).
   'llama-3.2-3b': meshKnotSpec('llama-3.2-3b'),
+  // Adult-content research model. Hidden unless ZEDGE_MODELS explicitly names
+  // it; when the local KNOT is absent, stream the published R2 artifact.
+  [LOKI_EROTICA_MOONSHINE_MODEL]: {
+    modelName: LOKI_EROTICA_MOONSHINE_MODEL,
+    knotPath: join(homedir(), '.edgework', 'models', 'loki-erotica-8b.knot'),
+    denseFallbackUrl: `${R2_DENSE_KNOT_BASE}/loki-erotica-8b.knot`,
+    tokenizerGgufPath: join(
+      homedir(),
+      '.edgework',
+      'models',
+      'Loki-v2.75b-8b-EROTICA-1024k.i1-Q4_K_M.gguf'
+    ),
+  },
   // ADMITTED (monster-guard PASS, Paris 12095 rank0) after the amplituhedron
   // hotpath fix. qwen3 dense / NativeLlama + per-head q/k-norm (36L / 2560h).
   'qwen3-4b': meshKnotSpec('qwen3-4b'),
@@ -916,6 +930,10 @@ function buildFatStationNodeEnv(
   };
 }
 
+function isLokiEroticaModel(modelName: string): boolean {
+  return modelName === LOKI_EROTICA_MOONSHINE_MODEL;
+}
+
 /** The fat-station argv after the source flags (port/role/layers). */
 function buildFatStationServeArgs(layerRange: string): string[] {
   return ['--port', '8000', '--role', 'both', '--layers', layerRange];
@@ -1341,6 +1359,13 @@ async function startLocalMoonshine(
     return true;
   }
 
+  if (moonshineInferenceBusy()) {
+    console.log(
+      '[moonshine] OpenAI-compatible listener repair deferred — generation in progress'
+    );
+    return false;
+  }
+
   if (existingOpenAiShim.healthy && existingOpenAiShim.mismatchReason) {
     console.warn(
       `[moonshine] existing OpenAI-compatible shim runtime mismatch: ` +
@@ -1377,6 +1402,11 @@ async function startLocalMoonshine(
       GNOSIS_AMPLITUHEDRON_COORDINATOR: '0',
       // Single-window prefill can wedge under concurrent Zed requests.
       MOONSHINE_PREFILL_WINDOWS: '0',
+      ...(isLokiEroticaModel(modelName) ? { THOTH_LIQUID_MEMORY: '0' } : {}),
+      ...(isLokiEroticaModel(modelName) ? { MOONSHINE_SKYMESH_CACHE: '0' } : {}),
+      ...(isLokiEroticaModel(modelName)
+        ? { MOONSHINE_DISABLE_NATIVE_GENERATE: '1' }
+        : {}),
       TERMINAL_PROSODY: 'off',
       MOONSHINE_MEMO_ENABLED:
         process.env.ZEDGE_MOONSHINE_MEMO_ENABLED ?? '0',
@@ -1569,6 +1599,12 @@ async function ensureMoonshineRunningInner(): Promise<void> {
   }
 
   if (probeResult.healthy) {
+    if (moonshineInferenceBusy()) {
+      console.log(
+        '[moonshine] listener repair deferred — generation in progress'
+      );
+      return;
+    }
     const reason = !probeResult.modelMatches
       ? `expected ${startupConfig.modelName}`
       : probeResult.mismatchReason
@@ -1627,6 +1663,9 @@ export function startMoonshineRuntimeWatchdog(): void {
     if (watchdogRepair !== null) return;
     watchdogRepair = (async () => {
       try {
+        if (moonshineInferenceBusy()) {
+          return;
+        }
         if (await isMoonshineRuntimeReady()) {
           watchdogConsecutiveFailures = 0;
           return;

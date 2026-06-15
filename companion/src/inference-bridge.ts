@@ -239,6 +239,9 @@ export const FAT_STATION_BASE_URL =
 const MOONSHINE_TIMEOUT_MS = Number(
   process.env.ZEDGE_MOONSHINE_TIMEOUT_MS ?? 90_000
 );
+const SLOW_MOONSHINE_MODEL_TIMEOUT_MS = Number(
+  process.env.ZEDGE_SLOW_MOONSHINE_TIMEOUT_MS ?? 300_000
+);
 const MOONSHINE_BUSY_BUFFER_MS = 30_000;
 const MOONSHINE_REPAIR_RETRY_MS = Number(
   process.env.ZEDGE_MOONSHINE_REPAIR_RETRY_MS ?? 60_000
@@ -632,6 +635,20 @@ function resolveMoonshineMaxTokens(request: ChatCompletionRequest): number {
     : undefined;
   const hardCap = Math.min(modelMaxTokens ?? MOONSHINE_MAX_TOKENS, MOONSHINE_MAX_TOKENS);
   return Math.max(0, Math.min(requested ?? MOONSHINE_DEFAULT_MAX_TOKENS, hardCap));
+}
+
+function isSlowMoonshineModel(model: string): boolean {
+  return model === 'loki-erotica-8b';
+}
+
+export function resolveMoonshineTimeoutMsForModel(model: string): number {
+  return isSlowMoonshineModel(model)
+    ? Math.max(MOONSHINE_TIMEOUT_MS, SLOW_MOONSHINE_MODEL_TIMEOUT_MS)
+    : MOONSHINE_TIMEOUT_MS;
+}
+
+function resolveMoonshineTimeoutMs(request: ChatCompletionRequest): number {
+  return resolveMoonshineTimeoutMsForModel(request.model);
 }
 
 const LOCAL_WASM_TOTAL_TIMEOUT_MS = 45_000;
@@ -1386,9 +1403,10 @@ async function tryMoonshineInference(
   request: ChatCompletionRequest,
   signal?: AbortSignal
 ): Promise<Response> {
+  const timeoutMs = resolveMoonshineTimeoutMs(request);
   return await runWithCompanionActivity(
     'moonshine-chat',
-    MOONSHINE_TIMEOUT_MS + MOONSHINE_BUSY_BUFFER_MS,
+    timeoutMs + MOONSHINE_BUSY_BUFFER_MS,
     async () => {
       const url = `${MOONSHINE_BASE_URL}/v1/chat/completions`;
       const maxTokens = resolveMoonshineMaxTokens(request);
@@ -1404,7 +1422,7 @@ async function tryMoonshineInference(
       );
 
       const controller = new AbortController();
-      const timer = setTimeout(() => controller.abort(), MOONSHINE_TIMEOUT_MS);
+      const timer = setTimeout(() => controller.abort(), timeoutMs);
       const abortFromUpstream = () => controller.abort();
       signal?.addEventListener('abort', abortFromUpstream, { once: true });
 

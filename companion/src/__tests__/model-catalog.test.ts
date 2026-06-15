@@ -2,6 +2,8 @@ import { describe, expect, test } from '@a0n/gnosis/test';
 import {
   buildZedAvailableModels,
   getKnownZedgeModel,
+  getKnownZedgeModels,
+  isForkjoinTierModel,
 } from '../model-catalog.ts';
 
 describe('Zedge model catalog', () => {
@@ -31,6 +33,41 @@ describe('Zedge model catalog', () => {
     expect(model).toBeDefined();
     expect(model?.displayName).toBe('Gemma4 31B Instruct (Moonshine RKNOT)');
     expect(model?.maxTokens).toBe(8192);
+  });
+
+  test('keeps the Loki adult research model explicit and forkjoin-routed', () => {
+    const previousModels = process.env.ZEDGE_MODELS;
+    const previousAllModels = process.env.ZEDGE_ALL_MODELS;
+
+    try {
+      delete process.env.ZEDGE_MODELS;
+      delete process.env.ZEDGE_ALL_MODELS;
+
+      const model = getKnownZedgeModel('loki-erotica-8b');
+      expect(model).toBeDefined();
+      expect(model?.sensitiveContent).toBe('adult');
+      expect(model?.maxTokens).toBe(128);
+      expect(isForkjoinTierModel('loki-erotica-8b')).toBe(true);
+      expect(
+        getKnownZedgeModels().some((entry) => entry.id === model?.id)
+      ).toBe(false);
+
+      process.env.ZEDGE_MODELS = 'loki-erotica-8b';
+      expect(getKnownZedgeModels().map((entry) => entry.id)).toEqual([
+        'loki-erotica-8b',
+      ]);
+    } finally {
+      if (previousModels === undefined) {
+        delete process.env.ZEDGE_MODELS;
+      } else {
+        process.env.ZEDGE_MODELS = previousModels;
+      }
+      if (previousAllModels === undefined) {
+        delete process.env.ZEDGE_ALL_MODELS;
+      } else {
+        process.env.ZEDGE_ALL_MODELS = previousAllModels;
+      }
+    }
   });
 
   test('buildZedAvailableModels does not reintroduce the retired wasm model', () => {
