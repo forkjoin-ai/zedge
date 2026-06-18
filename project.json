@@ -46,7 +46,19 @@
     "test": {
       "executor": "a0:run-commands",
       "options": {
-        "command": "pnpm run monster -- test open-source/zedge/companion/src/__tests__"
+        "command": "pnpm run monster -- test open-source/zedge/companion/src/__tests__/auth.test.ts open-source/zedge/companion/src/__tests__/config.test.ts open-source/zedge/companion/src/__tests__/edit-preview.test.ts open-source/zedge/companion/src/__tests__/fim-cache.test.ts open-source/zedge/companion/src/__tests__/mcp-babysitter.test.ts open-source/zedge/companion/src/__tests__/parse-code-blocks.test.ts open-source/zedge/companion/src/__tests__/prompt-budget.test.ts open-source/zedge/companion/src/__tests__/runtime-command.test.ts open-source/zedge/companion/src/__tests__/tts-relay.test.ts open-source/zedge/companion/src/__tests__/vfs-bridge.test.ts open-source/zedge/companion/src/__tests__/zed-settings.test.ts"
+      }
+    },
+    "test:all": {
+      "executor": "a0:run-commands",
+      "options": {
+        "command": "find open-source/zedge/companion/src/__tests__ -name '*.test.ts' ! -name '*e2e.test.ts' -print | sort | xargs pnpm run monster -- test"
+      }
+    },
+    "test:e2e": {
+      "executor": "a0:run-commands",
+      "options": {
+        "command": "find open-source/zedge/companion/src/__tests__ -name '*e2e.test.ts' -print | sort | xargs pnpm run monster -- test"
       }
     },
     "typecheck": {
