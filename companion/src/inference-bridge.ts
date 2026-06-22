@@ -2739,6 +2739,37 @@ export async function inferFim(
  *
  * Remote edge/cloudrun/mesh/wasm tiers deprecated — use Moonshine docker container.
  */
+/**
+ * SOUL-DOC ISOLATION (mirrors gnosis openai-server, commit 71b7203f).
+ *
+ * The Tier -1 Skymesh teleport keys the model-agnostic global cache on the LAST
+ * USER MESSAGE TEXT ALONE — no system prompt, no history, no conversation id.
+ * That key is only sound for a single, context-free user turn. If the request
+ * carries a non-empty system prompt (persona / Halogram / judge CHARTER) or ANY
+ * prior turn (an assistant reply, or more than one user message), the answer is
+ * context-conditioned: serving a last-user-text hit would leak a foreign
+ * completion across conversations (e.g. two unrelated chats whose newest user
+ * turn is "yes" / "continue" / "why?" collide on the same fp48 key). Only a
+ * lone, context-free user turn may teleport; everything else runs real inference.
+ */
+export function skymeshTeleportEligibility(messages: readonly ChatMessage[]): {
+  eligible: boolean;
+  hasSystemPrompt: boolean;
+  hasPriorContext: boolean;
+} {
+  const hasSystemPrompt = messages.some(
+    (m) => m.role === 'system' && m.content.trim().length > 0,
+  );
+  const hasPriorContext =
+    messages.some((m) => m.role === 'assistant') ||
+    messages.filter((m) => m.role === 'user').length > 1;
+  const lastUserContent =
+    [...messages].reverse().find((m) => m.role === 'user')?.content ?? '';
+  const eligible =
+    !hasSystemPrompt && !hasPriorContext && lastUserContent.trim().length > 0;
+  return { eligible, hasSystemPrompt, hasPriorContext };
+}
+
 export async function infer(
   request: ChatCompletionRequest
 ): Promise<TierResult> {
@@ -2810,7 +2841,9 @@ export async function infer(
         [...request.messages]
           .reverse()
           .find((m) => m.role === 'user')?.content ?? '';
-      if (lastUserContent.trim().length > 0) {
+      const { eligible: teleportEligible, hasSystemPrompt, hasPriorContext } =
+        skymeshTeleportEligibility(request.messages);
+      if (teleportEligible) {
         const answerText = await trySkymeshCacheTeleport(
           lastUserContent,
           request.model,
@@ -2867,7 +2900,11 @@ export async function infer(
           tier: 'skymesh',
           status: 'skipped',
           ms: 0,
-          detail: 'no user content',
+          detail: hasSystemPrompt
+            ? 'system-prompted (soul-doc isolation)'
+            : hasPriorContext
+            ? 'multi-turn (context-conditioned)'
+            : 'no user content',
         });
       }
     } catch (err) {
@@ -2965,7 +3002,15 @@ export async function infer(
             const lastUserContent = [...request.messages]
               .reverse()
               .find((m) => m.role === 'user')?.content ?? '';
-            if (lastUserContent.trim().length > 0) {
+            // SEED-SIDE SOUL-DOC ISOLATION: this Moonshine answer was generated
+            // from the FULL request (system prompt + history), but the global
+            // cache is keyed on the last-user text ALONE. Seeding a context-
+            // conditioned answer under a context-free key POISONS the cache —
+            // any later single-turn request with the same last-user text would
+            // read back this persona/multi-turn answer. So only seed when the
+            // request itself is a lone, context-free user turn (same gate as the
+            // teleport read above).
+            if (skymeshTeleportEligibility(request.messages).eligible) {
               const tokens = await (async () => {
                 try {
                   const tr = await fetch(`${FAT_STATION_BASE_URL}/tokenize`, {
