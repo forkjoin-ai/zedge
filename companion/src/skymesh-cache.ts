@@ -166,6 +166,20 @@ export function canonicalQueryHash(
 // --- Configuration & Timeouts ---
 
 export const SKYMESH_QSPEC_ID = 'skymesh-query/v2';
+
+/**
+ * Model-scoped qspec for the chat answer cache. The global cache is otherwise
+ * MODEL-AGNOSTIC (model is provenance, not key); on the consolidated mesh that
+ * SWAPS MODELS, one model's completion could be served for another's identical
+ * prompt. Folding the model into the qspecId isolates by model WITHOUT touching
+ * `canonicalQueryHash` — the qspecId is hashed into the key and stored on the
+ * entry, and the edgework identity guard re-hashes with the entry's own qspecId,
+ * so no server change is needed. Empty model → bare qspec (unchanged).
+ */
+export function modelScopedQspecId(model: string): string {
+  const m = (model ?? '').trim().toLowerCase();
+  return m ? `${SKYMESH_QSPEC_ID}|m=${m}` : SKYMESH_QSPEC_ID;
+}
 export const SKYMESH_DEFAULT_CACHE_URL = 'https://www-edgework-app.edgework.ai';
 const SKYMESH_TOKENIZE_TIMEOUT_MS = 500;
 const SKYMESH_CACHE_LOOKUP_TIMEOUT_MS = 2500;
@@ -290,7 +304,7 @@ export async function trySkymeshCacheTeleport(
   // Step 2: Compute canonical query hash
   let fp48: string;
   try {
-    fp48 = canonicalQueryHash(tokens, SKYMESH_QSPEC_ID);
+    fp48 = canonicalQueryHash(tokens, modelScopedQspecId(model));
   } catch {
     return null;
   }
@@ -298,7 +312,7 @@ export async function trySkymeshCacheTeleport(
   // Step 3: Query the global cache
   const lookupUrl =
     `${cacheUrl}/api/v1/cache/lookup?q=${encodeURIComponent(fp48)}` +
-    `&model=${encodeURIComponent(model)}&qspec=${encodeURIComponent(SKYMESH_QSPEC_ID)}` +
+    `&model=${encodeURIComponent(model)}&qspec=${encodeURIComponent(modelScopedQspecId(model))}` +
     `&tokens=${encodeURIComponent(tokens.join(','))}&_=${Date.now()}`;
 
   try {
@@ -398,7 +412,8 @@ export async function warmSkymeshCache(opts: {
   fatStationBaseUrl: string;
 }): Promise<void> {
   try {
-    const fp48 = canonicalQueryHash(opts.queryTokens, SKYMESH_QSPEC_ID);
+    const qspec = modelScopedQspecId(opts.model);
+    const fp48 = canonicalQueryHash(opts.queryTokens, qspec);
 
     await fetch(`${opts.cacheUrl}/api/v1/cache/store`, {
       method: 'POST',
@@ -410,7 +425,7 @@ export async function warmSkymeshCache(opts: {
       body: JSON.stringify({
         q: fp48,
         model: opts.model,
-        qspec: SKYMESH_QSPEC_ID,
+        qspec,
         tokens: opts.queryTokens,
         answerText: opts.answerText,
         answerTokens: opts.answerTokens ?? [],
@@ -433,8 +448,8 @@ export async function prewarmSkymeshTeleport(
     const tokens = await trySkymeshTokenize(prompt, fatStationBaseUrl);
     if (!tokens) return null;
 
-    const fp48 = canonicalQueryHash(tokens, SKYMESH_QSPEC_ID);
-    const lookupUrl = `${cacheUrl}/api/v1/cache/lookup?q=${encodeURIComponent(fp48)}&model=${encodeURIComponent(model)}&qspec=${encodeURIComponent(SKYMESH_QSPEC_ID)}&tokens=${encodeURIComponent(tokens.join(','))}&_=${Date.now()}`;
+    const fp48 = canonicalQueryHash(tokens, modelScopedQspecId(model));
+    const lookupUrl = `${cacheUrl}/api/v1/cache/lookup?q=${encodeURIComponent(fp48)}&model=${encodeURIComponent(model)}&qspec=${encodeURIComponent(modelScopedQspecId(model))}&tokens=${encodeURIComponent(tokens.join(','))}&_=${Date.now()}`;
 
     const res = await fetch(lookupUrl, {
       method: 'GET',
