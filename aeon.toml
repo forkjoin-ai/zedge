@@ -1,0 +1,126 @@
+# Zedge — easy-deploy site (driven entirely by this file).
+#
+# Deploy with:  a0 xr deploy
+#
+# Zedge has no worker `main`; the [site] block makes it a topology-driven site.
+# x-ranger synthesizes a worker that renders this content with the `oss-template`
+# component kit via the @a0n/aeon-flux runtime. Edit any value and redeploy.
+#
+# Content is sourced from open-source/zedge/README.md — keep it honest.
+
+name = "zedge-site"
+compatibility_date = "2025-01-01"
+workers_dev = true
+
+[site]
+kit = "oss-template"
+title = "Zedge — AI-assisted coding for Zed, kept local"
+
+[site.project]
+name = "Zedge"
+tagline = "AI-assisted coding for Zed, kept close to the machine you control."
+description = "Zedge brings AI-assisted coding to Zed through a real Rust/WASM extension and a local TypeScript companion sidecar. The companion exposes an OpenAI-compatible local endpoint while carrying MCP prompts, slash-command mirrors, model sync, and Babelfish polyglot translation — local sidecar, local WASM, owned inference."
+logo = "diamond"
+accent = "#7c5cff"
+theme = "dark"
+repo = "forkjoin-ai/zedge"
+
+[site.sigil]
+seed = "zedge"
+
+[site.nav]
+links = ["Features|#features", "Quickstart|#quickstart", "Babelfish|#features", "FAQ|#faq", "Source|https://forgo.cloud/forkjoin-ai/zedge"]
+
+[site.hero]
+eyebrow = "Rust/WASM Zed extension · local companion sidecar · OpenAI-compatible"
+install = "pnpm run zedge:launch-agent:install"
+cta_primary = "Get started"
+cta_primary_href = "#quickstart"
+cta_secondary = "Browse the source"
+cta_secondary_href = "https://forgo.cloud/forkjoin-ai/zedge"
+
+[[site.features]]
+icon = "layers"
+title = "Both sides of the product"
+body = "Zedge ships a real Rust/WASM Zed extension and a real local TypeScript companion sidecar. The extension registers Zedge as a language-model provider and adds native slash commands; the sidecar handles inference routing, collaboration, and compute pooling."
+
+[[site.features]]
+icon = "globe"
+title = "OpenAI-compatible local endpoint"
+body = "The companion exposes an OpenAI-compatible endpoint on localhost:7331 — OpenAI-compatible enough to plug into Zed quickly — while also carrying MCP prompts, slash-command mirrors, model sync, collaboration hooks, and deploy-shell diagnostics."
+
+[[site.features]]
+icon = "cpu"
+title = "Babelfish WASM native compiler"
+body = "Babelfish is the universal code-translation layer on the Gnosis topological IR, integrated via gnosis-betti-wasm for a zero-copy pipeline. analyze, explain, translate, and scaffold across Gnosis-supported languages, with .gnarly polyglot sources as first-class Zed files."
+
+[[site.features]]
+icon = "lock"
+title = "Mutation is preview/token gated"
+body = "Babelfish rewrite previews are not applied until an explicit apply step. preview is the default output mode; preview tokens are single-use and only allow the apply mode they were created for. In-place mutation always goes through an explicit apply token."
+
+[[site.features]]
+icon = "zap"
+title = "Restartable launch agent"
+body = "A one-time macOS install registers a launch agent with KeepAlive, so the sidecar comes back after reboots — no remembered foreground command. It defaults Moonshine to deepseek-r1-1.5b using a cached knot so inference works offline."
+
+[[site.features]]
+icon = "shield"
+title = "Local-first by design"
+body = "Zedge is not a hosted coding-agent service. The default posture is local sidecar, local WASM, and owned inference surfaces. No Workers AI, paid external APIs, or permanent Cloud Run dependency is added to make a feature work."
+
+[site.quickstart]
+title = "Run the sidecar"
+
+[[site.quickstart.tab]]
+label = "macOS install"
+code = "# one-time install, from the monorepo root\npnpm install\npnpm run zedge:launch-agent:install\n\n# registers a KeepAlive launch agent on port 7331\n# Zed auto-configures Zedge at startup"
+
+[[site.quickstart.tab]]
+label = "Doctor"
+code = "# diagnose Moonshine / disk / :7331 / :8080 / :8000\npnpm run zedge:doctor\n\n# diagnose + repair stack + smoke-test hello\npnpm run zedge:doctor -- --fix"
+
+[[site.quickstart.tab]]
+label = "Lifecycle"
+code = "pnpm run zedge:kill      # stop launch agent + kill :7331\npnpm run zedge:restart   # kill then relaunch via launch agent\npnpm run zedge:launch-agent:logs"
+
+[[site.quickstart.tab]]
+label = "Not on macOS"
+code = "# keep one terminal open\npnpm run gnode -- run \\\n  open-source/zedge/companion/src/companion-supervisor.ts \\\n  --export main"
+
+[[site.faq]]
+q = "Is Zedge a hosted coding-agent service?"
+a = "No. Zedge is not a hosted coding-agent service. The default posture is local sidecar, local WASM, and owned inference surfaces. It does not add Workers AI, paid external APIs, or a permanent Cloud Run dependency to make a feature work."
+
+[[site.faq]]
+q = "What are the two parts?"
+a = "A Rust/WASM Zed extension in src/ that registers Zedge as a language-model provider and adds slash commands, and a companion sidecar in companion/ that handles inference routing, collaboration bridges, compute pooling, and local integration. The companion is its own package, @affectively/zedge-companion."
+
+[[site.faq]]
+q = "What is Babelfish?"
+a = "Babelfish is the universal code-translation layer built on the Gnosis topological IR, integrated into the extension via gnosis-betti-wasm. It exposes analyze, explain, translate, and scaffold across Gnosis-supported languages, treats .gnarly files as first-class polyglot sources, and surfaces speed findings as read-only LSP hints. Rewrites are preview-first and apply only on an explicit token."
+
+[[site.faq]]
+q = "Why does the port and localhost detail matter?"
+a = "Zedge needs a local server on port 7331, and you should not start it by hand every day — hence the KeepAlive launch agent. On macOS, localhost versus 127.0.0.1 matters for Zed; after the companion starts it rewrites localhost:7331 to 127.0.0.1 in your Zed settings when it syncs the model list."
+
+[[site.faq]]
+q = "Lost in Zed?"
+a = "Run the slash command /edge-setup — same setup steps, copy-paste friendly. If the Agent panel still says No API key, run pnpm run zedge:restart or pnpm run zedge:doctor. The placeholder key is zedge-local."
+
+[site.footer]
+quote = "The fair brag is architectural honesty: the extension is real, the sidecar is real, and the inference path stays close to the machine you control."
+license = "MIT"
+copyright = "© 2026 forkjoin-ai · AFFECTIVELY"
+
+[[site.footer.column]]
+title = "Project"
+links = ["Source|https://forgo.cloud/forkjoin-ai/zedge", "Companion|https://forgo.cloud/forkjoin-ai/zedge", "Quickstart|#quickstart", "FAQ|#faq"]
+
+[[site.footer.column]]
+title = "Surfaces"
+links = ["Zed extension|https://forgo.cloud/forkjoin-ai/zedge", "Babelfish|#features", "Gnarly|#features", "Gnot|#features"]
+
+[[site.footer.column]]
+title = "More"
+links = ["Zed|https://zed.dev", "License|https://forgo.cloud/forkjoin-ai/zedge"]
