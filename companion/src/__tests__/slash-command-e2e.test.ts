@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, test } from '@a0n/gnosis/test';
-import { mkdtempSync, mkdirSync, readFileSync } from 'fs';
+import { chmodSync, mkdtempSync, mkdirSync, readFileSync, writeFileSync } from 'fs';
 import { spawn, spawnSync, type ChildProcess } from 'child_process';
 import { get } from 'http';
 import { createServer } from 'net';
@@ -41,6 +41,24 @@ interface CompanionHealthPayload {
   };
 }
 
+interface MoonshineAgentExecPayload {
+  ok: boolean;
+  events: Array<Record<string, unknown>>;
+  metacog: Array<Record<string, unknown>>;
+  final?: Record<string, unknown>;
+  error?: string;
+}
+
+interface MoonshinePermissionsPayload {
+  workspace_path: string;
+  pending: Array<{
+    run_id: string;
+    status: string;
+    risk: string;
+    requested_action: string;
+  }>;
+}
+
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = resolve(__dirname, '../../../../../');
 const COMPANION_ENTRY = fileURLToPath(new URL('../index.ts', import.meta.url));
@@ -53,6 +71,7 @@ let companionPort = 0;
 let companionLogs = '';
 let testHome = '';
 let testWorkspace = '';
+let fakeMoonshineBin = '';
 let skipReason: string | null = null;
 
 function isLoopbackListenDenied(error: unknown): boolean {
@@ -109,6 +128,87 @@ async function getJson<T>(url: string, timeoutMs = 5_000): Promise<T> {
     });
     request.once('error', reject);
   });
+}
+
+async function postJson<T>(
+  url: string,
+  body: Record<string, unknown>,
+  timeoutMs = 10_000
+): Promise<{ status: number; payload: T }> {
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(body),
+    signal: AbortSignal.timeout(timeoutMs),
+  });
+  return {
+    status: response.status,
+    payload: (await response.json()) as T,
+  };
+}
+
+function writeFakeMoonshineProvider(path: string): void {
+  writeFileSync(
+    path,
+    [
+      '#!/usr/bin/env node',
+      'const cIndex = process.argv.indexOf("-c");',
+      'const command = cIndex >= 0 ? process.argv[cIndex + 1] ?? "" : "";',
+      'const runId = "pact-smoke-run";',
+      'const provider = command.includes("--provider codex") ? "codex" : command.includes("--provider claude") ? "claude" : "sovereign";',
+      'const emit = (event) => console.log(JSON.stringify({ schemaVersion: 1, timestamp: new Date(0).toISOString(), run_id: runId, provider, ...event }));',
+      'if (command.includes("agent resume --json")) {',
+      '  if (command.includes("--decision approve")) {',
+      '    emit({ type: "permission_decision", verdict: "escalate", status: "approve", reason: "human approved once", risk: "network", requested_action: "network access" });',
+      '    emit({ type: "final", content: "pact-provider resumed ok" });',
+      '    process.exit(0);',
+      '  }',
+      '  emit({ type: "permission_decision", verdict: "escalate", status: "deny", reason: "human denied", risk: "network", requested_action: "network access" });',
+      '  emit({ type: "error", verdict: "veto", error: "human denied permission request" });',
+      '  process.exit(12);',
+      '}',
+      'if (!command.includes("agent exec --json")) {',
+      '  console.error(`unexpected moonshine command: ${command}`);',
+      '  process.exit(64);',
+      '}',
+      'if (!command.includes("--permission-mode ask")) {',
+      '  console.error(`permission mode was not forwarded: ${command}`);',
+      '  process.exit(65);',
+      '}',
+      'if (!command.includes("--provider ")) {',
+      '  console.error(`provider was not forwarded: ${command}`);',
+      '  process.exit(67);',
+      '}',
+      'if (!command.includes("--cwd ")) {',
+      '  console.error(`cwd was not forwarded: ${command}`);',
+      '  process.exit(66);',
+      '}',
+      'if (command.includes("malformed_provider")) {',
+      '  console.log("not json");',
+      '  process.exit(0);',
+      '}',
+      'emit({ type: "run_start", workspace_path: process.cwd(), prompt: command, risk: "read_only", requested_action: "read-only analysis" });',
+      'if (command.includes("human_required")) {',
+      '  emit({ type: "metacog_verdict", verdict: "escalate", reason: "secondary metacog chain requests human permission", risk: "network", requested_action: "network access" });',
+      '  emit({ type: "permission_request", verdict: "escalate", reason: "secondary metacog chain requests human permission", risk: "network", requested_action: "network access", status: "pending", choices: ["approve_once", "deny"] });',
+      '  emit({ type: "error", verdict: "escalate", error: "metacog escalate: secondary metacog chain requests human permission" });',
+      '  process.exit(11);',
+      '}',
+      'if (command.includes(".lean")) {',
+      '  emit({ type: "metacog_verdict", verdict: "reflect", reason: "Lean formal work requires an explicit verification target before finalizing", risk: "formal_claim", requested_action: "Lean formal admission", formal_target: "Gnosis/MoonshineMetacogProcess.lean", verification_command: "lake build Gnosis.MoonshineMetacogProcess" });',
+      '  emit({ type: "assistant_delta", content: "lean pact reflection ok" });',
+      '  emit({ type: "final", content: "lean pact reflection ok", formal_target: "Gnosis/MoonshineMetacogProcess.lean", verification_command: "lake build Gnosis.MoonshineMetacogProcess" });',
+      '  process.exit(0);',
+      '}',
+      'emit({ type: "metacog_verdict", verdict: "proceed", reason: "pact provider accepted bounded event log", risk: "read_only", requested_action: "read-only analysis" });',
+      'emit({ type: "assistant_delta", content: "pact-provider smoke ok" });',
+      'emit({ type: "final", content: "pact-provider smoke ok" });',
+    ].join('\n'),
+    'utf8'
+  );
+  chmodSync(path, 0o755);
 }
 
 async function reservePort(): Promise<number> {
@@ -388,6 +488,8 @@ describe('Zedge slash commands end to end', () => {
       testHome = mkdtempSync(join(tmpdir(), 'zedge-slash-e2e-'));
       testWorkspace = mkdtempSync(join(tmpdir(), 'zedge-workspace-e2e-'));
       mkdirSync(join(testHome, '.edgework'), { recursive: true });
+      fakeMoonshineBin = join(testWorkspace, 'fake-moonshine-provider.mjs');
+      writeFakeMoonshineProvider(fakeMoonshineBin);
 
       const runtimeCommand = resolveTypeScriptEntrypointCommand(COMPANION_ENTRY);
       companionProcess = spawn(runtimeCommand.command, [...runtimeCommand.args], {
@@ -399,6 +501,7 @@ describe('Zedge slash commands end to end', () => {
           ...process.env,
           HOME: testHome,
           AEON_ROOT: REPO_ROOT,
+          ZEDGE_MOONSHINE_BIN: fakeMoonshineBin,
           ZEDGE_COMPANION_PORT: String(companionPort),
           ZEDGE_LISTENER_MODE: 'bun',
         },
@@ -434,6 +537,173 @@ describe('Zedge slash commands end to end', () => {
     expect(health.inference.localRuntime.pid).toBeGreaterThan(0);
   }, 20_000);
 
+  test('moonshine agent exec route satisfies the provider pact smoke', async () => {
+    if (skipReason !== null) {
+      return;
+    }
+
+    const { status, payload } = await postJson<MoonshineAgentExecPayload>(
+      `http://127.0.0.1:${companionPort}/moonshine/agent/exec`,
+      {
+        prompt: 'write a pact smoke response',
+        permission_mode: 'ask',
+        workspace_path: testWorkspace,
+      }
+    );
+
+    expect(status).toBe(200);
+    expect(payload.ok).toBe(true);
+    expect(payload.events.map((event) => event.type)).toEqual([
+      'run_start',
+      'metacog_verdict',
+      'assistant_delta',
+      'final',
+    ]);
+    expect(payload.metacog).toHaveLength(1);
+    expect(payload.metacog[0]?.verdict).toBe('proceed');
+    expect(payload.final?.content).toBe('pact-provider smoke ok');
+  }, 20_000);
+
+  test('moonshine agent exec route forwards account-backed provider selection', async () => {
+    if (skipReason !== null) {
+      return;
+    }
+
+    const { status, payload } = await postJson<MoonshineAgentExecPayload>(
+      `http://127.0.0.1:${companionPort}/moonshine/agent/exec`,
+      {
+        prompt: 'write a codex-backed pact smoke response',
+        permission_mode: 'ask',
+        provider: 'codex',
+        workspace_path: testWorkspace,
+      }
+    );
+
+    expect(status).toBe(200);
+    expect(payload.ok).toBe(true);
+    expect(payload.events[0]?.provider).toBe('codex');
+    expect(payload.final?.provider).toBe('codex');
+  }, 20_000);
+
+  test('moonshine agent exec route preserves Lean formal metadata', async () => {
+    if (skipReason !== null) {
+      return;
+    }
+
+    const { status, payload } = await postJson<MoonshineAgentExecPayload>(
+      `http://127.0.0.1:${companionPort}/moonshine/agent/exec`,
+      {
+        prompt: 'edit Gnosis/MoonshineMetacogProcess.lean',
+        permission_mode: 'ask',
+        workspace_path: testWorkspace,
+      }
+    );
+
+    expect(status).toBe(200);
+    expect(payload.ok).toBe(true);
+    expect(payload.metacog[0]?.risk).toBe('formal_claim');
+    expect(payload.metacog[0]?.formal_target).toBe(
+      'Gnosis/MoonshineMetacogProcess.lean'
+    );
+    expect(payload.metacog[0]?.verification_command).toBe(
+      'lake build Gnosis.MoonshineMetacogProcess'
+    );
+  }, 20_000);
+
+  test('moonshine agent exec route returns permission requests for human escalation', async () => {
+    if (skipReason !== null) {
+      return;
+    }
+
+    const { status, payload } = await postJson<MoonshineAgentExecPayload>(
+      `http://127.0.0.1:${companionPort}/moonshine/agent/exec`,
+      {
+        prompt: 'human_required before mutating files',
+        permission_mode: 'ask',
+        workspace_path: testWorkspace,
+      }
+    );
+
+    expect(status).toBe(400);
+    expect(payload.ok).toBe(false);
+    expect(payload.metacog[0]?.verdict).toBe('escalate');
+    expect(payload.events.some((event) => event.type === 'permission_request')).toBe(
+      true
+    );
+    expect(payload.error).toContain('human permission');
+  }, 20_000);
+
+  test('moonshine agent exec route fails closed on malformed provider output', async () => {
+    if (skipReason !== null) {
+      return;
+    }
+
+    const { status, payload } = await postJson<MoonshineAgentExecPayload>(
+      `http://127.0.0.1:${companionPort}/moonshine/agent/exec`,
+      {
+        prompt: 'malformed_provider',
+        permission_mode: 'ask',
+        workspace_path: testWorkspace,
+      }
+    );
+
+    expect(status).toBe(400);
+    expect(payload.ok).toBe(false);
+    expect(payload.error).toContain('malformed JSONL');
+  }, 20_000);
+
+  test('moonshine permission routes list and resume pending requests', async () => {
+    if (skipReason !== null) {
+      return;
+    }
+
+    const permissionDir = join(testWorkspace, '.moonshine', 'agent-permissions');
+    mkdirSync(permissionDir, { recursive: true });
+    writeFileSync(
+      join(permissionDir, 'pact-smoke-run.json'),
+      JSON.stringify({
+        schema_version: 1,
+        run_id: 'pact-smoke-run',
+        workspace_path: testWorkspace,
+        permission_mode: 'ask',
+        prompt: 'network smoke',
+        verdict: 'escalate',
+        reason: 'secondary metacog chain requests human permission',
+        requested_action: 'network access',
+        risk: 'network',
+        status: 'pending',
+        created_at: new Date(0).toISOString(),
+      }),
+      'utf8'
+    );
+
+    const permissions = await getJson<MoonshinePermissionsPayload>(
+      `http://127.0.0.1:${companionPort}/moonshine/agent/permissions?workspace_path=${encodeURIComponent(
+        testWorkspace
+      )}`
+    );
+    expect(permissions.pending.map((record) => record.run_id)).toContain(
+      'pact-smoke-run'
+    );
+    expect(permissions.pending[0]?.risk).toBe('network');
+
+    const approved = await postJson<MoonshineAgentExecPayload>(
+      `http://127.0.0.1:${companionPort}/moonshine/agent/permissions/pact-smoke-run/approve`,
+      { workspace_path: testWorkspace }
+    );
+    expect(approved.status).toBe(200);
+    expect(approved.payload.ok).toBe(true);
+    expect(approved.payload.final?.content).toBe('pact-provider resumed ok');
+
+    const denied = await postJson<MoonshineAgentExecPayload>(
+      `http://127.0.0.1:${companionPort}/moonshine/agent/permissions/pact-smoke-run/deny`,
+      { workspace_path: testWorkspace }
+    );
+    expect(denied.status).toBe(400);
+    expect(denied.payload.ok).toBe(false);
+    expect(denied.payload.error).toContain('human denied');
+  }, 20_000);
+
   test('zedge-models returns the local wasm model through the live companion', async () => {
     if (skipReason !== null) {
       return;
@@ -467,4 +737,43 @@ describe('Zedge slash commands end to end', () => {
     expect(payload.companionStream.sawData).toBe(true);
     expect(payload.companionStream.sawDone).toBe(true);
   }, 120_000);
+
+  test('zedge-agent run reaches Moonshine through the live slash command surface', async () => {
+    if (skipReason !== null) {
+      return;
+    }
+
+    const text = await callZedgeCommand(
+      'zedge-agent',
+      'run write a pact smoke response'
+    );
+    expect(text).toContain('## Moonshine Agent');
+    expect(text).toContain('"type": "metacog_verdict"');
+    expect(text).toContain('"verdict": "proceed"');
+    expect(text).toContain('pact-provider smoke ok');
+  }, 20_000);
+
+  test('zedge-agent run forwards Claude provider selection', async () => {
+    if (skipReason !== null) {
+      return;
+    }
+
+    const text = await callZedgeCommand(
+      'zedge-agent',
+      'run --provider claude write a pact smoke response'
+    );
+    expect(text).toContain('## Moonshine Agent');
+    expect(text).toContain('"provider": "claude"');
+    expect(text).toContain('pact-provider smoke ok');
+  }, 20_000);
+
+  test('zedge-agent permissions reaches the Moonshine permission surface', async () => {
+    if (skipReason !== null) {
+      return;
+    }
+
+    const text = await callZedgeCommand('zedge-agent', 'permissions');
+    expect(text).toContain('## Moonshine Agent');
+    expect(text).toContain('"pending"');
+  }, 20_000);
 });

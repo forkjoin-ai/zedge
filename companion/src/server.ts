@@ -5,7 +5,7 @@
  */
 
 import { spawn as nodeSpawn } from 'child_process';
-import { readdirSync, statSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
 import { relative as relativePath, resolve as resolvePath } from 'node:path';
 import {
   XGnosisServer,
@@ -659,6 +659,34 @@ interface AgentTurnRequestBody {
   message?: string;
 }
 
+interface MoonshineAgentExecRequestBody {
+  prompt?: string;
+  workspace_path?: string;
+  permission_mode?: 'ask' | 'read-only' | 'auto';
+  provider?: 'sovereign' | 'codex' | 'claude';
+  timeout_ms?: number;
+}
+
+interface MoonshineAgentPermissionDecisionRequestBody {
+  workspace_path?: string;
+  timeout_ms?: number;
+}
+
+interface MoonshinePermissionRecord {
+  schema_version?: number;
+  run_id: string;
+  workspace_path: string;
+  permission_mode: string;
+  provider?: string;
+  prompt: string;
+  verdict: string;
+  reason: string;
+  requested_action: string;
+  risk: string;
+  status: string;
+  created_at: string;
+}
+
 interface ForgeDeployRequestBody {
   project?: string;
 }
@@ -854,6 +882,244 @@ function corsHeaders(): Response {
       'Access-Control-Expose-Headers': '*',
     },
   });
+}
+
+type MoonshineAgentEvent = Record<string, unknown> & {
+  type?: string;
+  schemaVersion?: number;
+  run_id?: string;
+  provider?: string;
+  verdict?: string;
+  reason?: string;
+  requested_action?: string;
+  risk?: string;
+  status?: string;
+  formal_target?: string;
+  verification_command?: string;
+  content?: string;
+  error?: string;
+};
+
+interface MoonshineAgentRunResult {
+  ok: boolean;
+  command: string;
+  events: MoonshineAgentEvent[];
+  metacog: MoonshineAgentEvent[];
+  final?: MoonshineAgentEvent;
+  error?: string;
+  stderr?: string;
+}
+
+function shellQuoteForMoonshine(value: string): string {
+  return `'${value.replaceAll("'", "'\"'\"'")}'`;
+}
+
+function resolveMoonshineAgentBinary(workspacePath: string): string {
+  const configured = process.env.ZEDGE_MOONSHINE_BIN?.trim();
+  if (configured) return configured;
+
+  const roots = [
+    process.env.AEON_ROOT,
+    workspacePath,
+    process.cwd(),
+  ].filter((value): value is string => Boolean(value));
+
+  for (const root of roots) {
+    const candidates = [
+      resolvePath(root, 'open-source/gnosis/moonshine/target/release/moonshine'),
+      resolvePath(root, 'open-source/gnosis/moonshine/target/debug/moonshine'),
+      resolvePath(root, '../gnosis/moonshine/target/release/moonshine'),
+      resolvePath(root, '../gnosis/moonshine/target/debug/moonshine'),
+    ];
+    const found = candidates.find((candidate) => existsSync(candidate));
+    if (found) return found;
+  }
+
+  return 'moonshine';
+}
+
+function parseMoonshineJsonl(stdout: string): {
+  events: MoonshineAgentEvent[];
+  error?: string;
+} {
+  const events: MoonshineAgentEvent[] = [];
+  let lineNumber = 0;
+  for (const rawLine of stdout.split(/\r?\n/)) {
+    lineNumber += 1;
+    const line = rawLine.trim();
+    if (!line) continue;
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(line);
+    } catch {
+      return {
+        events,
+        error: `moonshine emitted malformed JSONL at line ${lineNumber}`,
+      };
+    }
+    if (
+      typeof parsed !== 'object' ||
+      parsed === null ||
+      typeof (parsed as { type?: unknown }).type !== 'string' ||
+      (parsed as { schemaVersion?: unknown }).schemaVersion !== 1
+    ) {
+      return {
+        events,
+        error: `moonshine emitted an invalid agent event at line ${lineNumber}`,
+      };
+    }
+    events.push(parsed as MoonshineAgentEvent);
+  }
+  return { events };
+}
+
+async function runMoonshineAgentCommand(
+  workspacePath: string,
+  commandLine: string,
+  timeoutMs: number
+): Promise<MoonshineAgentRunResult> {
+  const moonshine = resolveMoonshineAgentBinary(workspacePath);
+
+  return await new Promise((resolve) => {
+    const child = nodeSpawn(moonshine, ['-c', commandLine], {
+      cwd: workspacePath,
+      env: { ...process.env },
+    });
+    let stdout = '';
+    let stderr = '';
+    let settled = false;
+
+    const finish = (result: {
+      ok: boolean;
+      error?: string;
+      code?: number | null;
+      signal?: NodeJS.Signals | null;
+    }) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      const parsed = parseMoonshineJsonl(stdout);
+      const events = parsed.events;
+      const metacog = events.filter((event) => event.type === 'metacog_verdict');
+      const finalEvent = [...events]
+        .reverse()
+        .find((event) => event.type === 'final' && typeof event.content === 'string');
+      const errorEvent = [...events]
+        .reverse()
+        .find((event) => event.type === 'error' && typeof event.error === 'string');
+      const eventError =
+        typeof errorEvent?.error === 'string' ? errorEvent.error : undefined;
+      const error =
+        parsed.error ??
+        result.error ??
+        eventError ??
+        (result.ok ? undefined : `moonshine exited with code ${result.code ?? 'signal'}`);
+      resolve({
+        ok: result.ok && !parsed.error && !eventError,
+        command: `${moonshine} -c ${shellQuoteForMoonshine(commandLine)}`,
+        events,
+        metacog,
+        ...(finalEvent !== undefined ? { final: finalEvent } : {}),
+        ...(error !== undefined ? { error } : {}),
+        ...(stderr.trim() ? { stderr: stderr.trim() } : {}),
+      });
+    };
+
+    const timer = setTimeout(() => {
+      child.kill('SIGTERM');
+      finish({ ok: false, error: `moonshine agent timed out after ${timeoutMs}ms` });
+    }, timeoutMs);
+
+    child.stdout.on('data', (chunk: Buffer) => {
+      stdout += chunk.toString('utf8');
+    });
+    child.stderr.on('data', (chunk: Buffer) => {
+      stderr += chunk.toString('utf8');
+    });
+    child.on('error', (error) => {
+      finish({ ok: false, error: error.message });
+    });
+    child.on('close', (code, signal) => {
+      finish({ ok: code === 0, code, signal });
+    });
+  });
+}
+
+async function runMoonshineAgentExec(
+  body: MoonshineAgentExecRequestBody
+): Promise<MoonshineAgentRunResult> {
+  const prompt = body.prompt?.trim();
+  if (!prompt) {
+    return {
+      ok: false,
+      command: '',
+      events: [],
+      metacog: [],
+      error: 'prompt is required',
+    };
+  }
+
+  const workspacePath = resolvePath(body.workspace_path || getWorkspaceRootPath());
+  const permissionMode = body.permission_mode ?? 'ask';
+  const envProvider = process.env.ZEDGE_MOONSHINE_AGENT_PROVIDER?.trim();
+  const provider = body.provider ?? (envProvider || 'sovereign');
+  const commandLine = [
+    'agent exec --json',
+    '--permission-mode',
+    permissionMode,
+    '--provider',
+    provider,
+    '--cwd',
+    shellQuoteForMoonshine(workspacePath),
+    '--',
+    shellQuoteForMoonshine(prompt),
+  ].join(' ');
+  const timeoutMs = Math.max(1_000, Math.min(body.timeout_ms ?? 120_000, 600_000));
+  return runMoonshineAgentCommand(workspacePath, commandLine, timeoutMs);
+}
+
+async function runMoonshineAgentResume(
+  workspacePath: string,
+  runId: string,
+  decision: 'approve' | 'deny',
+  timeoutMs = 120_000
+): Promise<MoonshineAgentRunResult> {
+  const resolvedWorkspace = resolvePath(workspacePath || getWorkspaceRootPath());
+  const commandLine = [
+    'agent resume --json',
+    '--cwd',
+    shellQuoteForMoonshine(resolvedWorkspace),
+    '--run-id',
+    shellQuoteForMoonshine(runId),
+    '--decision',
+    decision,
+  ].join(' ');
+  const boundedTimeoutMs = Math.max(1_000, Math.min(timeoutMs, 600_000));
+  return runMoonshineAgentCommand(resolvedWorkspace, commandLine, boundedTimeoutMs);
+}
+
+function listMoonshineAgentPermissions(workspacePath: string): MoonshinePermissionRecord[] {
+  const dir = resolvePath(workspacePath, '.moonshine', 'agent-permissions');
+  if (!existsSync(dir)) return [];
+  return readdirSync(dir)
+    .filter((entry) => entry.endsWith('.json'))
+    .flatMap((entry) => {
+      const filePath = resolvePath(dir, entry);
+      try {
+        const record = JSON.parse(readFileSync(filePath, 'utf8')) as Partial<MoonshinePermissionRecord>;
+        if (
+          typeof record.run_id !== 'string' ||
+          typeof record.workspace_path !== 'string' ||
+          typeof record.status !== 'string'
+        ) {
+          return [];
+        }
+        return [record as MoonshinePermissionRecord];
+      } catch {
+        return [];
+      }
+    })
+    .sort((a, b) => a.created_at.localeCompare(b.created_at));
 }
 
 // --- Bridges (set during server start) ---
@@ -2668,6 +2934,45 @@ export async function handleWebRequest(req: Request): Promise<Response> {
     const sessionId = path.slice('/agent/session/'.length);
     deleteSession(sessionId);
     return jsonResponse({ deleted: true });
+  }
+
+  // Moonshine-owned Rust coding agent. Zedge is only the editor/client adaptor.
+  if (path === '/moonshine/agent/exec' && req.method === 'POST') {
+    const body = (await req.json()) as MoonshineAgentExecRequestBody;
+    const result = await runMoonshineAgentExec(body);
+    return jsonResponse(result, result.ok ? 200 : 400);
+  }
+
+  if (path === '/moonshine/agent/permissions' && req.method === 'GET') {
+    const workspacePath = resolvePath(
+      url.searchParams.get('workspace_path') || getWorkspaceRootPath()
+    );
+    return jsonResponse({
+      workspace_path: workspacePath,
+      pending: listMoonshineAgentPermissions(workspacePath),
+    });
+  }
+
+  if (
+    path.startsWith('/moonshine/agent/permissions/') &&
+    (path.endsWith('/approve') || path.endsWith('/deny')) &&
+    req.method === 'POST'
+  ) {
+    const parts = path.split('/').filter(Boolean);
+    const runId = parts[3];
+    const decision = parts[4] === 'approve' ? 'approve' : 'deny';
+    if (!runId) {
+      return jsonResponse({ error: 'run_id is required' }, 400);
+    }
+    const body = (await req.json()) as MoonshineAgentPermissionDecisionRequestBody;
+    const workspacePath = resolvePath(body.workspace_path || getWorkspaceRootPath());
+    const result = await runMoonshineAgentResume(
+      workspacePath,
+      runId,
+      decision,
+      body.timeout_ms
+    );
+    return jsonResponse(result, result.ok ? 200 : 400);
   }
 
   // ==================== Multi-File Agent ====================

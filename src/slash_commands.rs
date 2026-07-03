@@ -2436,6 +2436,70 @@ pub fn run_emotion(
 pub fn run_agent(args: &[String]) -> Result<SlashCommandOutput, String> {
     let sub = args.first().map(|s| s.as_str()).unwrap_or("list");
     let response = match sub {
+        "run" => {
+            let mut provider: Option<&str> = None;
+            let mut prompt_start = 1;
+            if args.get(1).map(|s| s.as_str()) == Some("--provider") {
+                provider = args.get(2).map(|s| s.as_str());
+                prompt_start = 3;
+            } else if matches!(
+                args.get(1).map(|s| s.as_str()),
+                Some("sovereign" | "codex" | "claude")
+            ) {
+                provider = args.get(1).map(|s| s.as_str());
+                prompt_start = 2;
+            }
+            let prompt = args.get(prompt_start..).unwrap_or(&[]).join(" ");
+            if prompt.trim().is_empty() {
+                return Ok(output_with_section(
+                    "Usage: /zedge-agent run [--provider sovereign|codex|claude] <prompt>"
+                        .to_string(),
+                    "Moonshine Agent",
+                ));
+            }
+            let mut payload = serde_json::json!({
+                "prompt": prompt,
+                "permission_mode": "ask"
+            });
+            if let Some(provider) = provider {
+                payload["provider"] = serde_json::json!(provider);
+            }
+            companion_post_json(
+                "/moonshine/agent/exec",
+                payload,
+            )
+        }
+        "permissions" => companion_get("/moonshine/agent/permissions"),
+        "approve" => {
+            let Some(run_id) = args.get(1) else {
+                return Ok(output_with_section(
+                    "Usage: /zedge-agent approve <run_id>".to_string(),
+                    "Moonshine Agent",
+                ));
+            };
+            companion_post_json(
+                &format!(
+                    "/moonshine/agent/permissions/{}/approve",
+                    escape_query_component(run_id)
+                ),
+                serde_json::json!({}),
+            )
+        }
+        "deny" => {
+            let Some(run_id) = args.get(1) else {
+                return Ok(output_with_section(
+                    "Usage: /zedge-agent deny <run_id>".to_string(),
+                    "Moonshine Agent",
+                ));
+            };
+            companion_post_json(
+                &format!(
+                    "/moonshine/agent/permissions/{}/deny",
+                    escape_query_component(run_id)
+                ),
+                serde_json::json!({}),
+            )
+        }
         "trigger" => {
             let Some(agent_name) = args.get(1) else {
                 return Ok(output_with_section(
@@ -2465,10 +2529,26 @@ pub fn run_agent(args: &[String]) -> Result<SlashCommandOutput, String> {
     };
 
     match response {
-        Ok(body) => Ok(output_with_section(
-            format!("## GG Agents\n\n```json\n{body}\n```"),
-            "GG Agent",
+        Ok(body) => {
+            if matches!(sub, "run" | "permissions" | "approve" | "deny") {
+                Ok(output_with_section(
+                    format!("## Moonshine Agent\n\n```json\n{body}\n```"),
+                    "Moonshine Agent",
+                ))
+            } else {
+                Ok(output_with_section(
+                    format!("## GG Agents\n\n```json\n{body}\n```"),
+                    "GG Agent",
+                ))
+            }
+        }
+        Err(e) => Ok(output_with_section(
+            format!("**Error**: {e}"),
+            if matches!(sub, "run" | "permissions" | "approve" | "deny") {
+                "Moonshine Agent"
+            } else {
+                "GG Agent"
+            },
         )),
-        Err(e) => Ok(output_with_section(format!("**Error**: {e}"), "GG Agent")),
     }
 }
