@@ -184,9 +184,26 @@ function writeFakeMoonshineProvider(path: string): void {
       'if (command.includes("agent replay --json")) {',
       '  emit({ type: "run_start", workspace_path: process.cwd(), prompt: "write a pact smoke response", risk: "read_only", requested_action: "read-only analysis" });',
       '  emit({ type: "metacog_verdict", verdict: "proceed", reason: "pact provider accepted bounded event log", risk: "read_only", requested_action: "read-only analysis" });',
-      '  emit({ type: "provider_intent", workspace_path: process.cwd(), permission_mode: "ask", status: "proposed", risk: "read_only", requested_action: "read-only analysis", content: "sovereign provider intends read-only analysis under metacog verdict proceed" });',
+      '  emit({ type: "provider_intent", workspace_path: process.cwd(), permission_mode: "ask", intent_id: `${runId}-intent-1`, tool_name: "provider_plan", status: "proposed", risk: "read_only", requested_action: "read-only analysis", content: "sovereign provider intends read-only analysis under metacog verdict proceed" });',
+      '  emit({ type: "tool_admission", workspace_path: process.cwd(), permission_mode: "ask", intent_id: `${runId}-intent-1`, tool_name: "provider_plan", status: "admitted", risk: "read_only", requested_action: "read-only analysis", content: "provider_plan admitted for read-only analysis" });',
+      '  emit({ type: "run_checkpoint", workspace_path: process.cwd(), permission_mode: "ask", intent_id: `${runId}-intent-1`, tool_name: "provider_plan", status: "admitted", risk: "read_only", requested_action: "read-only analysis", content: "provider intent admitted by Moonshine" });',
       '  emit({ type: "assistant_delta", content: "pact-provider smoke ok" });',
       '  emit({ type: "final", content: "pact-provider smoke ok" });',
+      '  process.exit(0);',
+      '}',
+      'if (command.includes("agent tools --json")) {',
+      '  emit({ type: "tool_admission", workspace_path: process.cwd(), permission_mode: "ask", intent_id: `${runId}-intent-1`, tool_name: "provider_plan", status: "pending", risk: "network", requested_action: "network access", content: "provider_plan pending for network access" });',
+      '  emit({ type: "final", content: "1 tool intent record(s)" });',
+      '  process.exit(0);',
+      '}',
+      'if (command.includes("agent approve-tool --json")) {',
+      '  emit({ type: "tool_admission", workspace_path: process.cwd(), permission_mode: "ask", intent_id: `${runId}-intent-1`, tool_name: "provider_plan", status: "approved", risk: "network", requested_action: "network access", content: "provider_plan approved for network access" });',
+      '  emit({ type: "final", intent_id: `${runId}-intent-1`, tool_name: "provider_plan", status: "approved", content: `${runId}-intent-1 approved` });',
+      '  process.exit(0);',
+      '}',
+      'if (command.includes("agent deny-tool --json")) {',
+      '  emit({ type: "tool_denial", workspace_path: process.cwd(), permission_mode: "ask", intent_id: `${runId}-intent-1`, tool_name: "provider_plan", status: "denied", risk: "network", requested_action: "network access", content: "provider_plan denied for network access" });',
+      '  emit({ type: "final", intent_id: `${runId}-intent-1`, tool_name: "provider_plan", status: "denied", content: `${runId}-intent-1 denied` });',
       '  process.exit(0);',
       '}',
       'if (command.includes("agent verify --json")) {',
@@ -219,14 +236,17 @@ function writeFakeMoonshineProvider(path: string): void {
       'emit({ type: "run_start", workspace_path: process.cwd(), prompt: command, risk: "read_only", requested_action: "read-only analysis" });',
       'if (command.includes("human_required")) {',
       '  emit({ type: "metacog_verdict", verdict: "escalate", reason: "secondary metacog chain requests human permission", risk: "network", requested_action: "network access" });',
-      '  emit({ type: "provider_intent", workspace_path: process.cwd(), permission_mode: "ask", status: "proposed", risk: "network", requested_action: "network access", content: "sovereign provider intends network access under metacog verdict escalate" });',
+      '  emit({ type: "provider_intent", workspace_path: process.cwd(), permission_mode: "ask", intent_id: `${runId}-intent-1`, tool_name: "provider_plan", status: "proposed", risk: "network", requested_action: "network access", content: "sovereign provider intends network access under metacog verdict escalate" });',
+      '  emit({ type: "tool_admission", workspace_path: process.cwd(), permission_mode: "ask", intent_id: `${runId}-intent-1`, tool_name: "provider_plan", status: "pending", risk: "network", requested_action: "network access", content: "provider_plan pending for network access" });',
       '  emit({ type: "permission_request", verdict: "escalate", reason: "secondary metacog chain requests human permission", risk: "network", requested_action: "network access", status: "pending", choices: ["approve_once", "deny"] });',
       '  emit({ type: "error", verdict: "escalate", error: "metacog escalate: secondary metacog chain requests human permission" });',
       '  process.exit(11);',
       '}',
       'if (command.includes(".lean")) {',
       '  emit({ type: "metacog_verdict", verdict: "reflect", reason: "Lean formal work requires an explicit verification target before finalizing", risk: "formal_claim", requested_action: "Lean formal admission", formal_target: "Gnosis/MoonshineMetacogProcess.lean", verification_command: "lake build Gnosis.MoonshineMetacogProcess" });',
-      '  emit({ type: "provider_intent", workspace_path: process.cwd(), permission_mode: "ask", status: "proposed", risk: "formal_claim", requested_action: "Lean formal admission", formal_target: "Gnosis/MoonshineMetacogProcess.lean", verification_command: "lake build Gnosis.MoonshineMetacogProcess", content: "sovereign provider intends Lean formal admission under metacog verdict reflect" });',
+      '  emit({ type: "provider_intent", workspace_path: process.cwd(), permission_mode: "ask", intent_id: `${runId}-intent-1`, tool_name: "provider_plan", status: "proposed", risk: "formal_claim", requested_action: "Lean formal admission", formal_target: "Gnosis/MoonshineMetacogProcess.lean", verification_command: "lake build Gnosis.MoonshineMetacogProcess", content: "sovereign provider intends Lean formal admission under metacog verdict reflect" });',
+      '  emit({ type: "tool_admission", workspace_path: process.cwd(), permission_mode: "ask", intent_id: `${runId}-intent-1`, tool_name: "provider_plan", status: "admitted", risk: "formal_claim", requested_action: "Lean formal admission", formal_target: "Gnosis/MoonshineMetacogProcess.lean", verification_command: "lake build Gnosis.MoonshineMetacogProcess", content: "provider_plan admitted for Lean formal admission" });',
+      '  emit({ type: "run_checkpoint", workspace_path: process.cwd(), permission_mode: "ask", intent_id: `${runId}-intent-1`, tool_name: "provider_plan", status: "admitted", risk: "formal_claim", requested_action: "Lean formal admission", formal_target: "Gnosis/MoonshineMetacogProcess.lean", verification_command: "lake build Gnosis.MoonshineMetacogProcess", content: "provider intent admitted by Moonshine" });',
       '  emit({ type: "assistant_delta", content: "lean pact reflection ok" });',
       '  emit({ type: "tool_request", workspace_path: process.cwd(), tool_name: "lean_build", command: "lake build Gnosis.MoonshineMetacogProcess", path: process.cwd(), risk: "formal_claim", requested_action: "Lean formal admission", formal_target: "Gnosis/MoonshineMetacogProcess.lean", verification_command: "lake build Gnosis.MoonshineMetacogProcess" });',
       '  emit({ type: "tool_result", workspace_path: process.cwd(), tool_name: "lean_build", command: "lake build Gnosis.MoonshineMetacogProcess", path: process.cwd(), status: "passed", exit_code: 0, duration_ms: 1, risk: "formal_claim", requested_action: "Lean formal admission", formal_target: "Gnosis/MoonshineMetacogProcess.lean", verification_command: "lake build Gnosis.MoonshineMetacogProcess", content: "Build completed successfully." });',
@@ -234,7 +254,9 @@ function writeFakeMoonshineProvider(path: string): void {
       '  process.exit(0);',
       '}',
       'emit({ type: "metacog_verdict", verdict: "proceed", reason: "pact provider accepted bounded event log", risk: "read_only", requested_action: "read-only analysis" });',
-      'emit({ type: "provider_intent", workspace_path: process.cwd(), permission_mode: "ask", status: "proposed", risk: "read_only", requested_action: "read-only analysis", content: `${provider} provider intends read-only analysis under metacog verdict proceed` });',
+      'emit({ type: "provider_intent", workspace_path: process.cwd(), permission_mode: "ask", intent_id: `${runId}-intent-1`, tool_name: "provider_plan", status: "proposed", risk: "read_only", requested_action: "read-only analysis", content: `${provider} provider intends read-only analysis under metacog verdict proceed` });',
+      'emit({ type: "tool_admission", workspace_path: process.cwd(), permission_mode: "ask", intent_id: `${runId}-intent-1`, tool_name: "provider_plan", status: "admitted", risk: "read_only", requested_action: "read-only analysis", content: "provider_plan admitted for read-only analysis" });',
+      'emit({ type: "run_checkpoint", workspace_path: process.cwd(), permission_mode: "ask", intent_id: `${runId}-intent-1`, tool_name: "provider_plan", status: "admitted", risk: "read_only", requested_action: "read-only analysis", content: "provider intent admitted by Moonshine" });',
       'emit({ type: "assistant_delta", content: "pact-provider smoke ok" });',
       'emit({ type: "final", content: "pact-provider smoke ok" });',
     ].join('\n'),
@@ -589,6 +611,8 @@ describe('Zedge slash commands end to end', () => {
       'run_start',
       'metacog_verdict',
       'provider_intent',
+      'tool_admission',
+      'run_checkpoint',
       'assistant_delta',
       'final',
     ]);
@@ -599,7 +623,23 @@ describe('Zedge slash commands end to end', () => {
         (event) =>
           event.type === 'provider_intent' &&
           event.provider === 'sovereign' &&
-          event.status === 'proposed'
+          event.status === 'proposed' &&
+          event.intent_id === 'pact-smoke-run-intent-1'
+      )
+    ).toBe(true);
+    expect(
+      payload.events.some(
+        (event) =>
+          event.type === 'tool_admission' &&
+          event.status === 'admitted' &&
+          event.intent_id === 'pact-smoke-run-intent-1'
+      )
+    ).toBe(true);
+    expect(
+      payload.events.some(
+        (event) =>
+          event.type === 'run_checkpoint' &&
+          event.content === 'provider intent admitted by Moonshine'
       )
     ).toBe(true);
     expect(payload.final?.content).toBe('pact-provider smoke ok');
@@ -648,7 +688,23 @@ describe('Zedge slash commands end to end', () => {
         (event) =>
           event.type === 'provider_intent' &&
           event.risk === 'formal_claim' &&
+          event.intent_id === 'pact-smoke-run-intent-1' &&
           event.formal_target === 'Gnosis/MoonshineMetacogProcess.lean'
+      )
+    ).toBe(true);
+    expect(
+      payload.events.some(
+        (event) =>
+          event.type === 'tool_admission' &&
+          event.status === 'admitted' &&
+          event.risk === 'formal_claim'
+      )
+    ).toBe(true);
+    expect(
+      payload.events.some(
+        (event) =>
+          event.type === 'run_checkpoint' &&
+          event.content === 'provider intent admitted by Moonshine'
       )
     ).toBe(true);
     expect(payload.metacog[0]?.formal_target).toBe(
@@ -755,6 +811,14 @@ describe('Zedge slash commands end to end', () => {
     expect(
       replay.events.some((event) => event.type === 'provider_intent')
     ).toBe(true);
+    expect(
+      replay.events.some(
+        (event) => event.type === 'tool_admission' && event.status === 'admitted'
+      )
+    ).toBe(true);
+    expect(
+      replay.events.some((event) => event.type === 'run_checkpoint')
+    ).toBe(true);
     expect(replay.final?.content).toBe('pact-provider smoke ok');
   }, 20_000);
 
@@ -775,10 +839,69 @@ describe('Zedge slash commands end to end', () => {
     expect(status).toBe(400);
     expect(payload.ok).toBe(false);
     expect(payload.metacog[0]?.verdict).toBe('escalate');
+    expect(
+      payload.events.some(
+        (event) =>
+          event.type === 'tool_admission' &&
+          event.status === 'pending' &&
+          event.intent_id === 'pact-smoke-run-intent-1'
+      )
+    ).toBe(true);
     expect(payload.events.some((event) => event.type === 'permission_request')).toBe(
       true
     );
     expect(payload.error).toContain('human permission');
+  }, 20_000);
+
+  test('moonshine tool intent routes list and decide metacog tool admissions', async () => {
+    if (skipReason !== null) {
+      return;
+    }
+
+    const tools = await getJson<MoonshineAgentExecPayload>(
+      `http://127.0.0.1:${companionPort}/moonshine/agent/tools?workspace_path=${encodeURIComponent(
+        testWorkspace
+      )}`
+    );
+    expect(tools.ok).toBe(true);
+    expect(
+      tools.events.some(
+        (event) =>
+          event.type === 'tool_admission' &&
+          event.status === 'pending' &&
+          event.intent_id === 'pact-smoke-run-intent-1'
+      )
+    ).toBe(true);
+
+    const approved = await postJson<MoonshineAgentExecPayload>(
+      `http://127.0.0.1:${companionPort}/moonshine/agent/tools/pact-smoke-run/pact-smoke-run-intent-1/approve`,
+      { workspace_path: testWorkspace }
+    );
+    expect(approved.status).toBe(200);
+    expect(approved.payload.ok).toBe(true);
+    expect(
+      approved.payload.events.some(
+        (event) =>
+          event.type === 'tool_admission' &&
+          event.status === 'approved' &&
+          event.intent_id === 'pact-smoke-run-intent-1'
+      )
+    ).toBe(true);
+
+    const denied = await postJson<MoonshineAgentExecPayload>(
+      `http://127.0.0.1:${companionPort}/moonshine/agent/tools/pact-smoke-run/pact-smoke-run-intent-1/deny`,
+      { workspace_path: testWorkspace }
+    );
+    expect(denied.status).toBe(200);
+    expect(denied.payload.ok).toBe(true);
+    expect(
+      denied.payload.events.some(
+        (event) =>
+          event.type === 'tool_denial' &&
+          event.status === 'denied' &&
+          event.intent_id === 'pact-smoke-run-intent-1'
+      )
+    ).toBe(true);
   }, 20_000);
 
   test('moonshine agent exec route fails closed on malformed provider output', async () => {
@@ -938,7 +1061,36 @@ describe('Zedge slash commands end to end', () => {
     const replay = await callZedgeCommand('zedge-agent', 'replay pact-smoke-run');
     expect(replay).toContain('## Moonshine Agent');
     expect(replay).toContain('"type": "provider_intent"');
+    expect(replay).toContain('"type": "tool_admission"');
+    expect(replay).toContain('"type": "run_checkpoint"');
     expect(replay).toContain('pact-provider smoke ok');
+  }, 20_000);
+
+  test('zedge-agent tool intent commands reach Moonshine admission routes', async () => {
+    if (skipReason !== null) {
+      return;
+    }
+
+    const tools = await callZedgeCommand('zedge-agent', 'tools');
+    expect(tools).toContain('## Moonshine Agent');
+    expect(tools).toContain('"type": "tool_admission"');
+    expect(tools).toContain('"status": "pending"');
+    expect(tools).toContain('"intent_id": "pact-smoke-run-intent-1"');
+
+    const approved = await callZedgeCommand(
+      'zedge-agent',
+      'approve-tool pact-smoke-run pact-smoke-run-intent-1'
+    );
+    expect(approved).toContain('## Moonshine Agent');
+    expect(approved).toContain('"status": "approved"');
+
+    const denied = await callZedgeCommand(
+      'zedge-agent',
+      'deny-tool pact-smoke-run pact-smoke-run-intent-1'
+    );
+    expect(denied).toContain('## Moonshine Agent');
+    expect(denied).toContain('"type": "tool_denial"');
+    expect(denied).toContain('"status": "denied"');
   }, 20_000);
 
   test('zedge-agent providers reaches the Moonshine provider surface', async () => {

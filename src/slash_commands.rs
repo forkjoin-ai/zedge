@@ -2484,6 +2484,48 @@ pub fn run_agent(args: &[String]) -> Result<SlashCommandOutput, String> {
                 escape_query_component(run_id)
             ))
         }
+        "tools" => {
+            if let Some(run_id) = args.get(1) {
+                companion_get(&format!(
+                    "/moonshine/agent/tools?run_id={}",
+                    escape_query_component(run_id)
+                ))
+            } else {
+                companion_get("/moonshine/agent/tools")
+            }
+        }
+        "approve-tool" => {
+            let (Some(run_id), Some(intent_id)) = (args.get(1), args.get(2)) else {
+                return Ok(output_with_section(
+                    "Usage: /zedge-agent approve-tool <run_id> <intent_id>".to_string(),
+                    "Moonshine Agent",
+                ));
+            };
+            companion_post_json(
+                &format!(
+                    "/moonshine/agent/tools/{}/{}/approve",
+                    escape_query_component(run_id),
+                    escape_query_component(intent_id)
+                ),
+                serde_json::json!({}),
+            )
+        }
+        "deny-tool" => {
+            let (Some(run_id), Some(intent_id)) = (args.get(1), args.get(2)) else {
+                return Ok(output_with_section(
+                    "Usage: /zedge-agent deny-tool <run_id> <intent_id>".to_string(),
+                    "Moonshine Agent",
+                ));
+            };
+            companion_post_json(
+                &format!(
+                    "/moonshine/agent/tools/{}/{}/deny",
+                    escape_query_component(run_id),
+                    escape_query_component(intent_id)
+                ),
+                serde_json::json!({}),
+            )
+        }
         "verify" => {
             let formal_target = args.get(1..).unwrap_or(&[]).join(" ");
             if formal_target.trim().is_empty() {
@@ -2560,7 +2602,7 @@ pub fn run_agent(args: &[String]) -> Result<SlashCommandOutput, String> {
             if matches!(
                 sub,
                 "run" | "permissions" | "providers" | "runs" | "replay" | "verify"
-                    | "approve" | "deny"
+                    | "tools" | "approve-tool" | "deny-tool" | "approve" | "deny"
             ) {
                 Ok(output_with_section(
                     format!("## Moonshine Agent\n\n```json\n{body}\n```"),
@@ -2578,7 +2620,7 @@ pub fn run_agent(args: &[String]) -> Result<SlashCommandOutput, String> {
             if matches!(
                 sub,
                 "run" | "permissions" | "providers" | "runs" | "replay" | "verify"
-                    | "approve" | "deny"
+                    | "tools" | "approve-tool" | "deny-tool" | "approve" | "deny"
             ) {
                 "Moonshine Agent"
             } else {

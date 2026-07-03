@@ -897,6 +897,7 @@ type MoonshineAgentEvent = Record<string, unknown> & {
   schemaVersion?: number;
   run_id?: string;
   provider?: string;
+  intent_id?: string;
   tool_name?: string;
   command?: string;
   path?: string;
@@ -1171,6 +1172,47 @@ async function runMoonshineAgentReplay(
     shellQuoteForMoonshine(resolvedWorkspace),
     '--run-id',
     shellQuoteForMoonshine(trimmedRunId),
+  ].join(' ');
+  return runMoonshineAgentCommand(resolvedWorkspace, commandLine, boundedTimeoutMs);
+}
+
+async function runMoonshineAgentTools(
+  workspacePath: string,
+  runId: string | null,
+  limit = 50,
+  timeoutMs = 30_000
+): Promise<MoonshineAgentRunResult> {
+  const resolvedWorkspace = resolvePath(workspacePath || getWorkspaceRootPath());
+  const boundedLimit = Math.max(1, Math.min(Math.trunc(limit), 500));
+  const boundedTimeoutMs = Math.max(1_000, Math.min(timeoutMs, 120_000));
+  const commandLine = [
+    'agent tools --json',
+    '--cwd',
+    shellQuoteForMoonshine(resolvedWorkspace),
+    '--limit',
+    String(boundedLimit),
+    ...(runId ? ['--run-id', shellQuoteForMoonshine(runId)] : []),
+  ].join(' ');
+  return runMoonshineAgentCommand(resolvedWorkspace, commandLine, boundedTimeoutMs);
+}
+
+async function runMoonshineAgentToolDecision(
+  workspacePath: string,
+  runId: string,
+  intentId: string,
+  decision: 'approve' | 'deny',
+  timeoutMs = 30_000
+): Promise<MoonshineAgentRunResult> {
+  const resolvedWorkspace = resolvePath(workspacePath || getWorkspaceRootPath());
+  const boundedTimeoutMs = Math.max(1_000, Math.min(timeoutMs, 120_000));
+  const commandLine = [
+    `agent ${decision === 'approve' ? 'approve-tool' : 'deny-tool'} --json`,
+    '--cwd',
+    shellQuoteForMoonshine(resolvedWorkspace),
+    '--run-id',
+    shellQuoteForMoonshine(runId),
+    '--intent-id',
+    shellQuoteForMoonshine(intentId),
   ].join(' ');
   return runMoonshineAgentCommand(resolvedWorkspace, commandLine, boundedTimeoutMs);
 }
@@ -3072,6 +3114,41 @@ export async function handleWebRequest(req: Request): Promise<Response> {
     );
     const timeoutMs = numberSearchParam(url, 'timeout_ms', 30_000, 1_000, 120_000);
     const result = await runMoonshineAgentReplay(workspacePath, runId, timeoutMs);
+    return jsonResponse(result, result.ok ? 200 : 400);
+  }
+
+  if (path === '/moonshine/agent/tools' && req.method === 'GET') {
+    const workspacePath = resolvePath(
+      url.searchParams.get('workspace_path') || getWorkspaceRootPath()
+    );
+    const runId = url.searchParams.get('run_id');
+    const limit = numberSearchParam(url, 'limit', 50, 1, 500);
+    const timeoutMs = numberSearchParam(url, 'timeout_ms', 30_000, 1_000, 120_000);
+    const result = await runMoonshineAgentTools(workspacePath, runId, limit, timeoutMs);
+    return jsonResponse(result, result.ok ? 200 : 400);
+  }
+
+  if (
+    path.startsWith('/moonshine/agent/tools/') &&
+    (path.endsWith('/approve') || path.endsWith('/deny')) &&
+    req.method === 'POST'
+  ) {
+    const parts = path.split('/').filter(Boolean);
+    const runId = parts[3];
+    const intentId = parts[4];
+    const decision = parts[5] === 'approve' ? 'approve' : 'deny';
+    if (!runId || !intentId) {
+      return jsonResponse({ error: 'run_id and intent_id are required' }, 400);
+    }
+    const body = (await req.json()) as MoonshineAgentPermissionDecisionRequestBody;
+    const workspacePath = resolvePath(body.workspace_path || getWorkspaceRootPath());
+    const result = await runMoonshineAgentToolDecision(
+      workspacePath,
+      decodeURIComponent(runId),
+      decodeURIComponent(intentId),
+      decision,
+      body.timeout_ms
+    );
     return jsonResponse(result, result.ok ? 200 : 400);
   }
 
