@@ -2471,6 +2471,19 @@ pub fn run_agent(args: &[String]) -> Result<SlashCommandOutput, String> {
         }
         "permissions" => companion_get("/moonshine/agent/permissions"),
         "providers" => companion_get("/moonshine/agent/providers"),
+        "runs" => companion_get("/moonshine/agent/runs"),
+        "replay" => {
+            let Some(run_id) = args.get(1) else {
+                return Ok(output_with_section(
+                    "Usage: /zedge-agent replay <run_id>".to_string(),
+                    "Moonshine Agent",
+                ));
+            };
+            companion_get(&format!(
+                "/moonshine/agent/runs/{}",
+                escape_query_component(run_id)
+            ))
+        }
         "verify" => {
             let formal_target = args.get(1..).unwrap_or(&[]).join(" ");
             if formal_target.trim().is_empty() {
@@ -2546,7 +2559,8 @@ pub fn run_agent(args: &[String]) -> Result<SlashCommandOutput, String> {
         Ok(body) => {
             if matches!(
                 sub,
-                "run" | "permissions" | "providers" | "verify" | "approve" | "deny"
+                "run" | "permissions" | "providers" | "runs" | "replay" | "verify"
+                    | "approve" | "deny"
             ) {
                 Ok(output_with_section(
                     format!("## Moonshine Agent\n\n```json\n{body}\n```"),
@@ -2563,7 +2577,8 @@ pub fn run_agent(args: &[String]) -> Result<SlashCommandOutput, String> {
             format!("**Error**: {e}"),
             if matches!(
                 sub,
-                "run" | "permissions" | "providers" | "verify" | "approve" | "deny"
+                "run" | "permissions" | "providers" | "runs" | "replay" | "verify"
+                    | "approve" | "deny"
             ) {
                 "Moonshine Agent"
             } else {
