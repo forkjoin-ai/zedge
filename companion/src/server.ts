@@ -689,6 +689,8 @@ interface MoonshinePermissionRecord {
   reason: string;
   requested_action: string;
   risk: string;
+  formal_target?: string;
+  verification_command?: string;
   status: string;
   created_at: string;
 }
