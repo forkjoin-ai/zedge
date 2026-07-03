@@ -1130,6 +1130,51 @@ async function runMoonshineAgentProviders(
   );
 }
 
+async function runMoonshineAgentRuns(
+  workspacePath: string,
+  limit = 20,
+  timeoutMs = 30_000
+): Promise<MoonshineAgentRunResult> {
+  const resolvedWorkspace = resolvePath(workspacePath || getWorkspaceRootPath());
+  const boundedLimit = Math.max(1, Math.min(Math.trunc(limit), 200));
+  const boundedTimeoutMs = Math.max(1_000, Math.min(timeoutMs, 120_000));
+  const commandLine = [
+    'agent runs --json',
+    '--cwd',
+    shellQuoteForMoonshine(resolvedWorkspace),
+    '--limit',
+    String(boundedLimit),
+  ].join(' ');
+  return runMoonshineAgentCommand(resolvedWorkspace, commandLine, boundedTimeoutMs);
+}
+
+async function runMoonshineAgentReplay(
+  workspacePath: string,
+  runId: string,
+  timeoutMs = 30_000
+): Promise<MoonshineAgentRunResult> {
+  const resolvedWorkspace = resolvePath(workspacePath || getWorkspaceRootPath());
+  const trimmedRunId = runId.trim();
+  if (!trimmedRunId) {
+    return {
+      ok: false,
+      command: '',
+      events: [],
+      metacog: [],
+      error: 'run_id is required',
+    };
+  }
+  const boundedTimeoutMs = Math.max(1_000, Math.min(timeoutMs, 120_000));
+  const commandLine = [
+    'agent replay --json',
+    '--cwd',
+    shellQuoteForMoonshine(resolvedWorkspace),
+    '--run-id',
+    shellQuoteForMoonshine(trimmedRunId),
+  ].join(' ');
+  return runMoonshineAgentCommand(resolvedWorkspace, commandLine, boundedTimeoutMs);
+}
+
 async function runMoonshineAgentResume(
   workspacePath: string,
   runId: string,
@@ -3007,6 +3052,26 @@ export async function handleWebRequest(req: Request): Promise<Response> {
     );
     const timeoutMs = numberSearchParam(url, 'timeout_ms', 30_000, 1_000, 120_000);
     const result = await runMoonshineAgentProviders(workspacePath, timeoutMs);
+    return jsonResponse(result, result.ok ? 200 : 400);
+  }
+
+  if (path === '/moonshine/agent/runs' && req.method === 'GET') {
+    const workspacePath = resolvePath(
+      url.searchParams.get('workspace_path') || getWorkspaceRootPath()
+    );
+    const limit = numberSearchParam(url, 'limit', 20, 1, 200);
+    const timeoutMs = numberSearchParam(url, 'timeout_ms', 30_000, 1_000, 120_000);
+    const result = await runMoonshineAgentRuns(workspacePath, limit, timeoutMs);
+    return jsonResponse(result, result.ok ? 200 : 400);
+  }
+
+  if (path.startsWith('/moonshine/agent/runs/') && req.method === 'GET') {
+    const runId = decodeURIComponent(path.slice('/moonshine/agent/runs/'.length));
+    const workspacePath = resolvePath(
+      url.searchParams.get('workspace_path') || getWorkspaceRootPath()
+    );
+    const timeoutMs = numberSearchParam(url, 'timeout_ms', 30_000, 1_000, 120_000);
+    const result = await runMoonshineAgentReplay(workspacePath, runId, timeoutMs);
     return jsonResponse(result, result.ok ? 200 : 400);
   }
 
