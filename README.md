@@ -76,6 +76,11 @@ pnpm run zedge:launch-agent:logs
 pnpm run zedge:launch-agent:uninstall
 ```
 
+In Zed, use **`/edge-model status`** to inspect the selected/running sovereign
+model, or **`/edge-model use <model-id>`** to persist an admitted model, sync the
+Zed picker, reconcile Moonshine, and run an inference smoke. `codestral-22b`
+rides the `gnosis-openai-mesh` lane once the live Edgework catalog advertises it.
+
 **Not on macOS:** keep one terminal open with:
 
 ```bash

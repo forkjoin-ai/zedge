@@ -124,6 +124,45 @@ describe('Zedge Config', () => {
     expect(config.preferredModel).toBe('gnosis-local');
   });
 
+  test('persisted Codestral alias is canonicalized to the mesh model id', async () => {
+    const tempHome = mkdtempSync(join(tmpdir(), 'zedge-codestral-model-test-'));
+    const edgeworkDir = join(tempHome, '.edgework');
+    mkdirSync(edgeworkDir, { recursive: true });
+    writeFileSync(
+      join(edgeworkDir, 'zedge.json'),
+      JSON.stringify({ preferredModel: 'codestral' })
+    );
+    const configModulePath = fileURLToPath(
+      new URL('../config.ts', import.meta.url)
+    );
+    const script = `
+      (async () => {
+        const { getZedgeConfig } = await import(${JSON.stringify(
+          configModulePath
+        )});
+        process.stdout.write(JSON.stringify(getZedgeConfig()));
+      })().catch((error) => {
+        console.error(error);
+        process.exit(1);
+      });
+    `;
+    const result = spawnSync(process.execPath, ['-e', script], {
+      env: {
+        ...process.env,
+        HOME: tempHome,
+      },
+      encoding: 'utf-8',
+    });
+
+    expect(result.status).toBe(0);
+    expect(result.stderr).toBe('');
+
+    const config = JSON.parse(result.stdout) as {
+      preferredModel: string;
+    };
+    expect(config.preferredModel).toBe('codestral-22b');
+  });
+
   test('Zed settings override stale edgework model config', async () => {
     const tempHome = mkdtempSync(join(tmpdir(), 'zedge-zed-source-test-'));
     mkdirSync(join(tempHome, '.edgework'), { recursive: true });

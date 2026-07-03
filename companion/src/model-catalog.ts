@@ -4,6 +4,12 @@ export interface KnownZedgeModel {
   maxTokens: number;
   ownedBy: string;
   /**
+   * Candidate models are known to the client, but are not yet selectable from
+   * the fallback catalog. They must appear in the live model list before use.
+   */
+  availability?: 'available' | 'candidate';
+  unavailableReason?: string;
+  /**
    * Sensitive model category. Sensitive entries stay out of the default Zed
    * picker and require an explicit ZEDGE_MODELS allowlist.
    */
@@ -24,6 +30,16 @@ export interface ZedAvailableModel {
 }
 
 export const DEFAULT_ZEDGE_MODEL_ID = 'gnosis-local';
+export const CODESTRAL_ZEDGE_MODEL_ID = 'codestral-22b';
+
+const ZEDGE_MODEL_ALIASES = new Map<string, string>([
+  ['codestral', CODESTRAL_ZEDGE_MODEL_ID],
+]);
+
+export function normalizeZedgeModelId(modelId: string): string {
+  const normalized = modelId.trim();
+  return ZEDGE_MODEL_ALIASES.get(normalized) ?? normalized;
+}
 
 const KNOWN_ZEDGE_MODELS: KnownZedgeModel[] = [
   {
@@ -127,6 +143,16 @@ const KNOWN_ZEDGE_MODELS: KnownZedgeModel[] = [
     // arch -> NativeLlama. See monster-swarm/ADMITTED_MODELS.md.
     id: 'mistral-7b',
     displayName: 'Mistral 7B Instruct v0.3 (Moonshine)',
+    maxTokens: 8192,
+    ownedBy: 'gnosis',
+    forkjoinTier: true,
+  },
+  {
+    // Dense Codestral 22B is admitted in R2 and surfaced through the
+    // gnosis-openai-mesh lane. Selection still requires the live `/v1/models`
+    // sync to advertise it, so stale local clients cannot choose a dark model.
+    id: CODESTRAL_ZEDGE_MODEL_ID,
+    displayName: 'Codestral 22B (Gnosis mesh)',
     maxTokens: 8192,
     ownedBy: 'gnosis',
     forkjoinTier: true,
@@ -241,12 +267,14 @@ const LEGACY_EDGEWORK_MODEL_IDS = new Set([
 
 /** Returns whether a model id belongs to the retired Edgework picker catalog. */
 export function isLegacyEdgeworkModelId(modelId: string): boolean {
-  return LEGACY_EDGEWORK_MODEL_IDS.has(modelId);
+  return LEGACY_EDGEWORK_MODEL_IDS.has(normalizeZedgeModelId(modelId));
 }
 
 /** Reads the optional comma-separated model allowlist used for local overrides. */
 function getExplicitModelWhitelist(): Set<string> | null {
-  const whitelist = process.env.ZEDGE_MODELS?.split(',').map((id) => id.trim());
+  const whitelist = process.env.ZEDGE_MODELS?.split(',')
+    .map((id) => normalizeZedgeModelId(id))
+    .filter((id) => id.length > 0);
   if (whitelist && whitelist.length > 0 && whitelist[0] !== '') {
     return new Set(whitelist);
   }
@@ -256,31 +284,39 @@ function getExplicitModelWhitelist(): Set<string> | null {
 
 /** Returns whether a fallback catalog model should be exposed by default. */
 export function isModelVisible(modelId: string): boolean {
+  const normalizedModelId = normalizeZedgeModelId(modelId);
   const whitelist = getExplicitModelWhitelist();
   if (whitelist) {
-    return whitelist.has(modelId);
+    return (
+      whitelist.has(normalizedModelId) &&
+      getKnownZedgeModel(normalizedModelId)?.availability !== 'candidate'
+    );
   }
 
   if (shouldShowAllModels()) {
-    return true;
+    return getKnownZedgeModel(normalizedModelId)?.availability !== 'candidate';
   }
 
-  const known = getKnownZedgeModel(modelId);
+  const known = getKnownZedgeModel(normalizedModelId);
+  if (known?.availability === 'candidate') {
+    return false;
+  }
   if (known?.sensitiveContent === 'adult') {
     return false;
   }
 
-  return !isLegacyEdgeworkModelId(modelId);
+  return !isLegacyEdgeworkModelId(normalizedModelId);
 }
 
 /** Returns whether a model reported by the live Moonshine server can be exposed. */
 export function isLiveModelVisible(modelId: string): boolean {
+  const normalizedModelId = normalizeZedgeModelId(modelId);
   const whitelist = getExplicitModelWhitelist();
   if (whitelist) {
-    return whitelist.has(modelId);
+    return whitelist.has(normalizedModelId);
   }
 
-  return modelId.trim().length > 0;
+  return normalizedModelId.length > 0;
 }
 
 /** Returns whether retired fallback entries should be exposed for debugging. */
@@ -314,7 +350,7 @@ export function getKnownRemoteZedgeModels(): KnownZedgeModel[] {
 
 /** Finds metadata for a known fallback model id. */
 export function getKnownZedgeModel(id: string): KnownZedgeModel | undefined {
-  return KNOWN_ZEDGE_MODELS_BY_ID.get(id);
+  return KNOWN_ZEDGE_MODELS_BY_ID.get(normalizeZedgeModelId(id));
 }
 
 /**
@@ -324,18 +360,33 @@ export function getKnownZedgeModel(id: string): KnownZedgeModel | undefined {
  * uncataloged mesh models (e.g. gnosis-local variants) still passthrough.
  */
 export function isForkjoinTierModel(modelId: string): boolean {
-  const known = getKnownZedgeModel(modelId);
+  const normalized = normalizeZedgeModelId(modelId).toLowerCase();
+  const known = getKnownZedgeModel(normalized);
   if (known?.forkjoinTier === true) {
     return true;
   }
 
-  const normalized = modelId.trim().toLowerCase();
   return (
     normalized === 'gnosis-local' ||
     normalized.startsWith('gnosis-local') ||
     normalized.startsWith('qwen-coder') ||
+    normalized.startsWith('codestral') ||
     normalized.startsWith('forkjoin')
   );
+}
+
+/**
+ * Returns whether a model can be selected from fallback metadata alone. Live
+ * model lists may still enable a candidate once the runtime advertises it.
+ */
+export function isFallbackSelectableModel(modelId: string): boolean {
+  const known = getKnownZedgeModel(modelId);
+  return !!known && known.availability !== 'candidate';
+}
+
+/** Returns whether the id is a known candidate that still needs admission. */
+export function isCandidateZedgeModel(modelId: string): boolean {
+  return getKnownZedgeModel(modelId)?.availability === 'candidate';
 }
 
 /** Builds the model metadata shape that Zed expects in settings.json. */
@@ -352,15 +403,16 @@ export function buildZedAvailableModels(
 
   const models: ZedAvailableModel[] = [];
   for (const id of orderedIds) {
-    if (seen.has(id)) {
+    const normalizedId = normalizeZedgeModelId(id);
+    if (seen.has(normalizedId)) {
       continue;
     }
-    seen.add(id);
+    seen.add(normalizedId);
 
-    const known = getKnownZedgeModel(id);
+    const known = getKnownZedgeModel(normalizedId);
     models.push({
-      name: id,
-      display_name: known?.displayName ?? humanizeModelId(id),
+      name: normalizedId,
+      display_name: known?.displayName ?? humanizeModelId(normalizedId),
       max_tokens: known?.maxTokens ?? 4096,
     });
   }

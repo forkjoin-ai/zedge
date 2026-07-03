@@ -511,6 +511,13 @@ const ZEDGE_PROMPTS: McpPromptDefinition[] = [
       'List the current Zedge models. Use the `zedge_command` tool with `command: "zedge-models"` and summarize which model IDs are available.',
   },
   {
+    name: 'zedge-model',
+    description: 'Show or switch the active sovereign Moonshine model',
+    arguments: slashArgsPrompt,
+    instructions:
+      'Inspect or switch the active sovereign model. Use `zedge_command` with `command: "zedge-model"` and `args: "status"` or `args: "use <model-id>"` once the model is admitted.',
+  },
+  {
     name: 'zedge-pool',
     description: 'Show or change compute pool participation and earnings',
     arguments: slashArgsPrompt,
@@ -1151,6 +1158,28 @@ async function executeZedgeCommandTool(
         return createToolResult(await fetchCompanionText('/health'));
       case 'zedge-models':
         return createToolResult(await fetchCompanionText('/v1/models'));
+      case 'zedge-model': {
+        const subcommand = parts[0] ?? 'status';
+        if (subcommand === 'status') {
+          return createToolResult(
+            await fetchCompanionText('/zedge/model-selection')
+          );
+        }
+        if (subcommand === 'use') {
+          const model = parts[1];
+          if (!model) {
+            return createToolResult('Usage: zedge-model use <model_id>', true);
+          }
+          return createToolResult(
+            await postCompanionJson(
+              '/zedge/model-selection',
+              { model, reconcile: true },
+              120_000
+            )
+          );
+        }
+        return createToolResult('Usage: zedge-model [status|use <model_id>]', true);
+      }
       case 'zedge-pool': {
         const subcommand = parts[0] ?? 'status';
         if (subcommand === 'join') {

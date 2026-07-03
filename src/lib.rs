@@ -88,7 +88,7 @@ impl zed::Extension for EdgeAiExtension {
         match command.name.as_str() {
             "edge-setup" => slash_commands::run_setup(),
             "edge-status" => slash_commands::run_status(worktree),
-            "edge-models" => slash_commands::run_models(),
+            "edge-model" | "edge-models" => slash_commands::run_models(&_args),
             "edge-pool" => slash_commands::run_pool(&_args),
             "edge-logs" => slash_commands::run_logs(),
             "edge-clear" => slash_commands::run_clear(),
@@ -129,7 +129,7 @@ impl zed::Extension for EdgeAiExtension {
     ) -> Result<Vec<SlashCommandArgumentCompletion>, String> {
         match command.name.as_str() {
             "edge-setup" => Ok(Vec::new()),
-            "edge-models" => Ok(provider::visible_models()
+            "edge-model" | "edge-models" => Ok(provider::visible_models()
                 .iter()
                 .map(|m| SlashCommandArgumentCompletion {
                     label: m.display_name.to_string(),

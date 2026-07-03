@@ -213,6 +213,11 @@ function meshKnotSpec(id: string): LocalMoonshineModelSpec {
   };
 }
 
+function normalizeMoonshineModelId(modelId: string): string {
+  const trimmed = modelId.trim();
+  return trimmed;
+}
+
 const LOCAL_MOONSHINE_MODELS: Record<string, LocalMoonshineModelSpec> = {
   [DEFAULT_MOONSHINE_MODEL]: {
     modelName: DEFAULT_MOONSHINE_MODEL,
@@ -435,7 +440,7 @@ function resolveZedLocalModelSpec(): LocalMoonshineModelSpec | null {
   ].filter((modelId): modelId is string => typeof modelId === 'string');
 
   for (const rawModelId of candidates) {
-    const modelId = rawModelId.trim();
+    const modelId = normalizeMoonshineModelId(rawModelId);
     const spec = LOCAL_MOONSHINE_MODELS[modelId];
     if (spec && canUseModelSpec(spec)) {
       return spec;
@@ -461,7 +466,10 @@ function denseSourceRequiresNetwork(spec?: LocalMoonshineModelSpec): boolean {
 
 /** Launch-agent `ZEDGE_MOONSHINE_MODEL` wins over Zed settings for knot selection. */
 function resolveStartupModelSpec(): LocalMoonshineModelSpec | null {
-  const configuredModel = process.env.ZEDGE_MOONSHINE_MODEL?.trim();
+  const configuredModelEnv = process.env.ZEDGE_MOONSHINE_MODEL?.trim();
+  const configuredModel = configuredModelEnv
+    ? normalizeMoonshineModelId(configuredModelEnv)
+    : undefined;
   if (configuredModel) {
     const envSpec = LOCAL_MOONSHINE_MODELS[configuredModel];
     if (envSpec && canUseModelSpec(envSpec)) {
@@ -514,7 +522,10 @@ function resolveMoonshineModelName(
   knotPath: string,
   spec?: LocalMoonshineModelSpec
 ): string {
-  const configuredModel = process.env.ZEDGE_MOONSHINE_MODEL?.trim();
+  const configuredModelEnv = process.env.ZEDGE_MOONSHINE_MODEL?.trim();
+  const configuredModel = configuredModelEnv
+    ? normalizeMoonshineModelId(configuredModelEnv)
+    : undefined;
   if (configuredModel) return configuredModel;
   if (spec) return spec.modelName;
 

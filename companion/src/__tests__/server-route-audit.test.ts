@@ -48,6 +48,10 @@ interface RuntimeState {
   >;
   nextAgentSessionId: number;
   cloudSessions: Map<string, { id: string; status: string }>;
+  selectedModel: string;
+  liveModelIds: string[];
+  zedSyncCalls: Array<Record<string, unknown>>;
+  moonshineEnsureCalls: number;
   engrams: Map<
     string,
     {
@@ -67,6 +71,10 @@ const state: RuntimeState = {
   agentSessions: new Map(),
   nextAgentSessionId: 1,
   cloudSessions: new Map(),
+  selectedModel: 'tinyllama-1.1b',
+  liveModelIds: ['tinyllama-1.1b'],
+  zedSyncCalls: [],
+  moonshineEnsureCalls: 0,
   engrams: new Map(),
 };
 
@@ -78,6 +86,10 @@ function resetState(): void {
   state.agentSessions = new Map();
   state.nextAgentSessionId = 1;
   state.cloudSessions = new Map();
+  state.selectedModel = 'tinyllama-1.1b';
+  state.liveModelIds = ['tinyllama-1.1b'];
+  state.zedSyncCalls = [];
+  state.moonshineEnsureCalls = 0;
   state.engrams = new Map();
 }
 
@@ -102,7 +114,7 @@ mock.module('../config.ts', () => ({
   getCompanionPort: () => 7331,
   getZedgeConfig: () => ({
     port: 7331,
-    preferredModel: 'tinyllama-1.1b',
+    preferredModel: state.selectedModel,
     cloudRunDirect: false,
     computePool: {
       enabled: false,
@@ -124,6 +136,43 @@ mock.module('../config.ts', () => ({
       useUring: false,
     },
   }),
+  saveZedgeConfig: (config: { preferredModel?: string }) => {
+    if (typeof config.preferredModel === 'string') {
+      state.selectedModel =
+        config.preferredModel === 'codestral'
+          ? 'codestral-22b'
+          : config.preferredModel;
+    }
+    return {
+      preferredModel: state.selectedModel,
+    };
+  },
+}));
+
+mock.module('../zed-provider-sync.ts', () => ({
+  syncZedgeProviderAccess: (
+    port: number,
+    modelIds?: Iterable<string>,
+    preferredModelId?: string
+  ) => {
+    const payload = {
+      port,
+      modelIds: modelIds ? Array.from(modelIds) : [],
+      preferredModelId,
+    };
+    state.zedSyncCalls.push(payload);
+    return {
+      keychain: { updated: false },
+      settings: { updatedPaths: ['mock-settings'], matchedPaths: [] },
+      ...payload,
+    };
+  },
+}));
+
+mock.module('../moonshine-docker.ts', () => ({
+  ensureMoonshineRunning: async () => {
+    state.moonshineEnsureCalls += 1;
+  },
 }));
 
 mock.module('../prompt-budget.ts', () => ({
@@ -381,24 +430,22 @@ mock.module('../inference-bridge.ts', () => ({
     durationMs: 2,
     attempts: [{ tier: 'edge', status: 'ok', ms: 2 }],
   }),
+  prewarmMoonshinePrompt: async () => jsonResponse({ ok: true }),
   buildFimPrompt: () => '',
-  getModels: async () => [
-    {
-      id: 'tinyllama-1.1b',
+  getModels: async () =>
+    state.liveModelIds.map((id) => ({
+      id,
       object: 'model',
       created: 0,
       owned_by: 'mock',
-    },
-  ],
+    })),
   getLiveMoonshineRuntimeHealth: async () => ({
-    models: [
-      {
-        id: 'tinyllama-1.1b',
-        object: 'model',
-        created: 0,
-        owned_by: 'mock',
-      },
-    ],
+    models: state.liveModelIds.map((id) => ({
+      id,
+      object: 'model',
+      created: 0,
+      owned_by: 'mock',
+    })),
     openAi: {
       ready: true,
       status: 'ok',
@@ -415,6 +462,14 @@ mock.module('../inference-bridge.ts', () => ({
       hiddenDim: 64,
       vocabSize: 32000,
     },
+  }),
+  getMoonshineCacheStatus: async () => ({
+    ok: true,
+    caches: [],
+  }),
+  clearMoonshineCaches: async () => ({
+    ok: true,
+    cleared: [],
   }),
   embed: async (_input: string | string[], model?: string) =>
     jsonResponse({
@@ -436,6 +491,9 @@ mock.module('../inference-bridge.ts', () => ({
   getRecentLogs: (count: number) => state.logs.slice(-count),
   clearLogs: () => {
     state.logs = [];
+  },
+  appendInferenceDiagnostic: (message: string) => {
+    state.logs.push(message);
   },
 }));
 
@@ -1156,6 +1214,7 @@ const routeCases: RouteCase[] = [
     '/probe/health',
     '/probe/results',
     '/probe/fastest',
+    '/zedge/model-selection',
     '/selftest/inference',
     '/neural/status',
     '/neural/steering',
@@ -1254,6 +1313,27 @@ const routeCases: RouteCase[] = [
     '/agent-participant/undo',
     '/agent-participant/redo',
   ].map((path) => postCase(path, 400)),
+  postCase(
+    '/zedge/model-selection',
+    409,
+    { model: 'codestral', reconcile: true },
+    async (response) => {
+      const payload = (await response.clone().json()) as {
+        ok?: boolean;
+        reason?: string;
+        error?: string;
+        model?: string;
+        availableModels?: string[];
+      };
+      expect(payload.ok).toBe(false);
+      expect(payload.reason).toBe('model_unavailable');
+      expect(payload.error).toContain('apps/edge-workers');
+      expect(payload.model).toBe('codestral-22b');
+      expect(payload.availableModels).not.toContain('codestral-22b');
+      expect(state.selectedModel).toBe('tinyllama-1.1b');
+      expect(state.moonshineEnsureCalls).toBe(0);
+    }
+  ),
   postCase('/mcp', 200, {
     jsonrpc: '2.0',
     id: 1,
@@ -1432,6 +1512,28 @@ const routeCases: RouteCase[] = [
 ];
 
 const skippedRoutes = new Map<string, string>([
+  ['GET /moonshine/cache', 'Moonshine cache route has dedicated bridge coverage.'],
+  ['POST /moonshine/cache/clear', 'Moonshine cache mutation is bridge-covered.'],
+  ['POST /v1/chat/completions/prewarm', 'Prewarm route is async/cache behavior.'],
+  ['GET /skymesh/status', 'Skymesh routes need bridge-specific mocks.'],
+  ['POST /skymesh/bridge/start', 'Skymesh routes need bridge-specific mocks.'],
+  ['POST /skymesh/bridge/stop', 'Skymesh routes need bridge-specific mocks.'],
+  ['GET /skymesh/bridge/status', 'Skymesh routes need bridge-specific mocks.'],
+  ['POST /skymesh/warm', 'Skymesh routes need bridge-specific mocks.'],
+  ['POST /teams/create', 'Team routes need team service mocks.'],
+  ['POST /teams/join', 'Team routes need team service mocks.'],
+  ['POST /teams/leave', 'Team routes need team service mocks.'],
+  ['GET /teams/invite', 'Team routes need team service mocks.'],
+  ['GET /teams/status', 'Team routes need team service mocks.'],
+  ['POST /moonshine/agent/exec', 'Moonshine agent routes need agent-runner mocks.'],
+  ['POST /moonshine/agent/verify', 'Moonshine agent routes need agent-runner mocks.'],
+  ['GET /moonshine/agent/providers', 'Moonshine agent routes need agent-runner mocks.'],
+  ['GET /moonshine/agent/runs', 'Moonshine agent routes need agent-runner mocks.'],
+  ['GET /moonshine/agent/tools', 'Moonshine agent routes need agent-runner mocks.'],
+  ['GET /moonshine/agent/permissions', 'Moonshine agent routes need agent-runner mocks.'],
+  ['POST /probe/doctor/repair', 'Doctor repair route mutates local setup.'],
+  ['GET /probe/doctor', 'Doctor route shells out through local diagnostics.'],
+  ['GET /moonshine/agent/runs/*', 'Moonshine agent routes need agent-runner mocks.'],
   ['POST /restart', 'Would intentionally terminate the test process.'],
 ]);
 
@@ -1465,7 +1567,7 @@ describe('server route audit', () => {
 
     expect(missing).toEqual([]);
     expect(extra).toEqual([]);
-    expect(inventory.size).toBe(202);
+    expect(inventory.size).toBe(226);
   });
 
   test('responds to CORS preflight before route dispatch', async () => {
@@ -1512,6 +1614,29 @@ describe('server route audit', () => {
     expect(response.status).toBe(200);
     const payload = (await response.json()) as { path: string };
     expect(payload.path).toBe('/babelfish/capabilities');
+  });
+
+  test('allows Codestral selection only when the live runtime advertises it', async () => {
+    state.liveModelIds = ['tinyllama-1.1b', 'codestral-22b'];
+
+    const response = await handleWebRequest(
+      createRequest('/zedge/model-selection', {
+        method: 'POST',
+        json: { model: 'codestral', reconcile: true },
+      })
+    );
+
+    expect(response.status).toBe(200);
+    const payload = (await response.clone().json()) as {
+      model?: string;
+      sync?: { preferredModelId?: string };
+      selection?: { availableModels?: string[] };
+    };
+    expect(payload.model).toBe('codestral-22b');
+    expect(payload.sync?.preferredModelId).toBe('codestral-22b');
+    expect(payload.selection?.availableModels).toContain('codestral-22b');
+    expect(state.selectedModel).toBe('codestral-22b');
+    expect(state.moonshineEnsureCalls).toBe(1);
   });
 
   test('returns 404 for unknown routes', async () => {

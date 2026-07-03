@@ -225,13 +225,62 @@ pub fn run_status(worktree: Option<&Worktree>) -> Result<SlashCommandOutput, Str
 }
 
 /// /zedge-models — list available models with tier info
-pub fn run_models() -> Result<SlashCommandOutput, String> {
+/// /zedge-model use <model> — persist and reconcile the sovereign model
+pub fn run_models(args: &[String]) -> Result<SlashCommandOutput, String> {
+    let subcommand = args.first().map(|value| value.as_str()).unwrap_or("list");
+    if subcommand == "status" {
+        return match companion_get("/zedge/model-selection") {
+            Ok(body) => Ok(output_with_section(
+                format!("## Zedge Model Status\n\n```json\n{body}\n```"),
+                "Zedge Models",
+            )),
+            Err(e) => Ok(output_with_section(
+                format!("**Companion offline**: {e}"),
+                "Zedge Models",
+            )),
+        };
+    }
+
+    if subcommand == "use" {
+        let Some(model_id) = args.get(1).map(|value| value.trim()).filter(|value| !value.is_empty()) else {
+            return Ok(output_with_section(
+                "Usage: /edge-model use <model_id>".to_string(),
+                "Zedge Models",
+            ));
+        };
+        return match companion_post_json(
+            "/zedge/model-selection",
+            serde_json::json!({ "model": model_id, "reconcile": true }),
+        ) {
+            Ok(body) => Ok(output_with_section(
+                format!("## Zedge Model Switch\n\n```json\n{body}\n```"),
+                "Zedge Models",
+            )),
+            Err(e) => Ok(output_with_section(
+                format!("**Companion offline**: {e}"),
+                "Zedge Models",
+            )),
+        };
+    }
+
+    if subcommand != "list" {
+        return Ok(output_with_section(
+            "Usage: /edge-model [status|use <model_id>]".to_string(),
+            "Zedge Models",
+        ));
+    }
+
     let mut parts: Vec<String> = Vec::new();
+
+    if let Ok(status_json) = companion_get("/zedge/model-selection") {
+        parts.push("## Current Selection\n".to_string());
+        parts.push(format!("```json\n{status_json}\n```"));
+    }
 
     match companion_get("/v1/models") {
         Ok(models_json) => {
             if let Ok(v) = serde_json::from_str::<serde_json::Value>(&models_json) {
-                parts.push("## Available Models\n".to_string());
+                parts.push("\n## Available Models\n".to_string());
                 parts.push("| Model | Owner |".to_string());
                 parts.push("|:---|:---|".to_string());
 

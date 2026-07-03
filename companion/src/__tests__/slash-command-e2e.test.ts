@@ -985,6 +985,17 @@ describe('Zedge slash commands end to end', () => {
     expect(text).toContain('"owned_by": "edgework-wasm"');
   }, 20_000);
 
+  test('zedge-model status reaches the sovereign model selection surface', async () => {
+    if (skipReason !== null) {
+      return;
+    }
+
+    const text = await callZedgeCommand('zedge-model', 'status');
+    expect(text).toContain('"selectedModel"');
+    expect(text).toContain('"effectiveModel"');
+    expect(text).toContain('"availableModels"');
+  }, 20_000);
+
   test('zedge-selftest reaches the local inference path through the live command surface', async () => {
     if (skipReason !== null) {
       return;

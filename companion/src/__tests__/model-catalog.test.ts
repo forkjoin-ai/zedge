@@ -3,7 +3,10 @@ import {
   buildZedAvailableModels,
   getKnownZedgeModel,
   getKnownZedgeModels,
+  isCandidateZedgeModel,
+  isFallbackSelectableModel,
   isForkjoinTierModel,
+  normalizeZedgeModelId,
 } from '../model-catalog.ts';
 
 describe('Zedge model catalog', () => {
@@ -25,7 +28,7 @@ describe('Zedge model catalog', () => {
     const model = getKnownZedgeModel('qwen2.5-0.5b-instruct');
     expect(model).toBeDefined();
     expect(model?.displayName).toBe('Qwen2.5 0.5B Instruct (Moonshine)');
-    expect(model?.maxTokens).toBe(4096);
+    expect(model?.maxTokens).toBe(2048);
   });
 
   test('includes Gemma4 RKNOT metadata for the Moonshine hotpath', () => {
@@ -33,6 +36,23 @@ describe('Zedge model catalog', () => {
     expect(model).toBeDefined();
     expect(model?.displayName).toBe('Gemma4 31B Instruct (Moonshine RKNOT)');
     expect(model?.maxTokens).toBe(8192);
+  });
+
+  test('tracks Codestral 22B as a mesh model gated by live runtime sync', () => {
+    expect(normalizeZedgeModelId('codestral')).toBe('codestral-22b');
+    const model = getKnownZedgeModel('codestral');
+    expect(model).toBeDefined();
+    expect(model?.id).toBe('codestral-22b');
+    expect(model?.displayName).toBe('Codestral 22B (Gnosis mesh)');
+    expect(model?.maxTokens).toBe(8192);
+    expect(model?.availability).toBeUndefined();
+    expect(model?.unavailableReason).toBeUndefined();
+    expect(isCandidateZedgeModel('codestral')).toBe(false);
+    expect(isFallbackSelectableModel('codestral')).toBe(true);
+    expect(isForkjoinTierModel('codestral')).toBe(true);
+    expect(getKnownZedgeModels().some((entry) => entry.id === model?.id)).toBe(
+      true
+    );
   });
 
   test('keeps the Loki adult research model explicit and forkjoin-routed', () => {
@@ -76,5 +96,11 @@ describe('Zedge model catalog', () => {
     });
 
     expect(models.map((model) => model.name)).toEqual(['gnosis-local']);
+  });
+
+  test('buildZedAvailableModels canonicalizes Codestral aliases', () => {
+    const models = buildZedAvailableModels(['codestral', 'codestral-22b']);
+
+    expect(models.map((model) => model.name)).toEqual(['codestral-22b']);
   });
 });

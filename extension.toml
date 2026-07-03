@@ -19,6 +19,10 @@ requires_argument = false
 description = "List available models with latency tier and readiness"
 requires_argument = false
 
+[slash_commands.edge-model]
+description = "Show or switch the active sovereign Moonshine model"
+requires_argument = true
+
 [slash_commands.edge-pool]
 description = "Show compute pool status or use join/leave to change participation"
 requires_argument = false

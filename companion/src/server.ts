@@ -36,7 +36,16 @@ import { getOwnedCompanionActivity } from './companion-activity.ts';
 import { fimCache, fimCacheKey, speculativePrefetch } from './fim-cache.ts';
 import { joinPool, leavePool, getPoolStatus } from './compute-node.ts';
 import { getRecentFeedback, recordFeedback } from './feedback-log.ts';
-import { getCompanionPort, getZedgeConfig } from './config.ts';
+import {
+  getCompanionPort,
+  getZedgeConfig,
+  saveZedgeConfig,
+} from './config.ts';
+import {
+  getKnownZedgeModel,
+  isFallbackSelectableModel,
+  normalizeZedgeModelId,
+} from './model-catalog.ts';
 import { handleBabelfishRequest } from './babelfish-routes.ts';
 import {
   startMesh,
@@ -699,6 +708,12 @@ interface ForgeDeployRequestBody {
   project?: string;
 }
 
+interface ModelSelectionRequestBody {
+  model?: string;
+  reconcile?: boolean;
+  timeout_ms?: number;
+}
+
 // --- Helpers ---
 
 function jsonResponse(data: unknown, status = 200): Response {
@@ -709,6 +724,159 @@ function jsonResponse(data: unknown, status = 200): Response {
       'Access-Control-Allow-Origin': '*',
     },
   });
+}
+
+function selectedMoonshineModelFromHealth(
+  health: Awaited<ReturnType<typeof getLiveMoonshineRuntimeHealth>>
+): string | null {
+  const openAiModel = health.openAi?.model;
+  if (typeof openAiModel === 'string' && openAiModel.trim().length > 0) {
+    return normalizeZedgeModelId(openAiModel);
+  }
+
+  const firstModel = health.models[0]?.id;
+  return firstModel ? normalizeZedgeModelId(firstModel) : null;
+}
+
+async function getModelSelectionPayload(): Promise<Record<string, unknown>> {
+  const [models, runtimeHealth] = await Promise.all([
+    getModels(),
+    getLiveMoonshineRuntimeHealth().catch(() => null),
+  ]);
+  const availableModels = models.map((model) => normalizeZedgeModelId(model.id));
+  const selectedModel = normalizeZedgeModelId(getZedgeConfig().preferredModel);
+  const runningModel = runtimeHealth
+    ? selectedMoonshineModelFromHealth(runtimeHealth)
+    : null;
+  const envOverride = process.env.ZEDGE_MOONSHINE_MODEL
+    ? normalizeZedgeModelId(process.env.ZEDGE_MOONSHINE_MODEL)
+    : null;
+  const effectiveModel = envOverride ?? selectedModel;
+  const knownModel = getKnownZedgeModel(effectiveModel);
+  const modelIsLive = availableModels.includes(effectiveModel);
+  const modelKnown =
+    modelIsLive || !!knownModel;
+  const modelSelectable =
+    modelIsLive || isFallbackSelectableModel(effectiveModel);
+  const mismatchReason =
+    runningModel && runningModel !== effectiveModel
+      ? `running ${runningModel}, selected ${effectiveModel}`
+      : !runningModel
+        ? 'Moonshine runtime model is unavailable'
+        : null;
+
+  return {
+    selectedModel,
+    effectiveModel,
+    runningModel,
+    envOverride,
+    availableModels,
+    modelKnown,
+    modelSelectable,
+    unavailableReason:
+      modelSelectable ? null : knownModel?.unavailableReason ?? null,
+    needsReconcile: mismatchReason !== null,
+    mismatchReason,
+  };
+}
+
+async function selectZedgeModel(
+  rawModel: string,
+  reconcile: boolean,
+  timeoutMs: number
+): Promise<{ status: number; payload: Record<string, unknown> }> {
+  const model = normalizeZedgeModelId(rawModel);
+  const models = await getModels({ refresh: true, refreshTimeoutMs: timeoutMs });
+  const availableModels = models.map((entry) => normalizeZedgeModelId(entry.id));
+  const modelIsLive = availableModels.includes(model);
+  const knownModel = getKnownZedgeModel(model);
+  if (!modelIsLive && !knownModel) {
+    return {
+      status: 400,
+      payload: {
+        ok: false,
+        error: `unknown Zedge model '${rawModel}'`,
+        model,
+        availableModels,
+      },
+    };
+  }
+  if (!modelIsLive && !isFallbackSelectableModel(model)) {
+    return {
+      status: 409,
+      payload: {
+        ok: false,
+        reason: 'model_unavailable',
+        error:
+          knownModel?.unavailableReason ??
+          `Zedge model '${rawModel}' is not available`,
+        model,
+        availableModels,
+      },
+    };
+  }
+
+  const savedConfig = saveZedgeConfig({ preferredModel: model });
+  const { syncZedgeProviderAccess } = await import('./zed-provider-sync.ts');
+  const syncResult = syncZedgeProviderAccess(
+    getCompanionPort(),
+    availableModels.includes(model) ? availableModels : [model, ...availableModels],
+    model
+  );
+  const envOverride = process.env.ZEDGE_MOONSHINE_MODEL
+    ? normalizeZedgeModelId(process.env.ZEDGE_MOONSHINE_MODEL)
+    : null;
+
+  if (envOverride && envOverride !== model) {
+    const statusPayload = await getModelSelectionPayload();
+    return {
+      status: 409,
+      payload: {
+        ok: false,
+        reason: 'env_override',
+        error:
+          `ZEDGE_MOONSHINE_MODEL=${envOverride} overrides persisted model ${model}`,
+        model,
+        savedConfig,
+        sync: syncResult,
+        selection: statusPayload,
+      },
+    };
+  }
+
+  let reconcileError: string | null = null;
+  if (reconcile) {
+    try {
+      const { ensureMoonshineRunning } = await import('./moonshine-docker.ts');
+      await ensureMoonshineRunning();
+    } catch (error: unknown) {
+      reconcileError = error instanceof Error ? error.message : String(error);
+    }
+  }
+
+  const selftest = await runInferenceSelfTest(model).catch((error: unknown) => ({
+    ok: false,
+    error: error instanceof Error ? error.message : String(error),
+    model,
+  }));
+  const selection = await getModelSelectionPayload();
+
+  return {
+    status: reconcileError ? 207 : 200,
+    payload: {
+      ok: reconcileError === null,
+      model,
+      savedConfig,
+      sync: syncResult,
+      reconcile: {
+        attempted: reconcile,
+        ok: reconcileError === null,
+        error: reconcileError,
+      },
+      selftest,
+      selection,
+    },
+  };
 }
 
 function deprecatedJsonResponse(data: unknown, status = 200): Response {
@@ -2815,6 +2983,24 @@ export async function handleWebRequest(req: Request): Promise<Response> {
         ...completionAttemptHeaders,
       },
     });
+  }
+
+  if (path === '/zedge/model-selection' && req.method === 'GET') {
+    return jsonResponse(await getModelSelectionPayload());
+  }
+
+  if (path === '/zedge/model-selection' && req.method === 'POST') {
+    const body = (await req.json()) as ModelSelectionRequestBody;
+    const model = body.model?.trim();
+    if (!model) {
+      return jsonResponse({ ok: false, error: 'model is required' }, 400);
+    }
+    const timeoutMs = Math.max(
+      1_000,
+      Math.min(Math.trunc(body.timeout_ms ?? 30_000), 120_000)
+    );
+    const result = await selectZedgeModel(model, body.reconcile !== false, timeoutMs);
+    return jsonResponse(result.payload, result.status);
   }
 
   // Models list

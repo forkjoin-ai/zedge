@@ -10,7 +10,9 @@ import { join } from 'path';
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'fs';
 import {
   DEFAULT_ZEDGE_MODEL_ID,
+  isCandidateZedgeModel,
   isLegacyEdgeworkModelId,
+  normalizeZedgeModelId,
 } from './model-catalog.ts';
 import { readZedModelSelection } from './zed-settings.ts';
 
@@ -128,8 +130,12 @@ const DEFAULT_ZEDGE_CONFIG: ZedgeConfig = {
 };
 
 function normalizePreferredModel(modelId: string | null | undefined): string {
-  const normalized = modelId?.trim();
-  if (!normalized || isLegacyEdgeworkModelId(normalized)) {
+  const normalized = modelId ? normalizeZedgeModelId(modelId) : undefined;
+  if (
+    !normalized ||
+    isLegacyEdgeworkModelId(normalized) ||
+    isCandidateZedgeModel(normalized)
+  ) {
     return DEFAULT_ZEDGE_MODEL_ID;
   }
 
@@ -142,10 +148,11 @@ function normalizeAllowedModels(modelIds: string[] | undefined): string[] {
   const candidates = modelIds ?? DEFAULT_ZEDGE_CONFIG.computePool.allowedModels;
 
   for (const rawModelId of candidates) {
-    const modelId = rawModelId.trim();
+    const modelId = normalizeZedgeModelId(rawModelId);
     if (
       modelId.length === 0 ||
       isLegacyEdgeworkModelId(modelId) ||
+      isCandidateZedgeModel(modelId) ||
       seen.has(modelId)
     ) {
       continue;
@@ -166,7 +173,7 @@ function getMoonshineModelEnvOverride(): string | null {
     return null;
   }
   // Launch-agent Moonshine model — not subject to retired Edgework picker rules.
-  return envModel;
+  return normalizeZedgeModelId(envModel);
 }
 
 function getZedPreferredModelOverride(): string | null {

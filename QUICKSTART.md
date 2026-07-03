@@ -52,6 +52,10 @@ pnpm run zedge:doctor -- --fix # diagnose + repair the stack + smoke-test "hello
 
 Or directly: `curl -fsS http://127.0.0.1:7331/probe/ready`.
 
+To switch coding models from Zed, run `/edge-model use <model-id>` after the
+model appears in `/edge-model status`. `codestral-22b` is served through the
+`gnosis-openai-mesh` Cloud Run lane when the live Edgework catalog advertises it.
+
 In Zed, the Agent panel should list the Zedge models. If it still says **No API key**, run `pnpm run zedge:restart` then `pnpm run zedge:doctor`. Note: `localhost` vs `127.0.0.1` matters for Zed on macOS — the companion rewrites `localhost:7331` to `127.0.0.1` in your Zed settings on first model sync.
 
 ## Build the stable launchd artifacts
