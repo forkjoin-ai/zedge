@@ -169,6 +169,20 @@ function writeFakeMoonshineProvider(path: string): void {
       '  emit({ type: "error", verdict: "veto", error: "human denied permission request" });',
       '  process.exit(12);',
       '}',
+      'if (command.includes("agent providers --json")) {',
+      '  emit({ type: "provider_status", provider: "sovereign", status: "available", content: "built-in Moonshine provider" });',
+      '  emit({ type: "provider_status", provider: "codex", status: "available", content: "codex-cli fake" });',
+      '  emit({ type: "provider_status", provider: "claude", status: "unavailable", content: "claude not installed in fake" });',
+      '  emit({ type: "final", content: "available providers: sovereign, codex" });',
+      '  process.exit(0);',
+      '}',
+      'if (command.includes("agent verify --json")) {',
+      '  emit({ type: "run_start", workspace_path: process.cwd(), prompt: command, risk: "formal_claim", requested_action: "Lean formal admission", formal_target: "Gnosis.MoonshineMetacogProcess", verification_command: "lake build Gnosis.MoonshineMetacogProcess" });',
+      '  emit({ type: "tool_request", workspace_path: process.cwd(), tool_name: "lean_build", command: "lake build Gnosis.MoonshineMetacogProcess", path: process.cwd(), risk: "formal_claim", requested_action: "Lean formal admission", formal_target: "Gnosis.MoonshineMetacogProcess", verification_command: "lake build Gnosis.MoonshineMetacogProcess" });',
+      '  emit({ type: "tool_result", workspace_path: process.cwd(), tool_name: "lean_build", command: "lake build Gnosis.MoonshineMetacogProcess", path: process.cwd(), status: "passed", exit_code: 0, duration_ms: 1, risk: "formal_claim", requested_action: "Lean formal admission", formal_target: "Gnosis.MoonshineMetacogProcess", verification_command: "lake build Gnosis.MoonshineMetacogProcess", content: "Build completed successfully." });',
+      '  emit({ type: "final", content: "Lean verification passed for Gnosis.MoonshineMetacogProcess", formal_target: "Gnosis.MoonshineMetacogProcess", verification_command: "lake build Gnosis.MoonshineMetacogProcess" });',
+      '  process.exit(0);',
+      '}',
       'if (!command.includes("agent exec --json")) {',
       '  console.error(`unexpected moonshine command: ${command}`);',
       '  process.exit(64);',
@@ -610,6 +624,58 @@ describe('Zedge slash commands end to end', () => {
     );
   }, 20_000);
 
+  test('moonshine agent verify route emits Lean verifier tool events', async () => {
+    if (skipReason !== null) {
+      return;
+    }
+
+    const { status, payload } = await postJson<MoonshineAgentExecPayload>(
+      `http://127.0.0.1:${companionPort}/moonshine/agent/verify`,
+      {
+        formal_target: 'Gnosis.MoonshineMetacogProcess',
+        workspace_path: testWorkspace,
+      }
+    );
+
+    expect(status).toBe(200);
+    expect(payload.ok).toBe(true);
+    expect(payload.events.some((event) => event.type === 'tool_request')).toBe(
+      true
+    );
+    expect(
+      payload.events.some(
+        (event) =>
+          event.type === 'tool_result' &&
+          event.tool_name === 'lean_build' &&
+          event.status === 'passed'
+      )
+    ).toBe(true);
+    expect(payload.final?.content).toContain('Lean verification passed');
+  }, 20_000);
+
+  test('moonshine agent providers route reports account-backed providers', async () => {
+    if (skipReason !== null) {
+      return;
+    }
+
+    const payload = await getJson<MoonshineAgentExecPayload>(
+      `http://127.0.0.1:${companionPort}/moonshine/agent/providers?workspace_path=${encodeURIComponent(
+        testWorkspace
+      )}`
+    );
+
+    expect(payload.ok).toBe(true);
+    expect(
+      payload.events.some(
+        (event) =>
+          event.type === 'provider_status' &&
+          event.provider === 'sovereign' &&
+          event.status === 'available'
+      )
+    ).toBe(true);
+    expect(payload.final?.content).toContain('available providers');
+  }, 20_000);
+
   test('moonshine agent exec route returns permission requests for human escalation', async () => {
     if (skipReason !== null) {
       return;
@@ -775,5 +841,31 @@ describe('Zedge slash commands end to end', () => {
     const text = await callZedgeCommand('zedge-agent', 'permissions');
     expect(text).toContain('## Moonshine Agent');
     expect(text).toContain('"pending"');
+  }, 20_000);
+
+  test('zedge-agent providers reaches the Moonshine provider surface', async () => {
+    if (skipReason !== null) {
+      return;
+    }
+
+    const text = await callZedgeCommand('zedge-agent', 'providers');
+    expect(text).toContain('## Moonshine Agent');
+    expect(text).toContain('"type": "provider_status"');
+    expect(text).toContain('"provider": "sovereign"');
+  }, 20_000);
+
+  test('zedge-agent verify reaches the Lean verifier surface', async () => {
+    if (skipReason !== null) {
+      return;
+    }
+
+    const text = await callZedgeCommand(
+      'zedge-agent',
+      'verify Gnosis.MoonshineMetacogProcess'
+    );
+    expect(text).toContain('## Moonshine Agent');
+    expect(text).toContain('"type": "tool_result"');
+    expect(text).toContain('"tool_name": "lean_build"');
+    expect(text).toContain('Lean verification passed');
   }, 20_000);
 });

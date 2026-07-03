@@ -672,6 +672,12 @@ interface MoonshineAgentPermissionDecisionRequestBody {
   timeout_ms?: number;
 }
 
+interface MoonshineAgentVerifyRequestBody {
+  formal_target?: string;
+  workspace_path?: string;
+  timeout_ms?: number;
+}
+
 interface MoonshinePermissionRecord {
   schema_version?: number;
   run_id: string;
@@ -889,11 +895,16 @@ type MoonshineAgentEvent = Record<string, unknown> & {
   schemaVersion?: number;
   run_id?: string;
   provider?: string;
+  tool_name?: string;
+  command?: string;
+  path?: string;
   verdict?: string;
   reason?: string;
   requested_action?: string;
   risk?: string;
   status?: string;
+  exit_code?: number;
+  duration_ms?: number;
   formal_target?: string;
   verification_command?: string;
   content?: string;
@@ -1076,6 +1087,45 @@ async function runMoonshineAgentExec(
   ].join(' ');
   const timeoutMs = Math.max(1_000, Math.min(body.timeout_ms ?? 120_000, 600_000));
   return runMoonshineAgentCommand(workspacePath, commandLine, timeoutMs);
+}
+
+async function runMoonshineAgentVerify(
+  body: MoonshineAgentVerifyRequestBody
+): Promise<MoonshineAgentRunResult> {
+  const formalTarget = body.formal_target?.trim();
+  if (!formalTarget) {
+    return {
+      ok: false,
+      command: '',
+      events: [],
+      metacog: [],
+      error: 'formal_target is required',
+    };
+  }
+
+  const workspacePath = resolvePath(body.workspace_path || getWorkspaceRootPath());
+  const commandLine = [
+    'agent verify --json',
+    '--cwd',
+    shellQuoteForMoonshine(workspacePath),
+    '--formal-target',
+    shellQuoteForMoonshine(formalTarget),
+  ].join(' ');
+  const timeoutMs = Math.max(1_000, Math.min(body.timeout_ms ?? 120_000, 600_000));
+  return runMoonshineAgentCommand(workspacePath, commandLine, timeoutMs);
+}
+
+async function runMoonshineAgentProviders(
+  workspacePath: string,
+  timeoutMs = 30_000
+): Promise<MoonshineAgentRunResult> {
+  const resolvedWorkspace = resolvePath(workspacePath || getWorkspaceRootPath());
+  const boundedTimeoutMs = Math.max(1_000, Math.min(timeoutMs, 120_000));
+  return runMoonshineAgentCommand(
+    resolvedWorkspace,
+    'agent providers --json',
+    boundedTimeoutMs
+  );
 }
 
 async function runMoonshineAgentResume(
@@ -2940,6 +2990,21 @@ export async function handleWebRequest(req: Request): Promise<Response> {
   if (path === '/moonshine/agent/exec' && req.method === 'POST') {
     const body = (await req.json()) as MoonshineAgentExecRequestBody;
     const result = await runMoonshineAgentExec(body);
+    return jsonResponse(result, result.ok ? 200 : 400);
+  }
+
+  if (path === '/moonshine/agent/verify' && req.method === 'POST') {
+    const body = (await req.json()) as MoonshineAgentVerifyRequestBody;
+    const result = await runMoonshineAgentVerify(body);
+    return jsonResponse(result, result.ok ? 200 : 400);
+  }
+
+  if (path === '/moonshine/agent/providers' && req.method === 'GET') {
+    const workspacePath = resolvePath(
+      url.searchParams.get('workspace_path') || getWorkspaceRootPath()
+    );
+    const timeoutMs = numberSearchParam(url, 'timeout_ms', 30_000, 1_000, 120_000);
+    const result = await runMoonshineAgentProviders(workspacePath, timeoutMs);
     return jsonResponse(result, result.ok ? 200 : 400);
   }
 

@@ -2470,6 +2470,20 @@ pub fn run_agent(args: &[String]) -> Result<SlashCommandOutput, String> {
             )
         }
         "permissions" => companion_get("/moonshine/agent/permissions"),
+        "providers" => companion_get("/moonshine/agent/providers"),
+        "verify" => {
+            let formal_target = args.get(1..).unwrap_or(&[]).join(" ");
+            if formal_target.trim().is_empty() {
+                return Ok(output_with_section(
+                    "Usage: /zedge-agent verify <Gnosis.Module-or-path.lean>".to_string(),
+                    "Moonshine Agent",
+                ));
+            }
+            companion_post_json(
+                "/moonshine/agent/verify",
+                serde_json::json!({ "formal_target": formal_target }),
+            )
+        }
         "approve" => {
             let Some(run_id) = args.get(1) else {
                 return Ok(output_with_section(
@@ -2530,7 +2544,10 @@ pub fn run_agent(args: &[String]) -> Result<SlashCommandOutput, String> {
 
     match response {
         Ok(body) => {
-            if matches!(sub, "run" | "permissions" | "approve" | "deny") {
+            if matches!(
+                sub,
+                "run" | "permissions" | "providers" | "verify" | "approve" | "deny"
+            ) {
                 Ok(output_with_section(
                     format!("## Moonshine Agent\n\n```json\n{body}\n```"),
                     "Moonshine Agent",
@@ -2544,7 +2561,10 @@ pub fn run_agent(args: &[String]) -> Result<SlashCommandOutput, String> {
         }
         Err(e) => Ok(output_with_section(
             format!("**Error**: {e}"),
-            if matches!(sub, "run" | "permissions" | "approve" | "deny") {
+            if matches!(
+                sub,
+                "run" | "permissions" | "providers" | "verify" | "approve" | "deny"
+            ) {
                 "Moonshine Agent"
             } else {
                 "GG Agent"
