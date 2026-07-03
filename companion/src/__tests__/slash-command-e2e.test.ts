@@ -588,11 +588,20 @@ describe('Zedge slash commands end to end', () => {
     expect(payload.events.map((event) => event.type)).toEqual([
       'run_start',
       'metacog_verdict',
+      'provider_intent',
       'assistant_delta',
       'final',
     ]);
     expect(payload.metacog).toHaveLength(1);
     expect(payload.metacog[0]?.verdict).toBe('proceed');
+    expect(
+      payload.events.some(
+        (event) =>
+          event.type === 'provider_intent' &&
+          event.provider === 'sovereign' &&
+          event.status === 'proposed'
+      )
+    ).toBe(true);
     expect(payload.final?.content).toBe('pact-provider smoke ok');
   }, 20_000);
 
@@ -634,6 +643,14 @@ describe('Zedge slash commands end to end', () => {
     expect(status).toBe(200);
     expect(payload.ok).toBe(true);
     expect(payload.metacog[0]?.risk).toBe('formal_claim');
+    expect(
+      payload.events.some(
+        (event) =>
+          event.type === 'provider_intent' &&
+          event.risk === 'formal_claim' &&
+          event.formal_target === 'Gnosis/MoonshineMetacogProcess.lean'
+      )
+    ).toBe(true);
     expect(payload.metacog[0]?.formal_target).toBe(
       'Gnosis/MoonshineMetacogProcess.lean'
     );
@@ -706,6 +723,39 @@ describe('Zedge slash commands end to end', () => {
       )
     ).toBe(true);
     expect(payload.final?.content).toContain('available providers');
+  }, 20_000);
+
+  test('moonshine agent run ledger routes list and replay recorded runs', async () => {
+    if (skipReason !== null) {
+      return;
+    }
+
+    const runs = await getJson<MoonshineAgentExecPayload>(
+      `http://127.0.0.1:${companionPort}/moonshine/agent/runs?workspace_path=${encodeURIComponent(
+        testWorkspace
+      )}`
+    );
+
+    expect(runs.ok).toBe(true);
+    expect(
+      runs.events.some(
+        (event) =>
+          event.type === 'run_record' &&
+          event.run_id === 'pact-smoke-run' &&
+          event.status === 'completed'
+      )
+    ).toBe(true);
+
+    const replay = await getJson<MoonshineAgentExecPayload>(
+      `http://127.0.0.1:${companionPort}/moonshine/agent/runs/pact-smoke-run?workspace_path=${encodeURIComponent(
+        testWorkspace
+      )}`
+    );
+    expect(replay.ok).toBe(true);
+    expect(
+      replay.events.some((event) => event.type === 'provider_intent')
+    ).toBe(true);
+    expect(replay.final?.content).toBe('pact-provider smoke ok');
   }, 20_000);
 
   test('moonshine agent exec route returns permission requests for human escalation', async () => {
@@ -873,6 +923,22 @@ describe('Zedge slash commands end to end', () => {
     const text = await callZedgeCommand('zedge-agent', 'permissions');
     expect(text).toContain('## Moonshine Agent');
     expect(text).toContain('"pending"');
+  }, 20_000);
+
+  test('zedge-agent runs and replay reach the Moonshine run ledger', async () => {
+    if (skipReason !== null) {
+      return;
+    }
+
+    const runs = await callZedgeCommand('zedge-agent', 'runs');
+    expect(runs).toContain('## Moonshine Agent');
+    expect(runs).toContain('"type": "run_record"');
+    expect(runs).toContain('"run_id": "pact-smoke-run"');
+
+    const replay = await callZedgeCommand('zedge-agent', 'replay pact-smoke-run');
+    expect(replay).toContain('## Moonshine Agent');
+    expect(replay).toContain('"type": "provider_intent"');
+    expect(replay).toContain('pact-provider smoke ok');
   }, 20_000);
 
   test('zedge-agent providers reaches the Moonshine provider surface', async () => {
