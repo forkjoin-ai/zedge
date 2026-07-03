@@ -213,6 +213,8 @@ function writeFakeMoonshineProvider(path: string): void {
       'if (command.includes(".lean")) {',
       '  emit({ type: "metacog_verdict", verdict: "reflect", reason: "Lean formal work requires an explicit verification target before finalizing", risk: "formal_claim", requested_action: "Lean formal admission", formal_target: "Gnosis/MoonshineMetacogProcess.lean", verification_command: "lake build Gnosis.MoonshineMetacogProcess" });',
       '  emit({ type: "assistant_delta", content: "lean pact reflection ok" });',
+      '  emit({ type: "tool_request", workspace_path: process.cwd(), tool_name: "lean_build", command: "lake build Gnosis.MoonshineMetacogProcess", path: process.cwd(), risk: "formal_claim", requested_action: "Lean formal admission", formal_target: "Gnosis/MoonshineMetacogProcess.lean", verification_command: "lake build Gnosis.MoonshineMetacogProcess" });',
+      '  emit({ type: "tool_result", workspace_path: process.cwd(), tool_name: "lean_build", command: "lake build Gnosis.MoonshineMetacogProcess", path: process.cwd(), status: "passed", exit_code: 0, duration_ms: 1, risk: "formal_claim", requested_action: "Lean formal admission", formal_target: "Gnosis/MoonshineMetacogProcess.lean", verification_command: "lake build Gnosis.MoonshineMetacogProcess", content: "Build completed successfully." });',
       '  emit({ type: "final", content: "lean pact reflection ok", formal_target: "Gnosis/MoonshineMetacogProcess.lean", verification_command: "lake build Gnosis.MoonshineMetacogProcess" });',
       '  process.exit(0);',
       '}',
@@ -622,6 +624,20 @@ describe('Zedge slash commands end to end', () => {
     expect(payload.metacog[0]?.verification_command).toBe(
       'lake build Gnosis.MoonshineMetacogProcess'
     );
+    expect(
+      payload.events.some(
+        (event) =>
+          event.type === 'tool_result' &&
+          event.tool_name === 'lean_build' &&
+          event.status === 'passed'
+      )
+    ).toBe(true);
+    const finalIndex = payload.events.findIndex((event) => event.type === 'final');
+    const verifierIndex = payload.events.findIndex(
+      (event) => event.type === 'tool_result'
+    );
+    expect(verifierIndex).toBeGreaterThanOrEqual(0);
+    expect(finalIndex).toBeGreaterThan(verifierIndex);
   }, 20_000);
 
   test('moonshine agent verify route emits Lean verifier tool events', async () => {
