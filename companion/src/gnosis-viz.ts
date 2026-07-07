@@ -22,6 +22,7 @@ function buildVisualizationHtml(filePath: string): string {
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="description" content="Interactive Gnosis topology graph visualization with live companion updates." />
   <title>Gnosis Topology — ${escapeHtml(filePath || 'Visualization')}</title>
   <script type="importmap">
   {

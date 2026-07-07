@@ -203,7 +203,9 @@ function getZedgeProviderConfig(
   return zedge;
 }
 
-function getZedgeDefaultModel(settings: Record<string, unknown>): string | null {
+function getZedgeDefaultModel(
+  settings: Record<string, unknown>
+): string | null {
   const agent = settings.agent;
   if (!isRecord(agent)) {
     return null;
@@ -221,9 +223,7 @@ function getZedgeDefaultModel(settings: Record<string, unknown>): string | null 
   return typeof defaultModel.model === 'string' ? defaultModel.model : null;
 }
 
-function getZedgeAvailableModelNames(
-  zedge: ZedModelProviderConfig
-): string[] {
+function getZedgeAvailableModelNames(zedge: ZedModelProviderConfig): string[] {
   if (!Array.isArray(zedge.available_models)) {
     return [];
   }
@@ -284,7 +284,7 @@ function updateZedgeAgentDefaultModel(
     settings.agent = agent;
   }
 
-  let defaultModel = agent.default_model;
+  const defaultModel = agent.default_model;
   if (!isRecord(defaultModel)) {
     agent.default_model = {
       provider: 'Zedge',

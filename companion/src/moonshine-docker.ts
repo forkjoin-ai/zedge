@@ -108,18 +108,20 @@ const OPENAI_COMPAT_CWD = join(
 const TSX_CLI =
   process.env.ZEDGE_TSX_CLI ??
   [
-    join(REPO_ROOT, 'node_modules/.pnpm/tsx@4.21.0/node_modules/tsx/dist/cli.mjs'),
+    join(
+      REPO_ROOT,
+      'node_modules/.pnpm/tsx@4.21.0/node_modules/tsx/dist/cli.mjs'
+    ),
     join(REPO_ROOT, 'node_modules/tsx/dist/cli.mjs'),
   ].find((candidate) => existsSync(candidate));
 
-const MOONSHINE_URL = process.env.ZEDGE_MOONSHINE_URL ?? 'http://127.0.0.1:8080';
+const MOONSHINE_URL =
+  process.env.ZEDGE_MOONSHINE_URL ?? 'http://127.0.0.1:8080';
 const DOCKER_COMPOSE_BUILD_ENABLED =
   process.env.ZEDGE_MOONSHINE_DOCKER_BUILD === '1' ||
   process.env.ZEDGE_MOONSHINE_DOCKER_BUILD === 'true';
 const GNOSIS_NUM_THREADS =
-  process.env.ZEDGE_GNOSIS_NUM_THREADS ??
-  process.env.GNOSIS_NUM_THREADS ??
-  '8';
+  process.env.ZEDGE_GNOSIS_NUM_THREADS ?? process.env.GNOSIS_NUM_THREADS ?? '8';
 const FAT_STATION_EMBED_PROBE_MAX_MS = Number(
   process.env.ZEDGE_FAT_STATION_EMBED_PROBE_MAX_MS ?? 8_000
 );
@@ -254,7 +256,12 @@ const LOCAL_MOONSHINE_MODELS: Record<string, LocalMoonshineModelSpec> = {
   // Fast local default: ~392 MB knot + GGUF tokenizer in ~/.edgework/models/.
   'qwen2.5-0.5b-instruct': {
     modelName: 'qwen2.5-0.5b-instruct',
-    knotPath: join(homedir(), '.edgework', 'models', 'qwen2.5-0.5b-instruct.knot'),
+    knotPath: join(
+      homedir(),
+      '.edgework',
+      'models',
+      'qwen2.5-0.5b-instruct.knot'
+    ),
     tokenizerGgufPath: join(
       homedir(),
       '.edgework',
@@ -395,13 +402,7 @@ function readKnotMetadata(knotPath: string): KnotMetadata | null {
     }
 
     const metadataBuffer = Buffer.alloc(metadataLength);
-    const metadataBytes = readSync(
-      fd,
-      metadataBuffer,
-      0,
-      metadataLength,
-      10
-    );
+    const metadataBytes = readSync(fd, metadataBuffer, 0, metadataLength, 10);
     if (metadataBytes < metadataLength) return null;
 
     const parsed = JSON.parse(metadataBuffer.toString('utf8')) as unknown;
@@ -569,7 +570,9 @@ function resolveMoonshineLayerRange(
   return defaultRange ?? `0..${metadataLayerCount ?? DEFAULT_KNOT_LAYER_COUNT}`;
 }
 
-function resolveMoonshineRknotPath(spec?: LocalMoonshineModelSpec): string | undefined {
+function resolveMoonshineRknotPath(
+  spec?: LocalMoonshineModelSpec
+): string | undefined {
   const configuredPath = process.env.ZEDGE_MOONSHINE_RKNOT?.trim();
   if (configuredPath) return configuredPath;
   if (spec?.rknotPath && existsSync(spec.rknotPath)) {
@@ -592,7 +595,11 @@ function resolveTokenizerGgufPath(
   }
 
   const knotBaseName = basename(knotPath, '.knot');
-  const adjacentGgufPath = join(dirname(knotPath), 'gguf', `${knotBaseName}.gguf`);
+  const adjacentGgufPath = join(
+    dirname(knotPath),
+    'gguf',
+    `${knotBaseName}.gguf`
+  );
   return existsSync(adjacentGgufPath) ? adjacentGgufPath : undefined;
 }
 
@@ -650,7 +657,10 @@ async function probe(): Promise<boolean> {
   }
 }
 
-function numericField(body: Record<string, unknown>, key: string): number | undefined {
+function numericField(
+  body: Record<string, unknown>,
+  key: string
+): number | undefined {
   const value = body[key];
   if (typeof value === 'number' && Number.isFinite(value)) return value;
   if (typeof value === 'string') {
@@ -666,10 +676,14 @@ function runtimeMismatchReason(
 ): string | undefined {
   if (!actual) return 'OpenAI shim health did not return a runtime fingerprint';
   if (actual.hiddenDim !== expected.hiddenDim) {
-    return `hidden_dim ${actual.hiddenDim ?? 'missing'} != ${expected.hiddenDim}`;
+    return `hidden_dim ${actual.hiddenDim ?? 'missing'} != ${
+      expected.hiddenDim
+    }`;
   }
   if (actual.vocabSize !== expected.vocabSize) {
-    return `vocab_size ${actual.vocabSize ?? 'missing'} != ${expected.vocabSize}`;
+    return `vocab_size ${actual.vocabSize ?? 'missing'} != ${
+      expected.vocabSize
+    }`;
   }
   if (
     normalizeLayerRange(String(actual.layers ?? '')) !==
@@ -725,15 +739,16 @@ async function probeExpectedModel(
     }
 
     const body = (await resp.json()) as unknown;
-    const models = isRecord(body) && Array.isArray(body['data'])
-      ? body['data']
-          .map((entry) =>
-            isRecord(entry) && typeof entry['id'] === 'string'
-              ? entry['id']
-              : null
-          )
-          .filter((entry): entry is string => entry !== null)
-      : [];
+    const models =
+      isRecord(body) && Array.isArray(body['data'])
+        ? body['data']
+            .map((entry) =>
+              isRecord(entry) && typeof entry['id'] === 'string'
+                ? entry['id']
+                : null
+            )
+            .filter((entry): entry is string => entry !== null)
+        : [];
     const modelMatches = models.includes(modelName);
     const mismatchReason = expectedRuntime
       ? runtimeMismatchReason(health, expectedRuntime)
@@ -815,7 +830,9 @@ async function probeFatStationRuntime(
         : undefined;
     return {
       healthy: body['status'] === 'ok',
-      matches: normalizeLayerRange(String(layers ?? '')) === normalizeLayerRange(layerRange),
+      matches:
+        normalizeLayerRange(String(layers ?? '')) ===
+        normalizeLayerRange(layerRange),
       status: typeof body['status'] === 'string' ? body['status'] : undefined,
       layers,
       hiddenDim: numericField(body, 'hidden_dim'),
@@ -1112,10 +1129,14 @@ function stopLocalListener(url: string, label: string): boolean {
 
   if (pids.length > 0) {
     try {
-      const stillListening = execFileSync('lsof', [`-tiTCP:${port}`, '-sTCP:LISTEN'], {
-        encoding: 'utf8',
-        stdio: ['ignore', 'pipe', 'ignore'],
-      });
+      const stillListening = execFileSync(
+        'lsof',
+        [`-tiTCP:${port}`, '-sTCP:LISTEN'],
+        {
+          encoding: 'utf8',
+          stdio: ['ignore', 'pipe', 'ignore'],
+        }
+      );
       const stubborn = stillListening
         .split(/\s+/)
         .map((pid) => Number.parseInt(pid, 10))
@@ -1312,7 +1333,10 @@ export async function repairMoonshineStack(): Promise<MoonshineRepairResult> {
   if (!ready) {
     return {
       ok: false,
-      steps: [...steps, 'ensureMoonshineRunning completed but runtime not ready'],
+      steps: [
+        ...steps,
+        'ensureMoonshineRunning completed but runtime not ready',
+      ],
       startupModel: config.modelName,
       error: 'moonshine runtime not ready after repair',
     };
@@ -1346,9 +1370,13 @@ async function startLocalMoonshine(
     return false;
   }
 
-  const { modelName, layerRange, tokenizerGgufPath, tokenizerJsonPath } = config;
+  const { modelName, layerRange, tokenizerGgufPath, tokenizerJsonPath } =
+    config;
 
-  let fatStationRuntime = await ensureFatStationResponsive(config, layerRange);
+  const fatStationRuntime = await ensureFatStationResponsive(
+    config,
+    layerRange
+  );
   if (!fatStationRuntime.healthy || !fatStationRuntime.matches) {
     console.warn(
       `[moonshine] local fat-station is not ready for ${layerRange}: ` +
@@ -1414,13 +1442,14 @@ async function startLocalMoonshine(
       // Single-window prefill can wedge under concurrent Zed requests.
       MOONSHINE_PREFILL_WINDOWS: '0',
       ...(isLokiEroticaModel(modelName) ? { THOTH_LIQUID_MEMORY: '0' } : {}),
-      ...(isLokiEroticaModel(modelName) ? { MOONSHINE_SKYMESH_CACHE: '0' } : {}),
+      ...(isLokiEroticaModel(modelName)
+        ? { MOONSHINE_SKYMESH_CACHE: '0' }
+        : {}),
       ...(isLokiEroticaModel(modelName)
         ? { MOONSHINE_DISABLE_NATIVE_GENERATE: '1' }
         : {}),
       TERMINAL_PROSODY: 'off',
-      MOONSHINE_MEMO_ENABLED:
-        process.env.ZEDGE_MOONSHINE_MEMO_ENABLED ?? '0',
+      MOONSHINE_MEMO_ENABLED: process.env.ZEDGE_MOONSHINE_MEMO_ENABLED ?? '0',
       MOONSHINE_MEMO_TAU_SQUARED:
         process.env.ZEDGE_MOONSHINE_MEMO_TAU_SQUARED ?? '0',
       MOONSHINE_MEMO_MAX_ENTRIES:
@@ -1501,7 +1530,8 @@ export async function getMoonshineStartupDiagnostics(): Promise<MoonshineStartup
     composeFile: COMPOSE_FILE,
     startupModel: config.modelName,
     knotPath: config.knotPath,
-    knotPresentLocally: !isHttpUrl(config.knotPath) && existsSync(config.knotPath),
+    knotPresentLocally:
+      !isHttpUrl(config.knotPath) && existsSync(config.knotPath),
     embedProbeEnabled: shouldRunFatStationEmbedProbe(),
     inferenceBusy: moonshineInferenceBusy(),
   };
@@ -1514,7 +1544,9 @@ async function startDockerMoonshine(
     return false;
   }
   if (!existsSync(COMPOSE_FILE)) {
-    console.warn(`[moonshine] compose file not found: ${COMPOSE_FILE} — set ZEDGE_MOONSHINE_COMPOSE_FILE to override`);
+    console.warn(
+      `[moonshine] compose file not found: ${COMPOSE_FILE} — set ZEDGE_MOONSHINE_COMPOSE_FILE to override`
+    );
     return false;
   }
   if (config.rknotPath && !existsSync(RKNOT_COMPOSE_FILE)) {
@@ -1563,7 +1595,11 @@ async function startDockerMoonshine(
       proc.on('error', reject);
     });
   } catch (error: unknown) {
-    console.warn(`[moonshine] docker startup failed: ${error instanceof Error ? error.message : String(error)}`);
+    console.warn(
+      `[moonshine] docker startup failed: ${
+        error instanceof Error ? error.message : String(error)
+      }`
+    );
     return false;
   }
 
@@ -1601,10 +1637,12 @@ async function ensureMoonshineRunningInner(): Promise<void> {
       ? fatStationRuntime
       : undefined
   );
-  if (probeResult.healthy &&
+  if (
+    probeResult.healthy &&
     probeResult.matches &&
     fatStationRuntime.healthy &&
-    fatStationRuntime.matches) {
+    fatStationRuntime.matches
+  ) {
     console.log('[moonshine] OpenAI-compatible endpoint already running');
     return;
   }
@@ -1619,8 +1657,8 @@ async function ensureMoonshineRunningInner(): Promise<void> {
     const reason = !probeResult.modelMatches
       ? `expected ${startupConfig.modelName}`
       : probeResult.mismatchReason
-        ? `runtime mismatch (${probeResult.mismatchReason})`
-        : `fat-station is not ready for ${startupConfig.layerRange}`;
+      ? `runtime mismatch (${probeResult.mismatchReason})`
+      : `fat-station is not ready for ${startupConfig.layerRange}`;
     console.warn(
       `[moonshine] existing OpenAI-compatible endpoint exposes ` +
         `${probeResult.models.join(', ') || 'no models'}, ${reason}; ` +
@@ -1637,7 +1675,9 @@ async function ensureMoonshineRunningInner(): Promise<void> {
   if (ready) {
     console.log('[moonshine] Ready');
   } else {
-    console.warn('[moonshine] Did not become healthy within timeout — inference will fail until container is up');
+    console.warn(
+      '[moonshine] Did not become healthy within timeout — inference will fail until container is up'
+    );
   }
 }
 

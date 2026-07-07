@@ -36,11 +36,7 @@ import { getOwnedCompanionActivity } from './companion-activity.ts';
 import { fimCache, fimCacheKey, speculativePrefetch } from './fim-cache.ts';
 import { joinPool, leavePool, getPoolStatus } from './compute-node.ts';
 import { getRecentFeedback, recordFeedback } from './feedback-log.ts';
-import {
-  getCompanionPort,
-  getZedgeConfig,
-  saveZedgeConfig,
-} from './config.ts';
+import { getCompanionPort, getZedgeConfig, saveZedgeConfig } from './config.ts';
 import {
   getKnownZedgeModel,
   isFallbackSelectableModel,
@@ -147,7 +143,7 @@ function numberSearchParam(
   name: string,
   fallback: number,
   min: number,
-  max: number,
+  max: number
 ): number {
   const raw = Number(url.searchParams.get(name));
   if (!Number.isFinite(raw)) return fallback;
@@ -543,7 +539,9 @@ interface EmbeddingRequestBody {
 function parseAgenticHeader(value: string | null): boolean | null {
   if (!value) return null;
   const normalized = value.trim().toLowerCase();
-  if (['1', 'true', 'on', 'yes', 'tools', 'auto', 'agentic'].includes(normalized)) {
+  if (
+    ['1', 'true', 'on', 'yes', 'tools', 'auto', 'agentic'].includes(normalized)
+  ) {
     return true;
   }
   if (['0', 'false', 'off', 'no', 'none', 'bare'].includes(normalized)) {
@@ -552,7 +550,10 @@ function parseAgenticHeader(value: string | null): boolean | null {
   return null;
 }
 
-function shouldUseCompanionAgentic(req: Request, body: ChatRequestBody): boolean {
+function shouldUseCompanionAgentic(
+  req: Request,
+  body: ChatRequestBody
+): boolean {
   const headerDecision = parseAgenticHeader(req.headers.get('x-zedge-agentic'));
   if (headerDecision !== null) return headerDecision;
 
@@ -584,7 +585,9 @@ function summarizeChatRouting(
   ].join(' ');
 }
 
-function chatCompletionToSseStream(data: Record<string, unknown>): ReadableStream<Uint8Array> {
+function chatCompletionToSseStream(
+  data: Record<string, unknown>
+): ReadableStream<Uint8Array> {
   const encoder = new TextEncoder();
   const choice = (
     data as {
@@ -594,7 +597,9 @@ function chatCompletionToSseStream(data: Record<string, unknown>): ReadableStrea
   const content = choice?.message?.content ?? '';
   const id = typeof data.id === 'string' ? data.id : `chatcmpl-${Date.now()}`;
   const created =
-    typeof data.created === 'number' ? data.created : Math.floor(Date.now() / 1000);
+    typeof data.created === 'number'
+      ? data.created
+      : Math.floor(Date.now() / 1000);
   const model = typeof data.model === 'string' ? data.model : 'zedge-agentic';
   const tokens = content.match(/\s*\S+/g) ?? [content];
 
@@ -618,8 +623,8 @@ function chatCompletionToSseStream(data: Record<string, unknown>): ReadableStrea
                   finish_reason: null,
                 },
               ],
-            })}\n\n`,
-          ),
+            })}\n\n`
+          )
         );
       }
       controller.enqueue(
@@ -631,8 +636,8 @@ function chatCompletionToSseStream(data: Record<string, unknown>): ReadableStrea
             model,
             choices: [{ index: 0, delta: {}, finish_reason: 'stop' }],
             usage: data.usage,
-          })}\n\n`,
-        ),
+          })}\n\n`
+        )
       );
       controller.enqueue(encoder.encode('data: [DONE]\n\n'));
       controller.close();
@@ -743,7 +748,9 @@ async function getModelSelectionPayload(): Promise<Record<string, unknown>> {
     getModels(),
     getLiveMoonshineRuntimeHealth().catch(() => null),
   ]);
-  const availableModels = models.map((model) => normalizeZedgeModelId(model.id));
+  const availableModels = models.map((model) =>
+    normalizeZedgeModelId(model.id)
+  );
   const selectedModel = normalizeZedgeModelId(getZedgeConfig().preferredModel);
   const runningModel = runtimeHealth
     ? selectedMoonshineModelFromHealth(runtimeHealth)
@@ -754,16 +761,15 @@ async function getModelSelectionPayload(): Promise<Record<string, unknown>> {
   const effectiveModel = envOverride ?? selectedModel;
   const knownModel = getKnownZedgeModel(effectiveModel);
   const modelIsLive = availableModels.includes(effectiveModel);
-  const modelKnown =
-    modelIsLive || !!knownModel;
+  const modelKnown = modelIsLive || !!knownModel;
   const modelSelectable =
     modelIsLive || isFallbackSelectableModel(effectiveModel);
   const mismatchReason =
     runningModel && runningModel !== effectiveModel
       ? `running ${runningModel}, selected ${effectiveModel}`
       : !runningModel
-        ? 'Moonshine runtime model is unavailable'
-        : null;
+      ? 'Moonshine runtime model is unavailable'
+      : null;
 
   return {
     selectedModel,
@@ -773,8 +779,9 @@ async function getModelSelectionPayload(): Promise<Record<string, unknown>> {
     availableModels,
     modelKnown,
     modelSelectable,
-    unavailableReason:
-      modelSelectable ? null : knownModel?.unavailableReason ?? null,
+    unavailableReason: modelSelectable
+      ? null
+      : knownModel?.unavailableReason ?? null,
     needsReconcile: mismatchReason !== null,
     mismatchReason,
   };
@@ -786,8 +793,13 @@ async function selectZedgeModel(
   timeoutMs: number
 ): Promise<{ status: number; payload: Record<string, unknown> }> {
   const model = normalizeZedgeModelId(rawModel);
-  const models = await getModels({ refresh: true, refreshTimeoutMs: timeoutMs });
-  const availableModels = models.map((entry) => normalizeZedgeModelId(entry.id));
+  const models = await getModels({
+    refresh: true,
+    refreshTimeoutMs: timeoutMs,
+  });
+  const availableModels = models.map((entry) =>
+    normalizeZedgeModelId(entry.id)
+  );
   const modelIsLive = availableModels.includes(model);
   const knownModel = getKnownZedgeModel(model);
   if (!modelIsLive && !knownModel) {
@@ -820,7 +832,9 @@ async function selectZedgeModel(
   const { syncZedgeProviderAccess } = await import('./zed-provider-sync.ts');
   const syncResult = syncZedgeProviderAccess(
     getCompanionPort(),
-    availableModels.includes(model) ? availableModels : [model, ...availableModels],
+    availableModels.includes(model)
+      ? availableModels
+      : [model, ...availableModels],
     model
   );
   const envOverride = process.env.ZEDGE_MOONSHINE_MODEL
@@ -834,8 +848,7 @@ async function selectZedgeModel(
       payload: {
         ok: false,
         reason: 'env_override',
-        error:
-          `ZEDGE_MOONSHINE_MODEL=${envOverride} overrides persisted model ${model}`,
+        error: `ZEDGE_MOONSHINE_MODEL=${envOverride} overrides persisted model ${model}`,
         model,
         savedConfig,
         sync: syncResult,
@@ -854,11 +867,13 @@ async function selectZedgeModel(
     }
   }
 
-  const selftest = await runInferenceSelfTest(model).catch((error: unknown) => ({
-    ok: false,
-    error: error instanceof Error ? error.message : String(error),
-    model,
-  }));
+  const selftest = await runInferenceSelfTest(model).catch(
+    (error: unknown) => ({
+      ok: false,
+      error: error instanceof Error ? error.message : String(error),
+      model,
+    })
+  );
   const selection = await getModelSelectionPayload();
 
   return {
@@ -1100,15 +1115,16 @@ function resolveMoonshineAgentBinary(workspacePath: string): string {
   const configured = process.env.ZEDGE_MOONSHINE_BIN?.trim();
   if (configured) return configured;
 
-  const roots = [
-    process.env.AEON_ROOT,
-    workspacePath,
-    process.cwd(),
-  ].filter((value): value is string => Boolean(value));
+  const roots = [process.env.AEON_ROOT, workspacePath, process.cwd()].filter(
+    (value): value is string => Boolean(value)
+  );
 
   for (const root of roots) {
     const candidates = [
-      resolvePath(root, 'open-source/gnosis/moonshine/target/release/moonshine'),
+      resolvePath(
+        root,
+        'open-source/gnosis/moonshine/target/release/moonshine'
+      ),
       resolvePath(root, 'open-source/gnosis/moonshine/target/debug/moonshine'),
       resolvePath(root, '../gnosis/moonshine/target/release/moonshine'),
       resolvePath(root, '../gnosis/moonshine/target/debug/moonshine'),
@@ -1182,20 +1198,28 @@ async function runMoonshineAgentCommand(
       clearTimeout(timer);
       const parsed = parseMoonshineJsonl(stdout);
       const events = parsed.events;
-      const metacog = events.filter((event) => event.type === 'metacog_verdict');
+      const metacog = events.filter(
+        (event) => event.type === 'metacog_verdict'
+      );
       const finalEvent = [...events]
         .reverse()
-        .find((event) => event.type === 'final' && typeof event.content === 'string');
+        .find(
+          (event) => event.type === 'final' && typeof event.content === 'string'
+        );
       const errorEvent = [...events]
         .reverse()
-        .find((event) => event.type === 'error' && typeof event.error === 'string');
+        .find(
+          (event) => event.type === 'error' && typeof event.error === 'string'
+        );
       const eventError =
         typeof errorEvent?.error === 'string' ? errorEvent.error : undefined;
       const error =
         parsed.error ??
         result.error ??
         eventError ??
-        (result.ok ? undefined : `moonshine exited with code ${result.code ?? 'signal'}`);
+        (result.ok
+          ? undefined
+          : `moonshine exited with code ${result.code ?? 'signal'}`);
       resolve({
         ok: result.ok && !parsed.error && !eventError,
         command: `${moonshine} -c ${shellQuoteForMoonshine(commandLine)}`,
@@ -1209,7 +1233,10 @@ async function runMoonshineAgentCommand(
 
     const timer = setTimeout(() => {
       child.kill('SIGTERM');
-      finish({ ok: false, error: `moonshine agent timed out after ${timeoutMs}ms` });
+      finish({
+        ok: false,
+        error: `moonshine agent timed out after ${timeoutMs}ms`,
+      });
     }, timeoutMs);
 
     child.stdout.on('data', (chunk: Buffer) => {
@@ -1241,7 +1268,9 @@ async function runMoonshineAgentExec(
     };
   }
 
-  const workspacePath = resolvePath(body.workspace_path || getWorkspaceRootPath());
+  const workspacePath = resolvePath(
+    body.workspace_path || getWorkspaceRootPath()
+  );
   const permissionMode = body.permission_mode ?? 'ask';
   const envProvider = process.env.ZEDGE_MOONSHINE_AGENT_PROVIDER?.trim();
   const provider = body.provider ?? (envProvider || 'sovereign');
@@ -1256,7 +1285,10 @@ async function runMoonshineAgentExec(
     '--',
     shellQuoteForMoonshine(prompt),
   ].join(' ');
-  const timeoutMs = Math.max(1_000, Math.min(body.timeout_ms ?? 120_000, 600_000));
+  const timeoutMs = Math.max(
+    1_000,
+    Math.min(body.timeout_ms ?? 120_000, 600_000)
+  );
   return runMoonshineAgentCommand(workspacePath, commandLine, timeoutMs);
 }
 
@@ -1274,7 +1306,9 @@ async function runMoonshineAgentVerify(
     };
   }
 
-  const workspacePath = resolvePath(body.workspace_path || getWorkspaceRootPath());
+  const workspacePath = resolvePath(
+    body.workspace_path || getWorkspaceRootPath()
+  );
   const commandLine = [
     'agent verify --json',
     '--cwd',
@@ -1282,7 +1316,10 @@ async function runMoonshineAgentVerify(
     '--formal-target',
     shellQuoteForMoonshine(formalTarget),
   ].join(' ');
-  const timeoutMs = Math.max(1_000, Math.min(body.timeout_ms ?? 120_000, 600_000));
+  const timeoutMs = Math.max(
+    1_000,
+    Math.min(body.timeout_ms ?? 120_000, 600_000)
+  );
   return runMoonshineAgentCommand(workspacePath, commandLine, timeoutMs);
 }
 
@@ -1290,7 +1327,9 @@ async function runMoonshineAgentProviders(
   workspacePath: string,
   timeoutMs = 30_000
 ): Promise<MoonshineAgentRunResult> {
-  const resolvedWorkspace = resolvePath(workspacePath || getWorkspaceRootPath());
+  const resolvedWorkspace = resolvePath(
+    workspacePath || getWorkspaceRootPath()
+  );
   const boundedTimeoutMs = Math.max(1_000, Math.min(timeoutMs, 120_000));
   return runMoonshineAgentCommand(
     resolvedWorkspace,
@@ -1304,7 +1343,9 @@ async function runMoonshineAgentRuns(
   limit = 20,
   timeoutMs = 30_000
 ): Promise<MoonshineAgentRunResult> {
-  const resolvedWorkspace = resolvePath(workspacePath || getWorkspaceRootPath());
+  const resolvedWorkspace = resolvePath(
+    workspacePath || getWorkspaceRootPath()
+  );
   const boundedLimit = Math.max(1, Math.min(Math.trunc(limit), 200));
   const boundedTimeoutMs = Math.max(1_000, Math.min(timeoutMs, 120_000));
   const commandLine = [
@@ -1314,7 +1355,11 @@ async function runMoonshineAgentRuns(
     '--limit',
     String(boundedLimit),
   ].join(' ');
-  return runMoonshineAgentCommand(resolvedWorkspace, commandLine, boundedTimeoutMs);
+  return runMoonshineAgentCommand(
+    resolvedWorkspace,
+    commandLine,
+    boundedTimeoutMs
+  );
 }
 
 async function runMoonshineAgentReplay(
@@ -1322,7 +1367,9 @@ async function runMoonshineAgentReplay(
   runId: string,
   timeoutMs = 30_000
 ): Promise<MoonshineAgentRunResult> {
-  const resolvedWorkspace = resolvePath(workspacePath || getWorkspaceRootPath());
+  const resolvedWorkspace = resolvePath(
+    workspacePath || getWorkspaceRootPath()
+  );
   const trimmedRunId = runId.trim();
   if (!trimmedRunId) {
     return {
@@ -1341,7 +1388,11 @@ async function runMoonshineAgentReplay(
     '--run-id',
     shellQuoteForMoonshine(trimmedRunId),
   ].join(' ');
-  return runMoonshineAgentCommand(resolvedWorkspace, commandLine, boundedTimeoutMs);
+  return runMoonshineAgentCommand(
+    resolvedWorkspace,
+    commandLine,
+    boundedTimeoutMs
+  );
 }
 
 async function runMoonshineAgentTools(
@@ -1350,7 +1401,9 @@ async function runMoonshineAgentTools(
   limit = 50,
   timeoutMs = 30_000
 ): Promise<MoonshineAgentRunResult> {
-  const resolvedWorkspace = resolvePath(workspacePath || getWorkspaceRootPath());
+  const resolvedWorkspace = resolvePath(
+    workspacePath || getWorkspaceRootPath()
+  );
   const boundedLimit = Math.max(1, Math.min(Math.trunc(limit), 500));
   const boundedTimeoutMs = Math.max(1_000, Math.min(timeoutMs, 120_000));
   const commandLine = [
@@ -1361,7 +1414,11 @@ async function runMoonshineAgentTools(
     String(boundedLimit),
     ...(runId ? ['--run-id', shellQuoteForMoonshine(runId)] : []),
   ].join(' ');
-  return runMoonshineAgentCommand(resolvedWorkspace, commandLine, boundedTimeoutMs);
+  return runMoonshineAgentCommand(
+    resolvedWorkspace,
+    commandLine,
+    boundedTimeoutMs
+  );
 }
 
 async function runMoonshineAgentToolDecision(
@@ -1371,7 +1428,9 @@ async function runMoonshineAgentToolDecision(
   decision: 'approve' | 'deny',
   timeoutMs = 30_000
 ): Promise<MoonshineAgentRunResult> {
-  const resolvedWorkspace = resolvePath(workspacePath || getWorkspaceRootPath());
+  const resolvedWorkspace = resolvePath(
+    workspacePath || getWorkspaceRootPath()
+  );
   const boundedTimeoutMs = Math.max(1_000, Math.min(timeoutMs, 120_000));
   const commandLine = [
     `agent ${decision === 'approve' ? 'approve-tool' : 'deny-tool'} --json`,
@@ -1382,7 +1441,11 @@ async function runMoonshineAgentToolDecision(
     '--intent-id',
     shellQuoteForMoonshine(intentId),
   ].join(' ');
-  return runMoonshineAgentCommand(resolvedWorkspace, commandLine, boundedTimeoutMs);
+  return runMoonshineAgentCommand(
+    resolvedWorkspace,
+    commandLine,
+    boundedTimeoutMs
+  );
 }
 
 async function runMoonshineAgentResume(
@@ -1391,7 +1454,9 @@ async function runMoonshineAgentResume(
   decision: 'approve' | 'deny',
   timeoutMs = 120_000
 ): Promise<MoonshineAgentRunResult> {
-  const resolvedWorkspace = resolvePath(workspacePath || getWorkspaceRootPath());
+  const resolvedWorkspace = resolvePath(
+    workspacePath || getWorkspaceRootPath()
+  );
   const commandLine = [
     'agent resume --json',
     '--cwd',
@@ -1402,10 +1467,16 @@ async function runMoonshineAgentResume(
     decision,
   ].join(' ');
   const boundedTimeoutMs = Math.max(1_000, Math.min(timeoutMs, 600_000));
-  return runMoonshineAgentCommand(resolvedWorkspace, commandLine, boundedTimeoutMs);
+  return runMoonshineAgentCommand(
+    resolvedWorkspace,
+    commandLine,
+    boundedTimeoutMs
+  );
 }
 
-function listMoonshineAgentPermissions(workspacePath: string): MoonshinePermissionRecord[] {
+function listMoonshineAgentPermissions(
+  workspacePath: string
+): MoonshinePermissionRecord[] {
   const dir = resolvePath(workspacePath, '.moonshine', 'agent-permissions');
   if (!existsSync(dir)) return [];
   return readdirSync(dir)
@@ -1413,7 +1484,9 @@ function listMoonshineAgentPermissions(workspacePath: string): MoonshinePermissi
     .flatMap((entry) => {
       const filePath = resolvePath(dir, entry);
       try {
-        const record = JSON.parse(readFileSync(filePath, 'utf8')) as Partial<MoonshinePermissionRecord>;
+        const record = JSON.parse(
+          readFileSync(filePath, 'utf8')
+        ) as Partial<MoonshinePermissionRecord>;
         if (
           typeof record.run_id !== 'string' ||
           typeof record.workspace_path !== 'string' ||
@@ -1544,10 +1617,12 @@ export async function handleWebRequest(req: Request): Promise<Response> {
     const config = getZedgeConfig();
     const pool = getPoolStatus();
     const mesh = getMeshStatus();
-    const moonshineModels = (await getModels({
-      refresh: true,
-      refreshTimeoutMs: 500,
-    })).map((model) => model.id);
+    const moonshineModels = (
+      await getModels({
+        refresh: true,
+        refreshTimeoutMs: 500,
+      })
+    ).map((model) => model.id);
     return jsonResponse({
       status: 'ok',
       version: '2.0.0',
@@ -2280,7 +2355,7 @@ export async function handleWebRequest(req: Request): Promise<Response> {
     return jsonResponse(
       await preflightLocalTools({
         forceRefresh: url.searchParams.get('refresh') === '1',
-      }),
+      })
     );
   }
 
@@ -2297,10 +2372,10 @@ export async function handleWebRequest(req: Request): Promise<Response> {
         replace?: string;
       };
       const filePath = body.file_path ?? body.filePath;
-      if (!filePath) return jsonResponse({ error: 'file_path is required' }, 400);
-      const { createRangeEditPreview, createSearchReplacePreview } = await import(
-        './edit-preview.ts'
-      );
+      if (!filePath)
+        return jsonResponse({ error: 'file_path is required' }, 400);
+      const { createRangeEditPreview, createSearchReplacePreview } =
+        await import('./edit-preview.ts');
       const preview =
         body.search !== undefined
           ? createSearchReplacePreview({
@@ -2317,29 +2392,39 @@ export async function handleWebRequest(req: Request): Promise<Response> {
                 filePath,
                 range: body.range as EditRange,
                 replacementText:
-                  body.replacementText ?? body.replacement_text ?? body.replacement ?? '',
+                  body.replacementText ??
+                  body.replacement_text ??
+                  body.replacement ??
+                  '',
               });
             })();
       return jsonResponse(preview);
     } catch (err) {
       return jsonResponse(
         { error: err instanceof Error ? err.message : String(err) },
-        400,
+        400
       );
     }
   }
 
   if (path === '/edit/range/apply' && req.method === 'POST') {
     try {
-      const body = (await req.json()) as { previewId?: string; preview_id?: string };
+      const body = (await req.json()) as {
+        previewId?: string;
+        preview_id?: string;
+      };
       const previewId = body.previewId ?? body.preview_id;
-      if (!previewId) return jsonResponse({ error: 'previewId is required' }, 400);
+      if (!previewId)
+        return jsonResponse({ error: 'previewId is required' }, 400);
       const { applyEditPreview } = await import('./edit-preview.ts');
-      return jsonResponse({ applied: true, preview: applyEditPreview(previewId) });
+      return jsonResponse({
+        applied: true,
+        preview: applyEditPreview(previewId),
+      });
     } catch (err) {
       return jsonResponse(
         { error: err instanceof Error ? err.message : String(err) },
-        409,
+        409
       );
     }
   }
@@ -2420,12 +2505,13 @@ export async function handleWebRequest(req: Request): Promise<Response> {
     const rawKinds = Array.isArray(body.kinds)
       ? body.kinds
       : typeof body.scope === 'string'
-        ? body.scope.split(',')
-        : ['amplituhedron'];
+      ? body.scope.split(',')
+      : ['amplituhedron'];
     const kinds = rawKinds
       .map((kind) => String(kind).trim().toLowerCase())
-      .filter((kind): kind is 'amplituhedron' | 'memo' =>
-        kind === 'amplituhedron' || kind === 'memo'
+      .filter(
+        (kind): kind is 'amplituhedron' | 'memo' =>
+          kind === 'amplituhedron' || kind === 'memo'
       );
     if (kinds.length === 0) {
       return jsonResponse(
@@ -2481,7 +2567,9 @@ export async function handleWebRequest(req: Request): Promise<Response> {
     }
 
     const controller = new AbortController();
-    req.signal.addEventListener('abort', () => controller.abort(), { once: true });
+    req.signal.addEventListener('abort', () => controller.abort(), {
+      once: true,
+    });
     void prewarmMoonshinePrompt(request, controller.signal).catch((error) => {
       appendInferenceDiagnostic(
         `[moonshine:typeahead] prewarm failed: ${
@@ -2587,7 +2675,9 @@ export async function handleWebRequest(req: Request): Promise<Response> {
     );
 
     const useCompanionAgentic = shouldUseCompanionAgentic(req, body);
-    appendInferenceDiagnostic(summarizeChatRouting(req, body, useCompanionAgentic));
+    appendInferenceDiagnostic(
+      summarizeChatRouting(req, body, useCompanionAgentic)
+    );
 
     if (useCompanionAgentic) {
       try {
@@ -2597,7 +2687,9 @@ export async function handleWebRequest(req: Request): Promise<Response> {
         const result = await runCompanionAgenticChatCompletion(request, body);
         if (request.stream) {
           return new Response(
-            chatCompletionToSseStream(result as unknown as Record<string, unknown>),
+            chatCompletionToSseStream(
+              result as unknown as Record<string, unknown>
+            ),
             {
               headers: {
                 'Content-Type': 'text/event-stream',
@@ -2783,16 +2875,18 @@ export async function handleWebRequest(req: Request): Promise<Response> {
     // Warn loudly when inference fails and falls back to echo
     if (result.tier === 'echo') {
       console.error(
-        '\n🚨 ZEDGE INFERENCE FAILURE 🚨',
+        '\nZEDGE INFERENCE FAILURE',
         `\n  Model: ${request.model}`,
         `\n  All inference tiers failed. Using echo fallback only.`,
-        `\n  Attempts: ${result.attempts.map((a) => `${a.tier}(${a.status})`).join(', ')}`,
+        `\n  Attempts: ${result.attempts
+          .map((a) => `${a.tier}(${a.status})`)
+          .join(', ')}`,
         `\n  User will see only their message echoed back.`,
         '\n'
       );
     } else if (result.tier === 'wasm') {
       console.warn(
-        '\n⚠️  ZEDGE FALLBACK TO LOCAL WASM',
+        '\nZEDGE FALLBACK TO LOCAL WASM',
         `\n  Model: ${request.model} → ${resolvedModel}`,
         `\n  Inference tiers failed, using local WASM (lower quality)`,
         '\n'
@@ -2999,7 +3093,11 @@ export async function handleWebRequest(req: Request): Promise<Response> {
       1_000,
       Math.min(Math.trunc(body.timeout_ms ?? 30_000), 120_000)
     );
-    const result = await selectZedgeModel(model, body.reconcile !== false, timeoutMs);
+    const result = await selectZedgeModel(
+      model,
+      body.reconcile !== false,
+      timeoutMs
+    );
     return jsonResponse(result.payload, result.status);
   }
 
@@ -3050,9 +3148,8 @@ export async function handleWebRequest(req: Request): Promise<Response> {
   }
 
   if (path === '/skymesh/status' && req.method === 'GET') {
-    const { isSkymeshTeleportEnabled, SKYMESH_DEFAULT_CACHE_URL } = await import(
-      './skymesh-cache.ts'
-    );
+    const { isSkymeshTeleportEnabled, SKYMESH_DEFAULT_CACHE_URL } =
+      await import('./skymesh-cache.ts');
     return jsonResponse({
       enabled: isSkymeshTeleportEnabled(),
       cacheUrl:
@@ -3072,8 +3169,10 @@ export async function handleWebRequest(req: Request): Promise<Response> {
     const { startSkymeshBridge } = await import('./skymesh-bridge.ts');
     const cfg = getZedgeConfig();
     startSkymeshBridge({
-      meshId: process.env.ZEDGE_SKYMESH_MESH_ID ?? cfg.skyMeshId ?? 'skymesh-global',
-      bridgeToken: process.env.ZEDGE_SKYMESH_BRIDGE_TOKEN ?? cfg.skyMeshBridgeToken,
+      meshId:
+        process.env.ZEDGE_SKYMESH_MESH_ID ?? cfg.skyMeshId ?? 'skymesh-global',
+      bridgeToken:
+        process.env.ZEDGE_SKYMESH_BRIDGE_TOKEN ?? cfg.skyMeshBridgeToken,
       models: cfg.computePool.allowedModels,
       port: cfg.port,
     });
@@ -3082,7 +3181,9 @@ export async function handleWebRequest(req: Request): Promise<Response> {
   }
 
   if (path === '/skymesh/bridge/stop' && req.method === 'POST') {
-    const { stopSkymeshBridge, getSkymeshBridgeStatus } = await import('./skymesh-bridge.ts');
+    const { stopSkymeshBridge, getSkymeshBridgeStatus } = await import(
+      './skymesh-bridge.ts'
+    );
     stopSkymeshBridge();
     return jsonResponse(getSkymeshBridgeStatus());
   }
@@ -3102,7 +3203,8 @@ export async function handleWebRequest(req: Request): Promise<Response> {
         prompt,
         model,
         process.env.ZEDGE_FAT_STATION_URL ?? 'http://127.0.0.1:8000',
-        process.env.ZEDGE_SKYMESH_CACHE_URL ?? 'https://www-edgework-app.edgework.ai'
+        process.env.ZEDGE_SKYMESH_CACHE_URL ??
+          'https://www-edgework-app.edgework.ai'
       );
       return jsonResponse(result ?? { hit: false });
     }
@@ -3278,7 +3380,13 @@ export async function handleWebRequest(req: Request): Promise<Response> {
     const workspacePath = resolvePath(
       url.searchParams.get('workspace_path') || getWorkspaceRootPath()
     );
-    const timeoutMs = numberSearchParam(url, 'timeout_ms', 30_000, 1_000, 120_000);
+    const timeoutMs = numberSearchParam(
+      url,
+      'timeout_ms',
+      30_000,
+      1_000,
+      120_000
+    );
     const result = await runMoonshineAgentProviders(workspacePath, timeoutMs);
     return jsonResponse(result, result.ok ? 200 : 400);
   }
@@ -3288,18 +3396,36 @@ export async function handleWebRequest(req: Request): Promise<Response> {
       url.searchParams.get('workspace_path') || getWorkspaceRootPath()
     );
     const limit = numberSearchParam(url, 'limit', 20, 1, 200);
-    const timeoutMs = numberSearchParam(url, 'timeout_ms', 30_000, 1_000, 120_000);
+    const timeoutMs = numberSearchParam(
+      url,
+      'timeout_ms',
+      30_000,
+      1_000,
+      120_000
+    );
     const result = await runMoonshineAgentRuns(workspacePath, limit, timeoutMs);
     return jsonResponse(result, result.ok ? 200 : 400);
   }
 
   if (path.startsWith('/moonshine/agent/runs/') && req.method === 'GET') {
-    const runId = decodeURIComponent(path.slice('/moonshine/agent/runs/'.length));
+    const runId = decodeURIComponent(
+      path.slice('/moonshine/agent/runs/'.length)
+    );
     const workspacePath = resolvePath(
       url.searchParams.get('workspace_path') || getWorkspaceRootPath()
     );
-    const timeoutMs = numberSearchParam(url, 'timeout_ms', 30_000, 1_000, 120_000);
-    const result = await runMoonshineAgentReplay(workspacePath, runId, timeoutMs);
+    const timeoutMs = numberSearchParam(
+      url,
+      'timeout_ms',
+      30_000,
+      1_000,
+      120_000
+    );
+    const result = await runMoonshineAgentReplay(
+      workspacePath,
+      runId,
+      timeoutMs
+    );
     return jsonResponse(result, result.ok ? 200 : 400);
   }
 
@@ -3309,8 +3435,19 @@ export async function handleWebRequest(req: Request): Promise<Response> {
     );
     const runId = url.searchParams.get('run_id');
     const limit = numberSearchParam(url, 'limit', 50, 1, 500);
-    const timeoutMs = numberSearchParam(url, 'timeout_ms', 30_000, 1_000, 120_000);
-    const result = await runMoonshineAgentTools(workspacePath, runId, limit, timeoutMs);
+    const timeoutMs = numberSearchParam(
+      url,
+      'timeout_ms',
+      30_000,
+      1_000,
+      120_000
+    );
+    const result = await runMoonshineAgentTools(
+      workspacePath,
+      runId,
+      limit,
+      timeoutMs
+    );
     return jsonResponse(result, result.ok ? 200 : 400);
   }
 
@@ -3326,8 +3463,11 @@ export async function handleWebRequest(req: Request): Promise<Response> {
     if (!runId || !intentId) {
       return jsonResponse({ error: 'run_id and intent_id are required' }, 400);
     }
-    const body = (await req.json()) as MoonshineAgentPermissionDecisionRequestBody;
-    const workspacePath = resolvePath(body.workspace_path || getWorkspaceRootPath());
+    const body =
+      (await req.json()) as MoonshineAgentPermissionDecisionRequestBody;
+    const workspacePath = resolvePath(
+      body.workspace_path || getWorkspaceRootPath()
+    );
     const result = await runMoonshineAgentToolDecision(
       workspacePath,
       decodeURIComponent(runId),
@@ -3359,8 +3499,11 @@ export async function handleWebRequest(req: Request): Promise<Response> {
     if (!runId) {
       return jsonResponse({ error: 'run_id is required' }, 400);
     }
-    const body = (await req.json()) as MoonshineAgentPermissionDecisionRequestBody;
-    const workspacePath = resolvePath(body.workspace_path || getWorkspaceRootPath());
+    const body =
+      (await req.json()) as MoonshineAgentPermissionDecisionRequestBody;
+    const workspacePath = resolvePath(
+      body.workspace_path || getWorkspaceRootPath()
+    );
     const result = await runMoonshineAgentResume(
       workspacePath,
       runId,
@@ -3825,9 +3968,8 @@ export async function handleWebRequest(req: Request): Promise<Response> {
       }
     })();
     return jsonResponse({
-      status: readiness.ready && moonshine.fatStationBinary
-        ? 'ready'
-        : 'degraded',
+      status:
+        readiness.ready && moonshine.fatStationBinary ? 'ready' : 'degraded',
       companion: { port: getCompanionPort(), ready: readiness.ready },
       moonshine,
       disk,
@@ -5651,8 +5793,13 @@ export async function startServer(): Promise<void> {
     const { startSkymeshBridge } = await import('./skymesh-bridge.ts');
     const cfg = getZedgeConfig();
     startSkymeshBridge({
-      meshId: process.env.ZEDGE_SKYMESH_MESH_ID ?? cfg.skyMeshId ?? cfg.teamId ?? 'skymesh-global',
-      bridgeToken: process.env.ZEDGE_SKYMESH_BRIDGE_TOKEN ?? cfg.skyMeshBridgeToken,
+      meshId:
+        process.env.ZEDGE_SKYMESH_MESH_ID ??
+        cfg.skyMeshId ??
+        cfg.teamId ??
+        'skymesh-global',
+      bridgeToken:
+        process.env.ZEDGE_SKYMESH_BRIDGE_TOKEN ?? cfg.skyMeshBridgeToken,
       models: cfg.computePool.allowedModels,
       port: cfg.port,
     });

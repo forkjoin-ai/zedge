@@ -11,9 +11,16 @@
 
 import { getZedgeConfig } from './config.ts';
 import { infer } from './inference-bridge.ts';
-import { getMeshStatus, meshInfer, type MeshInferenceResult } from './p2p-mesh.ts';
+import {
+  getMeshStatus,
+  meshInfer,
+  type MeshInferenceResult,
+} from './p2p-mesh.ts';
 import { trySkymeshCacheTeleport, warmSkymeshCache } from './skymesh-cache.ts';
-import { MOONSHINE_BASE_URL, FAT_STATION_BASE_URL } from './inference-bridge.ts';
+import {
+  MOONSHINE_BASE_URL,
+  FAT_STATION_BASE_URL,
+} from './inference-bridge.ts';
 
 // --- Constants ---
 
@@ -51,7 +58,7 @@ interface PendingPreflight {
 
 // --- Bridge State ---
 
-let bridgeState: {
+const bridgeState: {
   ws: WebSocket | null;
   running: boolean;
   meshId: string;
@@ -240,7 +247,7 @@ function scheduleReconnect(): void {
 
   const delay = Math.min(
     bridgeState.reconnectDelay * Math.pow(1.5, bridgeState.reconnectCount),
-    BRIDGE_RECONNECT_MAX_MS,
+    BRIDGE_RECONNECT_MAX_MS
   );
 
   bridgeState.reconnectTimeout = setTimeout(() => {
@@ -261,7 +268,7 @@ function sendHello(): void {
       role: 'bridge',
       models: bridgeState.models,
       admitted: bridgeState.admitted,
-    }),
+    })
   );
 }
 
@@ -330,7 +337,9 @@ function handleWebSocketMessage(msg: Record<string, unknown>): void {
 
 // --- Preflight PARIS Probe ---
 
-async function handlePreflightMessage(msg: Record<string, unknown>): Promise<void> {
+async function handlePreflightMessage(
+  msg: Record<string, unknown>
+): Promise<void> {
   const id = msg.id as string | undefined;
   if (!id) {
     return;
@@ -359,7 +368,9 @@ async function handlePreflightMessage(msg: Record<string, unknown>): Promise<voi
     }
 
     const tokenizerBody = (await tokenRes.json()) as Record<string, unknown>;
-    const tokens = Array.isArray(tokenizerBody.tokens) ? tokenizerBody.tokens : null;
+    const tokens = Array.isArray(tokenizerBody.tokens)
+      ? tokenizerBody.tokens
+      : null;
 
     if (!tokens || tokens.length === 0) {
       sendMessage({
@@ -437,7 +448,9 @@ async function handlePreflightMessage(msg: Record<string, unknown>): Promise<voi
 async function handleQueryMessage(msg: Record<string, unknown>): Promise<void> {
   const id = msg.id as string | undefined;
   const prompt = msg.prompt as string | undefined;
-  const tokens = Array.isArray(msg.tokens) ? (msg.tokens as number[]) : undefined;
+  const tokens = Array.isArray(msg.tokens)
+    ? (msg.tokens as number[])
+    : undefined;
   const maxTokens = msg.maxTokens as number | undefined;
 
   if (!id || !prompt) {
@@ -449,7 +462,12 @@ async function handleQueryMessage(msg: Record<string, unknown>): Promise<void> {
 
   try {
     // Try cache hit first
-    const cached = await trySkymeshCacheTeleport(prompt, 'default', FAT_STATION_BASE_URL, 'https://www-edgework-app.edgework.ai');
+    const cached = await trySkymeshCacheTeleport(
+      prompt,
+      'default',
+      FAT_STATION_BASE_URL,
+      'https://www-edgework-app.edgework.ai'
+    );
     if (cached) {
       reply = cached;
       sendMessage({
@@ -519,7 +537,10 @@ async function handleQueryMessage(msg: Record<string, unknown>): Promise<void> {
     });
 
     if (inferResult.response.ok) {
-      const body = (await inferResult.response.json()) as Record<string, unknown>;
+      const body = (await inferResult.response.json()) as Record<
+        string,
+        unknown
+      >;
       const choices = Array.isArray(body.choices) ? body.choices : [];
       const choice = choices[0] as Record<string, unknown> | undefined;
       const message = choice?.message as Record<string, unknown> | undefined;
