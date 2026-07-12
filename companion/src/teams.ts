@@ -87,6 +87,9 @@ if (currentTeam) {
 
 // --- Public API ---
 
+/**
+ * Creates the Team.
+ */
 export function createTeam(name: string): { team: Team; inviteDeepLink: string } {
   // Slugify name to teamId
   const teamId = name
@@ -119,6 +122,9 @@ export function createTeam(name: string): { team: Team; inviteDeepLink: string }
   return { team, inviteDeepLink };
 }
 
+/**
+ * Handles the zedge join Team workflow.
+ */
 export function joinTeam(teamId: string, token?: string): Team {
   // Optional: verify token
   if (token) {
@@ -148,6 +154,9 @@ export function joinTeam(teamId: string, token?: string): Team {
   return team;
 }
 
+/**
+ * Handles the zedge leave Team workflow.
+ */
 export function leaveTeam(): void {
   currentTeam = null;
   crdt = null;
@@ -155,6 +164,9 @@ export function leaveTeam(): void {
   stopSkymeshBridge();
 }
 
+/**
+ * Handles the zedge invite To Team workflow.
+ */
 export function inviteToTeam(): { deepLink: string; token: string; expiresAt: number } {
   if (!currentTeam) {
     throw new Error('Not in a team');
@@ -166,6 +178,9 @@ export function inviteToTeam(): { deepLink: string; token: string; expiresAt: nu
   return { deepLink, token, expiresAt };
 }
 
+/**
+ * Handles the zedge get Team Status workflow.
+ */
 export function getTeamStatus(): TeamStatus {
   const bridgeStatus = getSkymeshBridgeStatus();
 
@@ -182,10 +197,16 @@ export function getTeamStatus(): TeamStatus {
   };
 }
 
+/**
+ * Handles the zedge get Current Team workflow.
+ */
 export function getCurrentTeam(): Team | null {
   return currentTeam;
 }
 
+/**
+ * Handles the zedge get Current Workspace Id workflow.
+ */
 export function getCurrentWorkspaceId(): string {
   return crdt?.workspaceId ?? 'default';
 }
@@ -215,6 +236,9 @@ function parseDeepLink(
 
 // --- Singleton Getter ---
 
+/**
+ * Handles the zedge get Teams Manager workflow.
+ */
 export function getTeamsManager() {
   return {
     createTeam,

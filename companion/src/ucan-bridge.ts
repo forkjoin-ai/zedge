@@ -105,6 +105,9 @@ function capacitorCap(
   };
 }
 
+/**
+ * Handles the zedge get Agent Capabilities workflow.
+ */
 export function getAgentCapabilities(
   workspaceId: string,
   mode: AgentMode
@@ -139,6 +142,9 @@ export function getAgentCapabilities(
   }
 }
 
+/**
+ * Handles the zedge get File Capabilities workflow.
+ */
 export function getFileCapabilities(
   workspaceId: string,
   path: string,
@@ -154,6 +160,9 @@ export function getFileCapabilities(
   return caps;
 }
 
+/**
+ * Handles the zedge get Directory Capabilities workflow.
+ */
 export function getDirectoryCapabilities(
   workspaceId: string,
   dirPath: string,

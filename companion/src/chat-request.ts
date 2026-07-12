@@ -1,3 +1,6 @@
+/**
+ * Handles the zedge should Stream Chat Completion workflow.
+ */
 export function shouldStreamChatCompletion(
   stream: boolean | undefined,
   acceptHeader: string | null

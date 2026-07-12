@@ -124,6 +124,9 @@ function formatTinyLlamaInstPrompt(messages: LocalChatMessage[]): string {
   return prompt.trim();
 }
 
+/**
+ * Formats the Local Chat Prompt.
+ */
 export function formatLocalChatPrompt(
   messages: LocalChatMessage[],
   modelName: string

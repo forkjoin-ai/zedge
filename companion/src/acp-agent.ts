@@ -508,6 +508,9 @@ export interface ParsedCodeBlock {
   content: string;
 }
 
+/**
+ * Parses the Code Blocks.
+ */
 export function parseCodeBlocks(responseContent: string): ParsedCodeBlock[] {
   const blocks: ParsedCodeBlock[] = [];
   // Match fenced code blocks with optional language and file path annotation

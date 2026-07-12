@@ -403,6 +403,9 @@ export function streamCachedAnswer(
 
 // --- Cache Writing ---
 
+/**
+ * Handles the zedge warm Skymesh Cache workflow.
+ */
 export async function warmSkymeshCache(opts: {
   queryTokens: number[];
   answerText: string;
@@ -438,6 +441,9 @@ export async function warmSkymeshCache(opts: {
   }
 }
 
+/**
+ * Handles the zedge prewarm Skymesh Teleport workflow.
+ */
 export async function prewarmSkymeshTeleport(
   prompt: string,
   model: string,

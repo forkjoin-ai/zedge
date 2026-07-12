@@ -147,6 +147,9 @@ async function resolveCompanionAvailableModels(): Promise<ZedAvailableModel[]> {
   return buildZedAvailableModels(companionIds, { includeLocalWasm: true });
 }
 
+/**
+ * Runs the zedge command-line workflow.
+ */
 export async function main(): Promise<void> {
   const config = getConfig();
   const apiKey = getApiKey();

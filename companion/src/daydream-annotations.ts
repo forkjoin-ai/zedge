@@ -57,12 +57,18 @@ export interface DaydreamAnnotationEvent {
 
 const sseClients = new Set<ReadableStreamDefaultController>();
 
+/**
+ * Handles the zedge add Annotation Client workflow.
+ */
 export function addAnnotationClient(
   controller: ReadableStreamDefaultController
 ): void {
   sseClients.add(controller);
 }
 
+/**
+ * Handles the zedge remove Annotation Client workflow.
+ */
 export function removeAnnotationClient(
   controller: ReadableStreamDefaultController
 ): void {

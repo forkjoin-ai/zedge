@@ -36,6 +36,9 @@ const ZEDGE_MODEL_ALIASES = new Map<string, string>([
   ['codestral', CODESTRAL_ZEDGE_MODEL_ID],
 ]);
 
+/**
+ * Handles the zedge normalize Zedge Model Id workflow.
+ */
 export function normalizeZedgeModelId(modelId: string): string {
   const normalized = modelId.trim();
   return ZEDGE_MODEL_ALIASES.get(normalized) ?? normalized;

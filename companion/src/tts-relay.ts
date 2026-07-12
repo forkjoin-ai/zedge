@@ -71,6 +71,9 @@ function configuredAudioMode(env: NodeJS.ProcessEnv): string | undefined {
   return env['ZEDGE_TTS_AUDIO_MODE'] ?? env['MOONSHINE_TTS_AUDIO_MODE'];
 }
 
+/**
+ * Parses the Tts Audio Mode.
+ */
 export function parseTtsAudioMode(value: string | undefined): TtsAudioMode {
   const normalized = value?.trim().toLowerCase();
   if (!normalized) return 'auto';
@@ -79,6 +82,9 @@ export function parseTtsAudioMode(value: string | undefined): TtsAudioMode {
     : 'auto';
 }
 
+/**
+ * Resolves the Tts Audio Mode.
+ */
 export function resolveTtsAudioMode(
   value: string | undefined,
   options: ResolveModeOptions = {},
@@ -97,6 +103,9 @@ export function resolveTtsAudioMode(
   return 'file';
 }
 
+/**
+ * Returns whether is Tts Relay Enabled is true.
+ */
 export function isTtsRelayEnabled(env: NodeJS.ProcessEnv = process.env): boolean {
   const value = (env['ZEDGE_TTS_ENABLED'] ?? env['MOONSHINE_TTS_ENABLED'])
     ?.trim()
@@ -104,6 +113,9 @@ export function isTtsRelayEnabled(env: NodeJS.ProcessEnv = process.env): boolean
   return !value || !DISABLED_TTS_VALUES.has(value);
 }
 
+/**
+ * Handles the zedge get Tts Relay Status workflow.
+ */
 export function getTtsRelayStatus(
   options: TtsSpeakOptions = {},
 ): TtsRelayStatus {
@@ -119,6 +131,9 @@ export function getTtsRelayStatus(
   };
 }
 
+/**
+ * Handles the zedge list Tts Voices workflow.
+ */
 export function listTtsVoices(): { defaultVoice: string; voices: TtsVoice[] } {
   return {
     defaultVoice: 'local',
@@ -126,6 +141,9 @@ export function listTtsVoices(): { defaultVoice: string; voices: TtsVoice[] } {
   };
 }
 
+/**
+ * Handles the zedge configure Tts Relay workflow.
+ */
 export function configureTtsRelay(
   body: unknown,
   options: TtsSpeakOptions = {},
@@ -245,6 +263,9 @@ function errorResult(
   };
 }
 
+/**
+ * Handles the Tts Speak Request request flow.
+ */
 export async function handleTtsSpeakRequest(
   body: unknown,
   options: TtsSpeakOptions = {},
@@ -364,6 +385,9 @@ export async function handleTtsSpeakRequest(
   };
 }
 
+/**
+ * Handles the Tts Preview Request request flow.
+ */
 export function handleTtsPreviewRequest(
   body: unknown,
   options: TtsSpeakOptions = {},

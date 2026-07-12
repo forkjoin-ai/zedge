@@ -130,6 +130,9 @@ async function startMoonshineAndSyncZedSettings(): Promise<void> {
   }
 }
 
+/**
+ * Runs the zedge command-line workflow.
+ */
 export async function main(): Promise<void> {
   console.log('[zedge] Starting companion sidecar v2.0...');
 

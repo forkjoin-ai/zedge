@@ -63,6 +63,9 @@ function loadFeedbackRing(): FeedbackEntry[] {
 
 const feedbackRing = loadFeedbackRing();
 
+/**
+ * Handles the zedge record Feedback workflow.
+ */
 export function recordFeedback(input: {
   rating: number;
   model?: string;
@@ -99,6 +102,9 @@ export function recordFeedback(input: {
   return entry;
 }
 
+/**
+ * Handles the zedge get Recent Feedback workflow.
+ */
 export function getRecentFeedback(count = 20): FeedbackEntry[] {
   const limit = Math.max(1, Math.min(count, FEEDBACK_RING_MAX));
   return feedbackRing.slice(-limit);

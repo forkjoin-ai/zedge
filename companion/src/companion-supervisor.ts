@@ -338,6 +338,9 @@ async function runSupervisorEntry(): Promise<number> {
   return 0;
 }
 
+/**
+ * Runs the zedge command-line workflow.
+ */
 export async function main(): Promise<number> {
   return await runSupervisorEntry();
 }

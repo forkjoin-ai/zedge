@@ -58,12 +58,18 @@ const EXTENSION_TO_LANGUAGE: Record<string, string> = {
   '.gnarly': 'gnarly',
 };
 
+/**
+ * Handles the zedge detect Babelfish Language For Uri workflow.
+ */
 export function detectBabelfishLanguageForUri(uri: string): string | null {
   const filePath = uri.startsWith('file://') ? uri.slice(7) : uri;
   const extension = path.extname(filePath).toLowerCase();
   return EXTENSION_TO_LANGUAGE[extension] ?? null;
 }
 
+/**
+ * Builds the Babelfish Hint Diagnostic.
+ */
 export function buildBabelfishHintDiagnostic(
   uri: string
 ): LspDiagnosticHint | null {
@@ -83,6 +89,9 @@ export function buildBabelfishHintDiagnostic(
   };
 }
 
+/**
+ * Builds the Babelfish Code Actions.
+ */
 export function buildBabelfishCodeActions(
   uri: string,
   defaultHumanLanguage: string

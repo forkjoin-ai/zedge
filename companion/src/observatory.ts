@@ -81,6 +81,9 @@ export interface ObservatorySnapshot {
 const observatoryClients = new Set<ReadableStreamDefaultController>();
 const startTime = Date.now();
 
+/**
+ * Handles the zedge broadcast Observatory Event workflow.
+ */
 export function broadcastObservatoryEvent(
   event: Record<string, unknown>
 ): void {
@@ -95,6 +98,9 @@ export function broadcastObservatoryEvent(
   }
 }
 
+/**
+ * Creates the Observatory Stream.
+ */
 export function createObservatoryStream(): ReadableStream {
   const encoder = new TextEncoder();
   let heartbeat: ReturnType<typeof setInterval> | null = null;

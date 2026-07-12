@@ -39,6 +39,9 @@ const PROBE_TIMEOUT_MS = 5_000;
 let probeInterval: ReturnType<typeof setInterval> | null = null;
 let probeAbortController: AbortController | null = null;
 
+/**
+ * Returns whether is Reachable Coordinator Health Status is true.
+ */
 export function isReachableCoordinatorHealthStatus(status: number): boolean {
   // 2xx = healthy. 403 = service is alive but requires IAM auth we don't have
   // locally -- still reachable for inference (which sends its own auth).
@@ -52,6 +55,9 @@ export interface CloudRunHealthProbeResult {
   status: number;
 }
 
+/**
+ * Handles the zedge probe Cloud Run Health workflow.
+ */
 export async function probeCloudRunHealth(
   baseUrl: string,
   timeoutMs = PROBE_TIMEOUT_MS

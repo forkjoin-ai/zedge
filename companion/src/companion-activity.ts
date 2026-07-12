@@ -123,11 +123,17 @@ export function clearStaleCompanionActivity(now = Date.now()): boolean {
   return true;
 }
 
+/**
+ * Handles the zedge read Companion Activity workflow.
+ */
 export function readCompanionActivity(): CompanionActivityRecord | null {
   clearStaleCompanionActivity();
   return readCompanionActivityRecord();
 }
 
+/**
+ * Handles the zedge get Owned Companion Activity workflow.
+ */
 export function getOwnedCompanionActivity(
   pid: number | null | undefined,
   now = Date.now()
@@ -159,6 +165,9 @@ export function isCompanionInferenceBusy(
   return activity.kind === 'moonshine-chat' || activity.kind === 'forkjoin-chat';
 }
 
+/**
+ * Handles the zedge mark Companion Activity workflow.
+ */
 export function markCompanionActivity(
   kind: CompanionActivityKind,
   busyWindowMs: number,
@@ -182,6 +191,9 @@ export function markCompanionActivity(
   return record;
 }
 
+/**
+ * Handles the zedge clear Companion Activity workflow.
+ */
 export function clearCompanionActivity(
   expectedActivityId?: string,
   expectedPid = process.pid

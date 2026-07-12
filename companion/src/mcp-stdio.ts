@@ -1603,6 +1603,9 @@ async function executeZedgeCommandTool(
   }
 }
 
+/**
+ * Handles the Initialize request flow.
+ */
 export function handleInitialize(
   params: Record<string, unknown>
 ): Record<string, unknown> {
@@ -1620,6 +1623,9 @@ export function handleInitialize(
   };
 }
 
+/**
+ * Handles the Tools List request flow.
+ */
 export async function handleToolsList(): Promise<Record<string, unknown>> {
   return {
     tools: [
@@ -2170,6 +2176,9 @@ export async function handleToolsList(): Promise<Record<string, unknown>> {
   };
 }
 
+/**
+ * Handles the Prompts List request flow.
+ */
 export async function handlePromptsList(): Promise<Record<string, unknown>> {
   return {
     prompts: ZEDGE_PROMPTS.map((prompt) => ({
@@ -2180,6 +2189,9 @@ export async function handlePromptsList(): Promise<Record<string, unknown>> {
   };
 }
 
+/**
+ * Handles the Prompt Get request flow.
+ */
 export async function handlePromptGet(
   params: Record<string, unknown>
 ): Promise<Record<string, unknown>> {
@@ -2212,6 +2224,9 @@ export async function handlePromptGet(
   };
 }
 
+/**
+ * Dispatches a zedge tool call to its registered handler.
+ */
 export async function handleToolCall(
   params: Record<string, unknown>
 ): Promise<Record<string, unknown>> {
@@ -3097,6 +3112,9 @@ async function handleResourcesList(): Promise<Record<string, unknown>> {
 
 // ---------- MCP message dispatch ----------
 
+/**
+ * Handles the zedge dispatch workflow.
+ */
 export async function dispatch(
   msg: JsonRpcRequest
 ): Promise<JsonRpcResponse | null> {
@@ -3204,6 +3222,9 @@ function send(response: JsonRpcResponse): void {
   process.stdout.write(header + json);
 }
 
+/**
+ * Runs the zedge command-line workflow.
+ */
 export async function main(): Promise<void> {
   configureStdioLogging();
   console.log('Starting MCP stdio bridge...');

@@ -141,6 +141,9 @@ function storePreview(preview: EditPreview): EditPreview {
   return preview;
 }
 
+/**
+ * Creates the Range Edit Preview.
+ */
 export function createRangeEditPreview(input: {
   filePath: string;
   range: EditRange;
@@ -169,6 +172,9 @@ export function createRangeEditPreview(input: {
   });
 }
 
+/**
+ * Creates the Search Replace Preview.
+ */
 export function createSearchReplacePreview(input: {
   filePath: string;
   search: string;
@@ -187,6 +193,9 @@ export function createSearchReplacePreview(input: {
   });
 }
 
+/**
+ * Handles the zedge apply Edit Preview workflow.
+ */
 export function applyEditPreview(previewId: string): EditPreview {
   const preview = previews.get(previewId);
   if (!preview) {

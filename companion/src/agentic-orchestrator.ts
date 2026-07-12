@@ -358,6 +358,9 @@ async function runMoonshineBareGeneration(
   };
 }
 
+/**
+ * Handles the zedge run Companion Agentic Chat Completion workflow.
+ */
 export async function runCompanionAgenticChatCompletion(
   request: ChatCompletionRequest,
   bodyOptions: AgenticBodyOptions = {},

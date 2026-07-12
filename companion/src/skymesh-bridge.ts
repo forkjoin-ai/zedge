@@ -92,6 +92,9 @@ const bridgeState: {
 
 // --- Public API ---
 
+/**
+ * Handles the zedge start Skymesh Bridge workflow.
+ */
 export function startSkymeshBridge(opts: {
   meshId?: string;
   bridgeToken?: string;
@@ -116,6 +119,9 @@ export function startSkymeshBridge(opts: {
   connectBridge(opts.bridgeToken);
 }
 
+/**
+ * Handles the zedge stop Skymesh Bridge workflow.
+ */
 export function stopSkymeshBridge(): void {
   if (!bridgeState.running) {
     return;
@@ -152,6 +158,9 @@ export function stopSkymeshBridge(): void {
   bridgeState.pendingPreflights.clear();
 }
 
+/**
+ * Handles the zedge get Skymesh Bridge Status workflow.
+ */
 export function getSkymeshBridgeStatus(): SkymeshBridgeStatus {
   return {
     running: bridgeState.running,
@@ -165,11 +174,17 @@ export function getSkymeshBridgeStatus(): SkymeshBridgeStatus {
   };
 }
 
+/**
+ * Handles the zedge notify Skymesh Bridge Of Lan Peer workflow.
+ */
 export function notifySkymeshBridgeOfLanPeer(): void {
   const status = getMeshStatus();
   bridgeState.lanPeers = status.peers.length;
 }
 
+/**
+ * Handles the zedge remove Lan Peer From Bridge workflow.
+ */
 export function removeLanPeerFromBridge(): void {
   const status = getMeshStatus();
   bridgeState.lanPeers = status.peers.length;

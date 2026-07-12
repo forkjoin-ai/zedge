@@ -186,6 +186,9 @@ async function createSessionId(): Promise<string> {
   });
 }
 
+/**
+ * Handles the zedge list Workspace Gnot Files workflow.
+ */
 export function listWorkspaceGnotFiles(): WorkspaceGnotFile[] {
   const files: WorkspaceGnotFile[] = [];
   walkForGnotFiles(getWorkspaceRoot(), files);
@@ -199,6 +202,9 @@ export function listWorkspaceGnotFiles(): WorkspaceGnotFile[] {
   return files;
 }
 
+/**
+ * Handles the Gnot Command request flow.
+ */
 export async function handleGnotCommand(
   request: GnotCommandRequest
 ): Promise<Record<string, unknown>> {

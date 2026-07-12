@@ -11,6 +11,9 @@ interface ZedModelProviderConfig {
 
 export const LOCAL_ZED_PLACEHOLDER_API_KEY = 'zedge-local';
 
+/**
+ * Handles the zedge get Local Zedge Api Url workflow.
+ */
 export function getLocalZedgeApiUrl(port = 7331): string {
   return `http://127.0.0.1:${port}/v1`;
 }

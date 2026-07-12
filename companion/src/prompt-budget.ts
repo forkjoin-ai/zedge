@@ -63,10 +63,16 @@ function hasHeavySystemContext(messages: PromptBudgetMessage[]): boolean {
   );
 }
 
+/**
+ * Handles the zedge get Compact System Prompt workflow.
+ */
 export function getCompactSystemPrompt(): string {
   return COMPACT_SYSTEM_PROMPT;
 }
 
+/**
+ * Handles the zedge should Skip Heavy System Context workflow.
+ */
 export function shouldSkipHeavySystemContext(modelId: string): boolean {
   if (modelId.startsWith('wasm-local')) {
     return true;
@@ -79,6 +85,9 @@ export function shouldSkipHeavySystemContext(modelId: string): boolean {
   );
 }
 
+/**
+ * Handles the zedge apply System Prompt Budget workflow.
+ */
 export function applySystemPromptBudget(
   modelId: string,
   messages: PromptBudgetMessage[]

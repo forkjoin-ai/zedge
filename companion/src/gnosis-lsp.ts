@@ -294,16 +294,25 @@ function defaultSend(message: unknown): void {
 
 let sendHandler: SendHandler = defaultSend;
 
+/**
+ * Handles the zedge set Gnosis Lsp Send For Test workflow.
+ */
 export function setGnosisLspSendForTest(handler: SendHandler | null): void {
   sendHandler = handler ?? defaultSend;
 }
 
+/**
+ * Handles the zedge set Gnosis Lsp Config Getter For Test workflow.
+ */
 export function setGnosisLspConfigGetterForTest(
   handler: (() => ZedgeConfig) | null
 ): void {
   configGetter = handler ?? getZedgeConfig;
 }
 
+/**
+ * Handles the zedge reset Gnosis Lsp State For Test workflow.
+ */
 export function resetGnosisLspStateForTest(): void {
   documents.clear();
   transportBuffer = Buffer.alloc(0);
@@ -640,6 +649,9 @@ function isJsonRpcRequest(value: unknown): value is JsonRpcRequest {
   return object.jsonrpc === '2.0' && typeof object.method === 'string';
 }
 
+/**
+ * Handles the zedge dispatch Request workflow.
+ */
 export async function dispatchRequest(req: JsonRpcRequest): Promise<unknown> {
   switch (req.method) {
     case 'initialize':
@@ -940,6 +952,9 @@ export async function dispatchRequest(req: JsonRpcRequest): Promise<unknown> {
   }
 }
 
+/**
+ * Handles the Request request flow.
+ */
 export async function handleRequest(req: JsonRpcRequest): Promise<void> {
   try {
     const result = await dispatchRequest(req);
@@ -997,6 +1012,9 @@ function processTransportBuffer(): void {
   }
 }
 
+/**
+ * Handles the zedge start Gnosis Lsp Stdio Transport workflow.
+ */
 export function startGnosisLspStdioTransport(): void {
   process.stdin.on('data', (chunk: Buffer) => {
     transportBuffer = Buffer.concat([transportBuffer, chunk]);
@@ -1004,6 +1022,9 @@ export function startGnosisLspStdioTransport(): void {
   });
 }
 
+/**
+ * Runs the zedge command-line workflow.
+ */
 export function main(): void {
   startGnosisLspStdioTransport();
 }

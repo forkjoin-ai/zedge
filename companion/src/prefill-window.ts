@@ -6,10 +6,16 @@ const MOONSHINE_BASE_URL =
 export const ZEDGE_PREFILL_WINDOW_HEADER = 'X-Zedge-Prefill-Window';
 export const MOONSHINE_PREFILL_WINDOW_HEADER = 'X-Moonshine-Prefill-Window';
 
+/**
+ * Handles the zedge prefill Windows Enabled workflow.
+ */
 export function prefillWindowsEnabled(): boolean {
   return process.env.ZEDGE_PREFILL_WINDOWS !== '0';
 }
 
+/**
+ * Handles the zedge extract Prefill Window Id workflow.
+ */
 export function extractPrefillWindowId(
   headers: Headers,
   body: unknown,
@@ -26,6 +32,9 @@ export function extractPrefillWindowId(
   return undefined;
 }
 
+/**
+ * Handles the zedge request With Prefill Window workflow.
+ */
 export function requestWithPrefillWindow(
   request: ChatCompletionRequest,
   prefillWindowId: string | undefined,
@@ -33,6 +42,9 @@ export function requestWithPrefillWindow(
   return prefillWindowId ? { ...request, prefillWindowId } : request;
 }
 
+/**
+ * Handles the zedge moonshine Prefill Headers workflow.
+ */
 export function moonshinePrefillHeaders(
   prefillWindowId: string | undefined,
 ): Record<string, string> {
@@ -40,6 +52,9 @@ export function moonshinePrefillHeaders(
   return { [MOONSHINE_PREFILL_WINDOW_HEADER]: prefillWindowId };
 }
 
+/**
+ * Handles the zedge zedge Prefill Telemetry Headers workflow.
+ */
 export function zedgePrefillTelemetryHeaders(
   headers: Headers,
 ): Record<string, string> {
@@ -57,6 +72,9 @@ export function zedgePrefillTelemetryHeaders(
   return out;
 }
 
+/**
+ * Handles the Prefill Window Request request flow.
+ */
 export async function handlePrefillWindowRequest(
   path: string,
   req: Request,

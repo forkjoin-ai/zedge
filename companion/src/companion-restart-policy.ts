@@ -27,6 +27,9 @@ export interface CompanionRestartDecision {
   restartTimestamps: number[];
 }
 
+/**
+ * Handles the zedge decide Companion Restart workflow.
+ */
 export function decideCompanionRestart(
   input: CompanionRestartDecisionInput
 ): CompanionRestartDecision {

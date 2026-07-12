@@ -35,6 +35,9 @@ function isLocalMcpTool(value: unknown): value is LocalMcpTool {
   );
 }
 
+/**
+ * Handles the zedge preflight Local Tools workflow.
+ */
 export async function preflightLocalTools(
   options: { forceRefresh?: boolean } = {},
 ): Promise<LocalToolPreflight> {
@@ -68,6 +71,9 @@ export async function preflightLocalTools(
   };
 }
 
+/**
+ * Handles the zedge call Local Tool workflow.
+ */
 export async function callLocalTool(
   name: string,
   args: Record<string, unknown>,
@@ -75,6 +81,9 @@ export async function callLocalTool(
   return handleToolCall({ name, arguments: args });
 }
 
+/**
+ * Handles the Local Mcp Json Rpc request flow.
+ */
 export async function handleLocalMcpJsonRpc(
   request: JsonRpcRequest,
 ): Promise<JsonRpcResponse | null> {

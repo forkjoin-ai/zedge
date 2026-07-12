@@ -134,6 +134,9 @@ function jsonResponse(data: unknown, status = 200): Response {
   });
 }
 
+/**
+ * Handles the Babelfish Request request flow.
+ */
 export async function handleBabelfishRequest(
   req: Request
 ): Promise<Response | null> {

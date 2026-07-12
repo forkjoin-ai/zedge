@@ -105,6 +105,9 @@ function broadcastBreedingEvent(event: Record<string, unknown>): void {
   }
 }
 
+/**
+ * Creates the Breeding Stream.
+ */
 export function createBreedingStream(): ReadableStream {
   const encoder = new TextEncoder();
   let heartbeat: ReturnType<typeof setInterval> | null = null;

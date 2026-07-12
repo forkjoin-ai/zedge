@@ -510,6 +510,9 @@ async function postJsonWithin(
   }
 }
 
+/**
+ * Handles the zedge get Moonshine Cache Status workflow.
+ */
 export async function getMoonshineCacheStatus(timeoutMs = 5_000): Promise<{
   moonshine: {
     baseUrl: string;
@@ -566,6 +569,9 @@ export async function getMoonshineCacheStatus(timeoutMs = 5_000): Promise<{
   };
 }
 
+/**
+ * Handles the zedge clear Moonshine Caches workflow.
+ */
 export async function clearMoonshineCaches(args: {
   kinds: readonly MoonshineCacheKind[];
   timeoutMs?: number;
@@ -641,6 +647,9 @@ function isSlowMoonshineModel(model: string): boolean {
   return model === 'loki-erotica-8b';
 }
 
+/**
+ * Resolves the Moonshine Timeout Ms For Model.
+ */
 export function resolveMoonshineTimeoutMsForModel(model: string): number {
   return isSlowMoonshineModel(model)
     ? Math.max(MOONSHINE_TIMEOUT_MS, SLOW_MOONSHINE_MODEL_TIMEOUT_MS)
@@ -1455,6 +1464,9 @@ async function tryMoonshineInference(
   );
 }
 
+/**
+ * Handles the zedge prewarm Moonshine Prompt workflow.
+ */
 export async function prewarmMoonshinePrompt(
   request: ChatCompletionRequest,
   signal?: AbortSignal
@@ -1467,6 +1479,9 @@ export async function prewarmMoonshinePrompt(
   return await tryMoonshineInference(warmRequest, signal);
 }
 
+/**
+ * Handles the zedge prewarm Skymesh Global Cache workflow.
+ */
 export async function prewarmSkymeshGlobalCache(
   prompt: string,
   model: string,
@@ -1826,6 +1841,9 @@ export interface RacedCoordinatorOutcome {
   backgroundCleanup: Promise<void>;
 }
 
+/**
+ * Handles the zedge race Coordinator Responses workflow.
+ */
 export async function raceCoordinatorResponses({
   requestModel,
   startMs,
@@ -1973,6 +1991,9 @@ async function tryWasmFallback(
 
 let localWasmWarmupPromise: Promise<boolean> | null = null;
 
+/**
+ * Handles the zedge start Local Wasm Warmup workflow.
+ */
 export function startLocalWasmWarmup(): Promise<boolean> {
   if (localWasmWarmupPromise) {
     return localWasmWarmupPromise;
@@ -2770,6 +2791,9 @@ export function skymeshTeleportEligibility(messages: readonly ChatMessage[]): {
   return { eligible, hasSystemPrompt, hasPriorContext };
 }
 
+/**
+ * Handles the zedge infer workflow.
+ */
 export async function infer(
   request: ChatCompletionRequest
 ): Promise<TierResult> {
@@ -3161,12 +3185,18 @@ async function fetchRemoteModels(timeoutMs = 5_000): Promise<ModelInfo[]> {
   return [];
 }
 
+/**
+ * Handles the zedge get Live Moonshine Models workflow.
+ */
 export async function getLiveMoonshineModels(
   timeoutMs = 5_000
 ): Promise<ModelInfo[]> {
   return await fetchRemoteModels(timeoutMs);
 }
 
+/**
+ * Handles the zedge get Live Moonshine Runtime Health workflow.
+ */
 export async function getLiveMoonshineRuntimeHealth(
   timeoutMs = 5_000
 ): Promise<{

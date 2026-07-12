@@ -8,6 +8,9 @@ import {
 
 export const CLOUD_RUN_HEALTH_PATHS = ['/api/v1/health', '/health'] as const;
 
+/**
+ * Builds the Cloud Run Health Urls.
+ */
 export function buildCloudRunHealthUrls(baseUrl: string): string[] {
   const normalizedBaseUrl = baseUrl.replace(/\/$/, '');
   return CLOUD_RUN_HEALTH_PATHS.map((path) => `${normalizedBaseUrl}${path}`);
@@ -61,6 +64,9 @@ function resolveSAKey(): string | null {
   return null;
 }
 
+/**
+ * Handles the zedge get Cloud Run Auth Headers workflow.
+ */
 export async function getCloudRunAuthHeaders(
   cloudRunUrl: string
 ): Promise<Record<string, string>> {

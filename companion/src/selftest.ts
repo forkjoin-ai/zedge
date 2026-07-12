@@ -56,6 +56,9 @@ function getErrorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
+/**
+ * Handles the zedge collect Sse Sample workflow.
+ */
 export async function collectSseSample(
   response: Response,
   {
@@ -185,6 +188,9 @@ async function probeStream(
   }
 }
 
+/**
+ * Handles the zedge run Inference Self Test workflow.
+ */
 export async function runInferenceSelfTest(
   model: string
 ): Promise<InferenceSelfTestResult> {

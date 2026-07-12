@@ -327,10 +327,16 @@ function writeJsonFile(path: string, data: unknown): void {
   writeFileSync(path, JSON.stringify(data, null, 2), { mode: 0o600 });
 }
 
+/**
+ * Handles the zedge get Edgework Config workflow.
+ */
 export function getEdgeworkConfig(): EdgeworkConfig {
   return readJsonFile(CONFIG_FILE, DEFAULT_EDGEWORK_CONFIG);
 }
 
+/**
+ * Handles the zedge get Zedge Config workflow.
+ */
 export function getZedgeConfig(): ZedgeConfig {
   const rawFileConfig = readJsonFile<PartialZedgeConfig>(ZEDGE_CONFIG_FILE, {});
   const portOverride = parsePortOverride(process.env.ZEDGE_COMPANION_PORT);
@@ -353,6 +359,9 @@ export function getZedgeConfig(): ZedgeConfig {
   });
 }
 
+/**
+ * Handles the zedge save Zedge Config workflow.
+ */
 export function saveZedgeConfig(config: PartialZedgeConfig): ZedgeConfig {
   const current = getZedgeConfig();
   const updated = mergeZedgeConfig({
@@ -375,6 +384,9 @@ export function saveZedgeConfig(config: PartialZedgeConfig): ZedgeConfig {
   return updated;
 }
 
+/**
+ * Handles the zedge get Api Key workflow.
+ */
 export function getApiKey(): string | null {
   // Prefer env var — check both EDGEWORK_API_TOKEN and ZEDGE_API_KEY
   const envKey = process.env.EDGEWORK_API_TOKEN ?? process.env.ZEDGE_API_KEY;
@@ -387,6 +399,9 @@ export function getApiKey(): string | null {
   }
 }
 
+/**
+ * Handles the zedge get Auth Headers workflow.
+ */
 export function getAuthHeaders(): Record<string, string> {
   const apiKey = getApiKey();
   if (apiKey) {
@@ -399,10 +414,16 @@ export function getAuthHeaders(): Record<string, string> {
   return {};
 }
 
+/**
+ * Handles the zedge get Api Base Url workflow.
+ */
 export function getApiBaseUrl(): string {
   return getEdgeworkConfig().apiBaseUrl;
 }
 
+/**
+ * Handles the zedge get Companion Port workflow.
+ */
 export function getCompanionPort(): number {
   return getZedgeConfig().port;
 }

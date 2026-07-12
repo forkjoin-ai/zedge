@@ -1607,6 +1607,9 @@ async function startDockerMoonshine(
   return await waitReadyForModel(config.modelName);
 }
 
+/**
+ * Handles the zedge ensure Moonshine Running workflow.
+ */
 export async function ensureMoonshineRunning(): Promise<void> {
   if (ensureMoonshineInFlight) {
     await ensureMoonshineInFlight;
@@ -1703,6 +1706,9 @@ async function isMoonshineRuntimeReady(
   return probeResult.healthy && probeResult.matches;
 }
 
+/**
+ * Handles the zedge start Moonshine Runtime Watchdog workflow.
+ */
 export function startMoonshineRuntimeWatchdog(): void {
   if (process.env.ZEDGE_MOONSHINE_WATCHDOG === '0') return;
   if (watchdogInterval !== null) return;

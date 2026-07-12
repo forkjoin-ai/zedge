@@ -11,6 +11,9 @@ export interface TypeScriptEntrypointCommand {
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const TS_ENTRY_LAUNCHER = resolve(__dirname, '../../scripts/run-ts-entry.sh');
 
+/**
+ * Builds the Type Script Entrypoint Command.
+ */
 export function buildTypeScriptEntrypointCommand(
   entryPath: string,
   launcherPath = TS_ENTRY_LAUNCHER
@@ -22,6 +25,9 @@ export function buildTypeScriptEntrypointCommand(
   };
 }
 
+/**
+ * Resolves the Type Script Entrypoint Command.
+ */
 export function resolveTypeScriptEntrypointCommand(
   entryPath: string
 ): TypeScriptEntrypointCommand {

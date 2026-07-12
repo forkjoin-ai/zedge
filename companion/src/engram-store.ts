@@ -370,6 +370,9 @@ export class EngramStore {
 
 const stores = new Map<string, EngramStore>();
 
+/**
+ * Handles the zedge get Engram Store workflow.
+ */
 export function getEngramStore(workspacePath?: string): EngramStore {
   const path = workspacePath ?? process.cwd();
   let store = stores.get(path);

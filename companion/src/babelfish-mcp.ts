@@ -6,6 +6,9 @@ export interface McpToolDefinition {
 
 const JSON_HEADERS = { 'Content-Type': 'application/json' };
 
+/**
+ * Handles the zedge get Babelfish Mcp Tools workflow.
+ */
 export function getBabelfishMcpTools(): McpToolDefinition[] {
   return [
     {
@@ -134,6 +137,9 @@ async function postJson(
   return JSON.stringify(await response.json(), null, 2);
 }
 
+/**
+ * Handles the zedge call Babelfish Mcp Tool workflow.
+ */
 export async function callBabelfishMcpTool(
   companionBase: string,
   name: string,

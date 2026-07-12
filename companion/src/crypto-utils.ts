@@ -14,14 +14,23 @@ import {
   createDecipheriv,
 } from 'node:crypto';
 
+/**
+ * Handles the zedge sha256 workflow.
+ */
 export function sha256(data: Uint8Array | string): string {
   return createHash('sha256').update(data).digest('hex');
 }
 
+/**
+ * Handles the zedge hmac Sha256 workflow.
+ */
 export function hmacSha256(key: Uint8Array, data: Uint8Array): string {
   return createHmac('sha256', key).update(data).digest('hex');
 }
 
+/**
+ * Handles the zedge encrypt Aes256 Gcm workflow.
+ */
 export function encryptAes256Gcm(
   key: Uint8Array,
   plaintext: Uint8Array
@@ -37,6 +46,9 @@ export function encryptAes256Gcm(
   };
 }
 
+/**
+ * Handles the zedge decrypt Aes256 Gcm workflow.
+ */
 export function decryptAes256Gcm(
   key: Uint8Array,
   ciphertext: Uint8Array,
