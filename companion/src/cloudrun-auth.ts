@@ -27,7 +27,7 @@ function resolveSAKey(): string | null {
       );
     return _resolvedSAKey;
   }
-  console.log('[cloudrun-auth] First SA key resolution attempt...');
+  // console.log('[cloudrun-auth] First SA key resolution attempt...');
 
   // 1. Check env vars
   const envResult = resolveCloudRunServiceAccountKey(
@@ -44,7 +44,7 @@ function resolveSAKey(): string | null {
     if (existsSync(b64Path)) {
       const cachedKey = readFileSync(b64Path, 'utf-8').trim();
       _resolvedSAKey = cachedKey;
-      console.log(`[cloudrun-auth] SA key from ${b64Path}`);
+      // console.log(`[cloudrun-auth] SA key from ${b64Path}`);
       return cachedKey;
     }
 
@@ -53,7 +53,7 @@ function resolveSAKey(): string | null {
       const raw = readFileSync(jsonPath, 'utf-8').trim();
       const cachedKey = Buffer.from(raw).toString('base64');
       _resolvedSAKey = cachedKey;
-      console.log(`[cloudrun-auth] SA key from ${jsonPath}`);
+      // console.log(`[cloudrun-auth] SA key from ${jsonPath}`);
       return cachedKey;
     }
   } catch (err) {

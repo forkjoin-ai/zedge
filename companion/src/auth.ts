@@ -300,7 +300,7 @@ export function logout(): void {
   } catch {
     // Ignore
   }
-  console.log('[zedge] Logged out. Auth tokens cleared.');
+  // console.log('[zedge] Logged out. Auth tokens cleared.');
 }
 
 /**

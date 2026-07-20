@@ -147,7 +147,7 @@ export async function leavePool(): Promise<ComputePoolStatus> {
     computePool: { ...config.computePool, enabled: false },
   });
 
-  console.log('[zedge] Left compute pool');
+  // console.log('[zedge] Left compute pool');
   return getPoolStatus();
 }
 

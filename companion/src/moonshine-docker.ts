@@ -1117,7 +1117,7 @@ function stopLocalListener(url: string, label: string): boolean {
   for (const pid of pids) {
     try {
       process.kill(pid, 'SIGTERM');
-      console.log(`[moonshine] stopped stale ${label} listener pid=${pid}`);
+      // console.log(`[moonshine] stopped stale ${label} listener pid=${pid}`);
     } catch (error: unknown) {
       console.warn(
         `[moonshine] could not stop stale ${label} listener pid=${pid}: ${
@@ -1144,7 +1144,7 @@ function stopLocalListener(url: string, label: string): boolean {
       for (const pid of stubborn) {
         try {
           process.kill(pid, 'SIGKILL');
-          console.log(`[moonshine] SIGKILL stale ${label} listener pid=${pid}`);
+          // console.log(`[moonshine] SIGKILL stale ${label} listener pid=${pid}`);
         } catch {
           // ignore
         }
@@ -1429,7 +1429,7 @@ async function startLocalMoonshine(
     }
   }
 
-  console.log('[moonshine] Starting local OpenAI-compatible shim');
+  // console.log('[moonshine] Starting local OpenAI-compatible shim');
   spawnDetached(process.execPath, [TSX_CLI, OPENAI_COMPAT_ENTRY], {
     cwd: OPENAI_COMPAT_CWD,
     env: {
@@ -1603,7 +1603,7 @@ async function startDockerMoonshine(
     return false;
   }
 
-  console.log('[moonshine] Waiting for /health...');
+  // console.log('[moonshine] Waiting for /health...');
   return await waitReadyForModel(config.modelName);
 }
 
@@ -1646,7 +1646,7 @@ async function ensureMoonshineRunningInner(): Promise<void> {
     fatStationRuntime.healthy &&
     fatStationRuntime.matches
   ) {
-    console.log('[moonshine] OpenAI-compatible endpoint already running');
+    // console.log('[moonshine] OpenAI-compatible endpoint already running');
     return;
   }
 
@@ -1676,7 +1676,7 @@ async function ensureMoonshineRunningInner(): Promise<void> {
     (await startLocalMoonshine(startupConfig)) ||
     (await startDockerMoonshine(startupConfig));
   if (ready) {
-    console.log('[moonshine] Ready');
+    // console.log('[moonshine] Ready');
   } else {
     console.warn(
       '[moonshine] Did not become healthy within timeout — inference will fail until container is up'

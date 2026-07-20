@@ -299,7 +299,7 @@ class SemanticCodeIndex {
     try {
       const files = this.walkDirectory(root);
       this.totalFiles = files.length;
-      console.log(`[zedge:code-index] Indexing ${files.length} files...`);
+      // console.log(`[zedge:code-index] Indexing ${files.length} files...`);
 
       let indexed = 0;
       for (const filePath of files) {

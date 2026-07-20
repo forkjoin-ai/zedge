@@ -241,7 +241,7 @@ async function restartCompanion(
       return false;
     }
 
-    console.log(`[zedge:supervisor] Restarting companion: ${reason}`);
+    // console.log(`[zedge:supervisor] Restarting companion: ${reason}`);
     await stopCompanion();
     spawnCompanion();
 
@@ -254,7 +254,7 @@ async function restartCompanion(
     }
 
     consecutiveHealthFailures = 0;
-    console.log('[zedge:supervisor] Companion healthy after restart');
+    // console.log('[zedge:supervisor] Companion healthy after restart');
     return true;
   })().finally(() => {
     restartInFlight = null;
@@ -321,7 +321,7 @@ async function runSupervisor(): Promise<void> {
         `Companion sidecar did not become healthy at ${getCompanionBase()}`
       );
     }
-    console.log('[zedge:supervisor] Companion sidecar is ready');
+    // console.log('[zedge:supervisor] Companion sidecar is ready');
   }
 
   startSupervisor();
@@ -351,7 +351,7 @@ function registerShutdownHandlers(): void {
       return;
     }
     shuttingDown = true;
-    console.log(`[zedge:supervisor] Shutting down (${signal})`);
+    // console.log(`[zedge:supervisor] Shutting down (${signal})`);
     if (supervisorTimer) {
       clearInterval(supervisorTimer);
       supervisorTimer = null;

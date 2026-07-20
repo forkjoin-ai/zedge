@@ -97,7 +97,7 @@ async function loadWasmClient(
         config: string
       ) => WasmDistributedClient;
       wasmClient = new ClientClass(JSON.stringify(config));
-      console.log('[zedge:distributed] WASM DistributedClient loaded');
+      // console.log('[zedge:distributed] WASM DistributedClient loaded');
       return wasmClient;
     }
 

@@ -79,10 +79,10 @@ export function clearCompanionActivityOnBoot(): void {
         `[zedge:activity] clearing activity lock on boot (pid=${parsed.pid} kind=${parsed.kind} busyUntil=${parsed.busyUntil})`
       );
     } else {
-      console.log('[zedge:activity] clearing invalid activity lock on boot');
+      // console.log('[zedge:activity] clearing invalid activity lock on boot');
     }
   } catch {
-    console.log('[zedge:activity] clearing unreadable activity lock on boot');
+    // console.log('[zedge:activity] clearing unreadable activity lock on boot');
   }
 
   try {

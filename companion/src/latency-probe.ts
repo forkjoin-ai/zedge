@@ -116,7 +116,7 @@ export function startProbing(): void {
     probeAll().catch(() => {});
   }, PROBE_INTERVAL_MS);
 
-  console.log('[zedge:probe] Latency probing started (60s interval)');
+  // console.log('[zedge:probe] Latency probing started (60s interval)');
 }
 
 /**

@@ -146,7 +146,7 @@ export function startMesh(): MeshStatus {
   // Initial broadcast
   broadcastPresence();
 
-  console.log(`[zedge:mesh] Started. Node ID: ${meshState.nodeId}`);
+  // console.log(`[zedge:mesh] Started. Node ID: ${meshState.nodeId}`);
   return getMeshStatus();
 }
 
@@ -177,7 +177,7 @@ export function stopMesh(): MeshStatus {
   meshState.running = false;
   meshState.peers.clear();
 
-  console.log('[zedge:mesh] Stopped.');
+  // console.log('[zedge:mesh] Stopped.');
   return getMeshStatus();
 }
 
@@ -450,7 +450,7 @@ function pruneStale(): void {
   for (const [id, peer] of meshState.peers) {
     if (now - peer.lastSeen > PEER_TIMEOUT_MS) {
       meshState.peers.delete(id);
-      console.log(`[zedge:mesh] Peer departed (timeout): ${peer.hostname}`);
+      // console.log(`[zedge:mesh] Peer departed (timeout): ${peer.hostname}`);
     }
   }
 }

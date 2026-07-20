@@ -431,7 +431,7 @@ export function startGnosisWatcher(): void {
       });
       const workspaceRoot = process.env.AEON_ROOT || process.cwd();
       void _gnosisWatcher.watchDirectory(workspaceRoot);
-      console.log(`[zedge] Gnosis file watcher started for ${workspaceRoot}`);
+      // console.log(`[zedge] Gnosis file watcher started for ${workspaceRoot}`);
     })
     .catch((err) => {
       console.warn(`[zedge] Gnosis file watcher failed to start: ${err}`);
@@ -1603,7 +1603,7 @@ export async function handleWebRequest(req: Request): Promise<Response> {
 
   // Request logging
   if (path !== '/health') {
-    console.log(`[zedge:http] ${req.method} ${path}`);
+    // console.log(`[zedge:http] ${req.method} ${path}`);
   }
 
   // CORS preflight
@@ -5805,16 +5805,16 @@ export async function startServer(): Promise<void> {
     });
   }
 
-  console.log(`[zedge] OpenAI-compatible API: http://localhost:${port}/v1`);
+  // console.log(`[zedge] OpenAI-compatible API: http://localhost:${port}/v1`);
   console.log(
     `[zedge] Superinference: POST http://localhost:${port}/v1/superinference`
   );
-  console.log(`[zedge] Mesh: http://localhost:${port}/mesh/status`);
-  console.log(`[zedge] Skymesh: http://localhost:${port}/skymesh/status`);
-  console.log(`[zedge] Teams: http://localhost:${port}/teams/status`);
-  console.log(`[zedge] Agent: POST http://localhost:${port}/agent/session`);
-  console.log(`[zedge] Forge: http://localhost:${port}/forge/status`);
-  console.log(`[zedge] Health: http://localhost:${port}/health`);
-  console.log(`[zedge] Ghostwriter CRDT: http://localhost:${port}/crdt/status`);
-  console.log(`[zedge] Ghostwriter UCAN: http://localhost:${port}/ucan/status`);
+  // console.log(`[zedge] Mesh: http://localhost:${port}/mesh/status`);
+  // console.log(`[zedge] Skymesh: http://localhost:${port}/skymesh/status`);
+  // console.log(`[zedge] Teams: http://localhost:${port}/teams/status`);
+  // console.log(`[zedge] Agent: POST http://localhost:${port}/agent/session`);
+  // console.log(`[zedge] Forge: http://localhost:${port}/forge/status`);
+  // console.log(`[zedge] Health: http://localhost:${port}/health`);
+  // console.log(`[zedge] Ghostwriter CRDT: http://localhost:${port}/crdt/status`);
+  // console.log(`[zedge] Ghostwriter UCAN: http://localhost:${port}/ucan/status`);
 }

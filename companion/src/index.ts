@@ -28,7 +28,7 @@ async function verifyKeyTier(
         })
       : null;
     const count = payload?.data?.length ?? '?';
-    console.log(`[zedge] Gateway: models=${count} status=${resp.status}`);
+    // console.log(`[zedge] Gateway: models=${count} status=${resp.status}`);
   } catch (err) {
     console.warn(`[zedge] Gateway probe failed: ${err}`);
   }
@@ -134,7 +134,7 @@ async function startMoonshineAndSyncZedSettings(): Promise<void> {
  * Runs the zedge command-line workflow.
  */
 export async function main(): Promise<void> {
-  console.log('[zedge] Starting companion sidecar v2.0...');
+  // console.log('[zedge] Starting companion sidecar v2.0...');
 
   await runCompanionBootstrap();
   return;
@@ -148,7 +148,7 @@ async function runCompanionBootstrap(): Promise<void> {
     clearCompanionActivityOnBoot();
 
     if (await companionAlreadyRunning()) {
-      console.log('[zedge] Companion already running; direct launch exiting.');
+      // console.log('[zedge] Companion already running; direct launch exiting.');
       return;
     }
     if (shouldYieldToLaunchAgent() && (await waitForExistingCompanion())) {
@@ -164,7 +164,7 @@ async function runCompanionBootstrap(): Promise<void> {
     // Start Moonshine and then sync Zed's static picker from the live catalog.
     void startMoonshineAndSyncZedSettings();
 
-    console.log('[zedge] Companion sidecar v2.0 ready');
+    // console.log('[zedge] Companion sidecar v2.0 ready');
 
     const { whoami } = await import('./auth.ts');
     const { getZedgeConfig, getApiBaseUrl, getAuthHeaders } = await import(
@@ -181,7 +181,7 @@ async function runCompanionBootstrap(): Promise<void> {
       );
       void verifyKeyTier(getApiBaseUrl, getAuthHeaders);
     } else {
-      console.log('[zedge] Not authenticated.');
+      // console.log('[zedge] Not authenticated.');
     }
 
     const { startProbing } = await import('./latency-probe.ts');
@@ -189,12 +189,12 @@ async function runCompanionBootstrap(): Promise<void> {
 
     const { startMesh, getMeshStatus } = await import('./p2p-mesh.ts');
     const mesh = startMesh();
-    console.log(`[zedge] Mesh started. Node ID: ${mesh.nodeId}`);
+    // console.log(`[zedge] Mesh started. Node ID: ${mesh.nodeId}`);
 
     if (config.computePool.enabled) {
       const { joinPool, getPoolStatus } = await import('./compute-node.ts');
       await joinPool();
-      console.log(`[zedge] Pool: ${getPoolStatus().connectedNodes} nodes`);
+      // console.log(`[zedge] Pool: ${getPoolStatus().connectedNodes} nodes`);
     }
 
     const [
@@ -215,7 +215,7 @@ async function runCompanionBootstrap(): Promise<void> {
       const forge = new ForgeBridge(workspacePath);
       const projects = await forge.discoverProjects();
       serverMod.setForgeBridge(forge);
-      console.log(`[zedge] Forge: ${projects.length} project(s) discovered`);
+      // console.log(`[zedge] Forge: ${projects.length} project(s) discovered`);
     } catch (error) {
       console.warn(
         `[zedge] Forge unavailable: ${
@@ -247,7 +247,7 @@ async function runCompanionBootstrap(): Promise<void> {
       ],
       commands: [],
     });
-    console.log(`[zedge] Kernel: ${kernel.listCommands().length} commands`);
+    // console.log(`[zedge] Kernel: ${kernel.listCommands().length} commands`);
     serverMod.setCapacitorBridge(new CapacitorBridge());
 
     const crdtCfg = {
@@ -266,7 +266,7 @@ async function runCompanionBootstrap(): Promise<void> {
       serverMod.setCrdtBridge(crdt);
       await crdt.connect();
     } catch {
-      console.log('[zedge] CRDT offline.');
+      // console.log('[zedge] CRDT offline.');
     }
 
     try {
@@ -312,7 +312,7 @@ async function runCompanionBootstrap(): Promise<void> {
         .catch(() => {});
     }, 2_000);
 
-    console.log(`[zedge] Ready. Mesh peers: ${getMeshStatus().peers.length}`);
+    // console.log(`[zedge] Ready. Mesh peers: ${getMeshStatus().peers.length}`);
   } catch (err) {
     if (isAddressInUseError(err)) {
       console.log(

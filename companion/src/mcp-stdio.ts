@@ -236,7 +236,7 @@ async function restartCompanion(
       return false;
     }
 
-    console.log(`[zedge:babysitter] Restarting companion: ${reason}`);
+    // console.log(`[zedge:babysitter] Restarting companion: ${reason}`);
     await stopCompanion();
     spawnCompanion();
 
@@ -249,7 +249,7 @@ async function restartCompanion(
     }
 
     consecutiveHealthFailures = 0;
-    console.log('[zedge:babysitter] Companion healthy after restart');
+    // console.log('[zedge:babysitter] Companion healthy after restart');
     return true;
   })().finally(() => {
     restartInFlight = null;
@@ -3227,7 +3227,7 @@ function send(response: JsonRpcResponse): void {
  */
 export async function main(): Promise<void> {
   configureStdioLogging();
-  console.log('Starting MCP stdio bridge...');
+  // console.log('Starting MCP stdio bridge...');
   await runMcpBridge();
   return;
 }
@@ -3236,7 +3236,7 @@ async function runMcpBridge(): Promise<void> {
   const companionStartup = (async () => {
     const alreadyRunning = await isCompanionAlive();
     if (!alreadyRunning) {
-      console.log('Companion not running, spawning it...');
+      // console.log('Companion not running, spawning it...');
       spawnCompanion();
     }
 
@@ -3248,7 +3248,7 @@ async function runMcpBridge(): Promise<void> {
           ' after spawn. Tools will fail until it starts.'
       );
     } else {
-      console.log('Companion sidecar is ready');
+      // console.log('Companion sidecar is ready');
     }
 
     startBabysitter();
@@ -3270,7 +3270,7 @@ async function runMcpBridge(): Promise<void> {
         babysitterTimer = null;
       }
       shuttingDown = true;
-      console.log('stdin closed, exiting');
+      // console.log('stdin closed, exiting');
       resolve();
     }
 

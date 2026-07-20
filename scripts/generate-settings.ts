@@ -30,9 +30,15 @@ interface EdgeworkConfig {
 }
 
 const DEFAULT_API_URL = 'https://api.edgework.ai';
+// Companion is a local-only sidecar; resolve base from env with loopback default.
+const COMPANION_BASE_URL =
+  process.env['ZEDGE_COMPANION_URL'] ??
+  process.env['ZEDGE_LOCAL_URL'] ??
+  `http://127.0.0.1:${process.env['ZEDGE_COMPANION_PORT'] ?? '7331'}`;
 const COMPANION_CATALOG_URLS = [
-  'http://127.0.0.1:7331/v1/models',
-  'http://localhost:7331/v1/models',
+  `${COMPANION_BASE_URL.replace(/\/$/, '')}/v1/models`,
+  // Host-name alias for environments that resolve localhost but not 127.0.0.1
+  `${COMPANION_BASE_URL.replace('127.0.0.1', 'localhost').replace(/\/$/, '')}/v1/models`,
 ];
 
 function getConfig(): EdgeworkConfig {
@@ -40,8 +46,9 @@ function getConfig(): EdgeworkConfig {
     if (existsSync(CONFIG_FILE)) {
       return JSON.parse(readFileSync(CONFIG_FILE, 'utf-8'));
     }
-  } catch {
-    // Fall through to default
+  } catch (error) {
+    // Config is optional; missing/corrupt files fall through to production defaults.
+    void error;
   }
   return { environment: 'production', apiBaseUrl: DEFAULT_API_URL };
 }
@@ -51,8 +58,9 @@ function getApiKey(): string | null {
     if (existsSync(API_KEY_FILE)) {
       return readFileSync(API_KEY_FILE, 'utf-8').trim();
     }
-  } catch {
-    // No key available
+  } catch (error) {
+    // No key available — anonymous / prompt-for-key path.
+    void error;
   }
   return null;
 }
@@ -62,7 +70,7 @@ function getRemoteSettingsApiUrl(config: EdgeworkConfig): string {
 }
 
 function printApiKeyComments(apiKey: string | null): void {
-  if (apiKey: unknown) {
+  if (apiKey) {
     console.log(
       '# API key found in ~/.edgework/api-key — set as OPENAI_COMPATIBLE_API_KEY in Zed'
     );
@@ -78,7 +86,7 @@ function printApiKeyComments(apiKey: string | null): void {
 }
 
 function getAuthHeaders(apiKey: string | null): Record<string, string> {
-  if (!apiKey: unknown) {
+  if (!apiKey) {
     return {};
   }
 
@@ -100,7 +108,7 @@ async function fetchModelIds(
       },
       signal: AbortSignal.timeout(5_000),
     });
-    if (!response.ok: unknown) {
+    if (!response.ok) {
       return null;
     }
 
@@ -121,9 +129,9 @@ async function fetchFirstModelIds(
   urls: string[],
   headers: Record<string, string>
 ): Promise<string[] | null> {
-  for (const url of urls: unknown) {
+  for (const url of urls) {
     const ids = await fetchModelIds(url, headers);
-    if (ids !== null: unknown) {
+    if (ids !== null) {
       return ids;
     }
   }
@@ -182,11 +190,12 @@ export async function main(): Promise<void> {
   console.log(settingsJson);
 
   // Companion settings with edit predictions (tab completions)
+  const companionApiUrl = `${COMPANION_BASE_URL.replace(/\/$/, '')}/v1`;
   const companionSettings = {
     language_models: {
       openai_compatible: {
         Zedge: {
-          api_url: 'http://127.0.0.1:7331/v1',
+          api_url: companionApiUrl,
           api_key: 'zedge-local',
           available_models: companionAvailableModels,
         },
@@ -194,7 +203,7 @@ export async function main(): Promise<void> {
     },
     edit_predictions: {
       copilot: {
-        api_url: 'http://127.0.0.1:7331/v1/completions',
+        api_url: `${companionApiUrl}/completions`,
       },
     },
   };

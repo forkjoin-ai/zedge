@@ -328,7 +328,7 @@ function buildVisualizationHtml(filePath: string): string {
       if (intersects.length > 0) {
         const node = nodeDataMap.get(intersects[0].object);
         if (node && node.sourceLocation) {
-          console.log('[gnosis-viz] Navigate to:', node.sourceLocation);
+          // console.log('[gnosis-viz] Navigate to:', node.sourceLocation);
         }
       }
     });
