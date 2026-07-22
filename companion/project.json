@@ -36,8 +36,8 @@
     "mcp": {
       "executor": "a0:run-commands",
       "options": {
-        "cwd": "open-source/zedge/companion",
-        "command": "../scripts/run-ts-entry.sh src/mcp-stdio.ts"
+        "cwd": ".",
+        "command": "open-source/gnosis/bin/monster open-source/zedge/companion/src/mcp-stdio.ts"
       }
     },
     "lint": {

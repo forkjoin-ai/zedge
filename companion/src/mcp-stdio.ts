@@ -3216,10 +3216,110 @@ export async function dispatch(
 
 // ---------- Stdio transport ----------
 
+/** Wire format: Grok/Claude use NDJSON; Zed/legacy use Content-Length framing. */
+type StdioWireFormat = 'ndjson' | 'framed';
+
+let stdioWireFormat: StdioWireFormat = 'framed';
+
 function send(response: JsonRpcResponse): void {
   const json = JSON.stringify(response);
+  if (stdioWireFormat === 'ndjson') {
+    process.stdout.write(`${json}\n`);
+    return;
+  }
   const header = `Content-Length: ${Buffer.byteLength(json)}\r\n\r\n`;
   process.stdout.write(header + json);
+}
+
+/**
+ * Handshake and catalog methods must not wait on the companion sidecar —
+ * Grok `mcp doctor` / session startup time out if initialize is blocked
+ * behind companion spawn (often >90s cold).
+ */
+function methodNeedsCompanion(method: string): boolean {
+  if (
+    method === 'initialize' ||
+    method === 'notifications/initialized' ||
+    method === 'ping' ||
+    method === 'tools/list' ||
+    method === 'resources/list' ||
+    method === 'prompts/list'
+  ) {
+    return false;
+  }
+  return true;
+}
+
+/**
+ * Extract one or more JSON-RPC messages from the stdin buffer.
+ * Supports Content-Length framing and newline-delimited JSON (NDJSON).
+ */
+function extractStdioMessages(input: string): {
+  messages: Array<{ msg: JsonRpcRequest; format: StdioWireFormat }>;
+  rest: string;
+} {
+  const messages: Array<{ msg: JsonRpcRequest; format: StdioWireFormat }> = [];
+  let rest = input;
+
+  while (rest.length > 0) {
+    const trimmedStart = rest.replace(/^\s+/, '');
+    // Content-Length framed (LSP-style)
+    if (/^Content-Length:\s*\d+/i.test(trimmedStart)) {
+      // Preserve leading whitespace only if it was part of framed stream after prior message
+      const frameOffset = rest.length - trimmedStart.length;
+      const frameBuf = rest.slice(frameOffset);
+      const headerEnd = frameBuf.indexOf('\r\n\r\n');
+      if (headerEnd === -1) {
+        break;
+      }
+      const headerBlock = frameBuf.slice(0, headerEnd);
+      const match = headerBlock.match(/Content-Length:\s*(\d+)/i);
+      if (!match) {
+        rest = frameBuf.slice(headerEnd + 4);
+        continue;
+      }
+      const contentLength = parseInt(match[1]!, 10);
+      const bodyStart = headerEnd + 4;
+      if (frameBuf.length < bodyStart + contentLength) {
+        break;
+      }
+      const body = frameBuf.slice(bodyStart, bodyStart + contentLength);
+      rest = frameBuf.slice(bodyStart + contentLength);
+      try {
+        messages.push({
+          msg: JSON.parse(body) as JsonRpcRequest,
+          format: 'framed',
+        });
+      } catch {
+        // skip bad frame
+      }
+      continue;
+    }
+
+    // NDJSON: one JSON object per line
+    const nl = rest.indexOf('\n');
+    if (nl === -1) {
+      break;
+    }
+    const line = rest.slice(0, nl).replace(/\r$/, '').trim();
+    rest = rest.slice(nl + 1);
+    if (!line) {
+      continue;
+    }
+    if (!line.startsWith('{')) {
+      continue;
+    }
+    try {
+      messages.push({
+        msg: JSON.parse(line) as JsonRpcRequest,
+        format: 'ndjson',
+      });
+    } catch {
+      // incomplete or garbage line
+    }
+  }
+
+  return { messages, rest };
 }
 
 /**
@@ -3254,7 +3354,9 @@ async function runMcpBridge(): Promise<void> {
     startBabysitter();
   })();
 
-  // Read stdin line-by-line (MCP uses Content-Length headers)
+  // Kick companion spawn immediately; do not await before handshake.
+  void companionStartup;
+
   let buffer = '';
   let stdinClosed = false;
   let pendingMessages = 0;
@@ -3280,52 +3382,33 @@ async function runMcpBridge(): Promise<void> {
     process.stdin.resume();
     process.stdin.on('data', async (chunk: string) => {
       buffer += chunk;
+      const extracted = extractStdioMessages(buffer);
+      buffer = extracted.rest;
 
-      // Parse Content-Length framed messages
-      while (true) {
-        const headerEnd = buffer.indexOf('\r\n\r\n');
-        if (headerEnd === -1) break;
-
-        const headerBlock = buffer.slice(0, headerEnd);
-        const match = headerBlock.match(/Content-Length:\s*(\d+)/i);
-        if (!match) {
-          // Skip malformed header
-          buffer = buffer.slice(headerEnd + 4);
-          continue;
-        }
-
-        const contentLength = parseInt(match[1], 10);
-        const bodyStart = headerEnd + 4;
-
-        if (buffer.length < bodyStart + contentLength) {
-          // Incomplete body — wait for more data
-          break;
-        }
-
-        const body = buffer.slice(bodyStart, bodyStart + contentLength);
-        buffer = buffer.slice(bodyStart + contentLength);
-
+      for (const { msg, format } of extracted.messages) {
+        stdioWireFormat = format;
+        pendingMessages += 1;
         try {
-          const msg = JSON.parse(body) as JsonRpcRequest;
-          pendingMessages += 1;
-          try {
+          if (methodNeedsCompanion(msg.method)) {
             await companionStartup;
-            const response = await dispatch(msg);
-            if (response) {
-              send(response);
-            }
-          } finally {
-            pendingMessages -= 1;
-            exitIfIdle();
+          }
+          const response = await dispatch(msg);
+          if (response) {
+            send(response);
           }
         } catch (err) {
-          console.warn('Failed to parse MCP message:', err);
-          // Send parse error if we had an id somehow
+          console.warn('Failed to handle MCP message:', err);
           send({
             jsonrpc: '2.0',
-            id: null,
-            error: { code: -32700, message: 'Parse error' },
+            id: msg.id ?? null,
+            error: {
+              code: -32603,
+              message: err instanceof Error ? err.message : String(err),
+            },
           });
+        } finally {
+          pendingMessages -= 1;
+          exitIfIdle();
         }
       }
     });
