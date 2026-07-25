@@ -415,27 +415,67 @@ export async function warmSkymeshCache(opts: {
   fatStationBaseUrl: string;
 }): Promise<void> {
   try {
+    if (!opts.queryTokens?.length || !opts.answerText) return;
     const qspec = modelScopedQspecId(opts.model);
     const fp48 = canonicalQueryHash(opts.queryTokens, qspec);
+    // Edgework put admission requires non-empty answerTokens (replayable payload).
+    const answerTokens =
+      opts.answerTokens && opts.answerTokens.length > 0
+        ? opts.answerTokens
+        : Array.from(opts.answerText, (ch) => ch.charCodeAt(0));
 
-    await fetch(`${opts.cacheUrl}/api/v1/cache/store`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-Protocol69-Projection': PROTOCOL69_HEADER_VALUE,
-        'Cache-Control': 'no-store',
+    // GlobalAnswerCacheEntry shape — not the old {q,tokens,qspec} shorthand.
+    // Prefer /put (canonical); /store is an edgework alias for older clients.
+    const entry = {
+      queryHash: fp48,
+      queryTokens: opts.queryTokens,
+      qspecId: qspec,
+      model: opts.model,
+      answerText: opts.answerText,
+      answerTokens,
+      attestation: {
+        pass: true as const,
+        admitted: true as const,
+        sig: `zedge-${Date.now()}`,
+        gate: 'zedge-warm-skymesh-cache',
       },
-      body: JSON.stringify({
-        q: fp48,
-        model: opts.model,
-        qspec,
-        tokens: opts.queryTokens,
-        answerText: opts.answerText,
-        answerTokens: opts.answerTokens ?? [],
-        attestation: { pass: true, admitted: true, sig: `zedge-${Date.now()}` },
-      }),
-      signal: AbortSignal.timeout(5000),
-    });
+      tier: 'monster196884' as const,
+      ts: Date.now(),
+    };
+
+    for (const path of ['/api/v1/cache/put', '/api/v1/cache/store'] as const) {
+      const res = await fetch(`${opts.cacheUrl}${path}`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Protocol69-Projection': PROTOCOL69_HEADER_VALUE,
+          'Cache-Control': 'no-store',
+        },
+        body: JSON.stringify(entry),
+        signal: AbortSignal.timeout(5000),
+      });
+      if (res.ok) break;
+      if (res.status !== 404) break;
+    }
+
+    // Dual-write FOIL so skymesh cache-replay sees the same answer under the
+    // model-agnostic plane when the host used bare skymesh-query/v2 (empty model).
+    // Model-scoped keys intentionally stay out of FOIL (different fp48).
+    if (qspec === SKYMESH_QSPEC_ID) {
+      await fetch('https://skymesh.forkjoin.ai/protocol69/ask/fill', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' },
+        body: JSON.stringify({
+          promptTokens: opts.queryTokens,
+          answerText: opts.answerText,
+          answerTokens,
+          provenance: 'zedge-warm-skymesh-cache',
+          model: opts.model,
+          route: 'zedge-dual-write',
+        }),
+        signal: AbortSignal.timeout(5000),
+      }).catch(() => undefined);
+    }
   } catch {
     // Silently fail
   }
