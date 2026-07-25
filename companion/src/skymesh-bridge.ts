@@ -532,6 +532,7 @@ async function handleQueryMessage(msg: Record<string, unknown>): Promise<void> {
                 model: 'default',
                 cacheUrl: 'https://www-edgework-app.edgework.ai',
                 fatStationBaseUrl: FAT_STATION_BASE_URL,
+                promptText: prompt,
               }).catch(() => {});
             });
           }
@@ -581,6 +582,7 @@ async function handleQueryMessage(msg: Record<string, unknown>): Promise<void> {
           model: 'default',
           cacheUrl: 'https://www-edgework-app.edgework.ai',
           fatStationBaseUrl: FAT_STATION_BASE_URL,
+          promptText: prompt,
         }).catch(() => {});
       });
     }

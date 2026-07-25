@@ -7,7 +7,14 @@
 
 import { describe, it, expect, beforeEach, afterEach } from 'bun:test';
 import { createServer, type Server } from 'node:http';
-import { canonicalQueryHash, isSkymeshTeleportEnabled, trySkymeshCacheTeleport } from '../skymesh-cache.ts';
+import {
+  canonicalQueryHash,
+  isModelIdentitySmellQuery,
+  isSkymeshTeleportEnabled,
+  modelScopedQspecId,
+  SKYMESH_QSPEC_ID,
+  trySkymeshCacheTeleport,
+} from '../skymesh-cache.ts';
 
 interface TestServer {
   stop(): Promise<void>;
@@ -120,6 +127,30 @@ describe('skymesh-cache', () => {
     it('returns true for any other value', () => {
       process.env.ZEDGE_SKYMESH_TELEPORT = 'yes';
       expect(isSkymeshTeleportEnabled()).toBe(true);
+    });
+  });
+
+  describe('model-agnostic keys + identity smell skip', () => {
+    it('modelScopedQspecId is always bare qspec (model-agnostic)', () => {
+      expect(modelScopedQspecId('gpt-4o')).toBe(SKYMESH_QSPEC_ID);
+      expect(modelScopedQspecId('claude-opus')).toBe(SKYMESH_QSPEC_ID);
+      expect(modelScopedQspecId()).toBe(SKYMESH_QSPEC_ID);
+    });
+
+    it('detects model-identity / training-cutoff smells', () => {
+      expect(isModelIdentitySmellQuery('What model are you?')).toBe(true);
+      expect(isModelIdentitySmellQuery('When were you trained?')).toBe(true);
+      expect(isModelIdentitySmellQuery('What is the capital of France?')).toBe(false);
+    });
+
+    it('trySkymeshCacheTeleport returns null on identity smell without network', async () => {
+      const result = await trySkymeshCacheTeleport(
+        'What model are you?',
+        'qwen2.5-0.5b-instruct',
+        'http://localhost:8000',
+        'https://cache.example.com',
+      );
+      expect(result).toBe(null);
     });
   });
 

@@ -168,17 +168,46 @@ export function canonicalQueryHash(
 export const SKYMESH_QSPEC_ID = 'skymesh-query/v2';
 
 /**
- * Model-scoped qspec for the chat answer cache. The global cache is otherwise
- * MODEL-AGNOSTIC (model is provenance, not key); on the consolidated mesh that
- * SWAPS MODELS, one model's completion could be served for another's identical
- * prompt. Folding the model into the qspecId isolates by model WITHOUT touching
- * `canonicalQueryHash` — the qspecId is hashed into the key and stored on the
- * entry, and the edgework identity guard re-hashes with the entry's own qspecId,
- * so no server change is needed. Empty model → bare qspec (unchanged).
+ * @deprecated Model-scoped keys were a mistake. Keys are model-agnostic; skip
+ * model-identity / training-cutoff prompts via {@link isModelIdentitySmellQuery}.
  */
-export function modelScopedQspecId(model: string): string {
-  const m = (model ?? '').trim().toLowerCase();
-  return m ? `${SKYMESH_QSPEC_ID}|m=${m}` : SKYMESH_QSPEC_ID;
+export function modelScopedQspecId(_model?: string): string {
+  return SKYMESH_QSPEC_ID;
+}
+
+const MODEL_IDENTITY_SMELL_PATTERNS: readonly RegExp[] = [
+  /\bwhat\s+model\s+(are\s+you|is\s+this|do\s+you\s+use|are\s+you\s+using|am\s+i\s+talking\s+to)\b/i,
+  /\bwhich\s+model\s+(are\s+you|is\s+this|do\s+you|am\s+i)\b/i,
+  /\bwho\s+are\s+you\b/i,
+  /\bwhat\s+are\s+you\b/i,
+  /\bwhat('?s|\s+is)\s+your\s+name\b/i,
+  /\bare\s+you\s+(an?\s+)?(ai|llm|language\s+model|chatbot|assistant)\b/i,
+  /\bare\s+you\s+(gpt|chatgpt|claude|gemini|grok|llama|mistral|qwen|openai|anthropic|xai|google)\b/i,
+  /\b(which|what)\s+(llm|ai|assistant)\s+(are\s+you|is\s+this)\b/i,
+  /\byour\s+(model\s+)?(name|id|version|family)\b/i,
+  /\bmodel\s+(name|id|version|family)\b/i,
+  /\bwhat\s+version\s+(are\s+you|of\s+you|is\s+this)\b/i,
+  /\bwhich\s+version\s+(are\s+you|of\s+(gpt|claude|gemini|grok|you))\b/i,
+  /\b(who|what)\s+made\s+you\b/i,
+  /\bwho\s+(built|created|trained)\s+you\b/i,
+  /\bare\s+you\s+based\s+on\b/i,
+  /\bwhat\s+(company|lab|org(anization)?)\s+(made|built|trained)\s+you\b/i,
+  /\b(knowledge|training)\s+(cut[-\s]?off|cutoff|date|data)\b/i,
+  /\bwhen\s+were\s+you\s+(trained|created|updated|released|built)\b/i,
+  /\b(your\s+)?training\s+(data|cutoff|cut[-\s]?off|date)\b/i,
+  /\bwhat('?s|\s+is)\s+your\s+cutoff\b/i,
+  /\bas\s+of\s+when\s+(do|can)\s+you\s+know\b/i,
+  /\bup\s+to\s+what\s+(date|year)\s+(do|can)\s+you\s+know\b/i,
+  /\b(your\s+)?knowledge\s+(date|horizon|window)\b/i,
+  /\bwhen\s+(is|was)\s+your\s+(last\s+)?(training|knowledge|update)\b/i,
+  /\bwhat('?s|\s+is)\s+your\s+training\s+date\b/i,
+];
+
+/** Skip shared answer-cache for model-identity / training-cutoff prompts. */
+export function isModelIdentitySmellQuery(prompt: string): boolean {
+  const text = (prompt ?? '').trim();
+  if (text.length < 3 || text.length > 400) return false;
+  return MODEL_IDENTITY_SMELL_PATTERNS.some((re) => re.test(text));
 }
 export const SKYMESH_DEFAULT_CACHE_URL = 'https://www-edgework-app.edgework.ai';
 const SKYMESH_TOKENIZE_TIMEOUT_MS = 500;
@@ -294,6 +323,10 @@ export async function trySkymeshCacheTeleport(
   if (!trimmedPrompt) {
     return null;
   }
+  // Model-identity / cutoff: do not teleport another model's self-description.
+  if (isModelIdentitySmellQuery(trimmedPrompt)) {
+    return null;
+  }
 
   // Step 1: Tokenize via fat-station
   const tokens = await trySkymeshTokenize(trimmedPrompt, fatStationBaseUrl);
@@ -301,10 +334,10 @@ export async function trySkymeshCacheTeleport(
     return null;
   }
 
-  // Step 2: Compute canonical query hash
+  // Step 2: Model-agnostic fano-7 key (model is provenance only)
   let fp48: string;
   try {
-    fp48 = canonicalQueryHash(tokens, modelScopedQspecId(model));
+    fp48 = canonicalQueryHash(tokens, SKYMESH_QSPEC_ID);
   } catch {
     return null;
   }
@@ -312,7 +345,7 @@ export async function trySkymeshCacheTeleport(
   // Step 3: Query the global cache
   const lookupUrl =
     `${cacheUrl}/api/v1/cache/lookup?q=${encodeURIComponent(fp48)}` +
-    `&model=${encodeURIComponent(model)}&qspec=${encodeURIComponent(modelScopedQspecId(model))}` +
+    `&model=${encodeURIComponent(model)}&qspec=${encodeURIComponent(SKYMESH_QSPEC_ID)}` +
     `&tokens=${encodeURIComponent(tokens.join(','))}&_=${Date.now()}`;
 
   try {
@@ -413,10 +446,14 @@ export async function warmSkymeshCache(opts: {
   model: string;
   cacheUrl: string;
   fatStationBaseUrl: string;
+  /** When set and model-identity smell, skip store (do not poison universal cache). */
+  promptText?: string;
 }): Promise<void> {
   try {
     if (!opts.queryTokens?.length || !opts.answerText) return;
-    const qspec = modelScopedQspecId(opts.model);
+    if (opts.promptText !== undefined && isModelIdentitySmellQuery(opts.promptText)) return;
+    // Model-agnostic key (model is provenance only).
+    const qspec = SKYMESH_QSPEC_ID;
     const fp48 = canonicalQueryHash(opts.queryTokens, qspec);
     // Edgework put admission requires non-empty answerTokens (replayable payload).
     const answerTokens =
@@ -458,9 +495,7 @@ export async function warmSkymeshCache(opts: {
       if (res.status !== 404) break;
     }
 
-    // Dual-write FOIL so skymesh cache-replay sees the same answer under the
-    // model-agnostic plane when the host used bare skymesh-query/v2 (empty model).
-    // Model-scoped keys intentionally stay out of FOIL (different fp48).
+    // Dual-write FOIL under the same model-agnostic plane (skymesh-query/v2).
     if (qspec === SKYMESH_QSPEC_ID) {
       await fetch('https://skymesh.forkjoin.ai/protocol69/ask/fill', {
         method: 'POST',
@@ -491,11 +526,17 @@ export async function prewarmSkymeshTeleport(
   cacheUrl: string,
 ): Promise<{ hit: boolean; fp48: string } | null> {
   try {
+    // Skip model-identity / cutoff probes (same policy as trySkymeshCacheTeleport).
+    if (isModelIdentitySmellQuery(prompt)) return null;
     const tokens = await trySkymeshTokenize(prompt, fatStationBaseUrl);
     if (!tokens) return null;
 
-    const fp48 = canonicalQueryHash(tokens, modelScopedQspecId(model));
-    const lookupUrl = `${cacheUrl}/api/v1/cache/lookup?q=${encodeURIComponent(fp48)}&model=${encodeURIComponent(model)}&qspec=${encodeURIComponent(modelScopedQspecId(model))}&tokens=${encodeURIComponent(tokens.join(','))}&_=${Date.now()}`;
+    const qspec = SKYMESH_QSPEC_ID;
+    const fp48 = canonicalQueryHash(tokens, qspec);
+    const lookupUrl =
+      `${cacheUrl}/api/v1/cache/lookup?q=${encodeURIComponent(fp48)}` +
+      `&model=${encodeURIComponent(model)}&qspec=${encodeURIComponent(qspec)}` +
+      `&tokens=${encodeURIComponent(tokens.join(','))}&_=${Date.now()}`;
 
     const res = await fetch(lookupUrl, {
       method: 'GET',

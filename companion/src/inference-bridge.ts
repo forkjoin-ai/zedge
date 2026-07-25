@@ -3067,6 +3067,7 @@ export async function infer(
                       model: request.model,
                       cacheUrl: getSkymeshCacheUrl(),
                       fatStationBaseUrl: FAT_STATION_BASE_URL,
+                      promptText: lastUserContent,
                     });
                   }
                 }
