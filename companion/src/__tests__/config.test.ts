@@ -49,7 +49,7 @@ describe('Zedge Config', () => {
     expect(config.babelfish).toHaveProperty('requirePreviewForInPlaceRewrite');
   });
 
-  test('default preferred model is gnosis-local', async () => {
+  test('default preferred model is codestral-22b monofat', async () => {
     const tempHome = mkdtempSync(join(tmpdir(), 'zedge-default-model-test-'));
     mkdirSync(join(tempHome, '.edgework'), { recursive: true });
     const configModulePath = fileURLToPath(
@@ -81,8 +81,8 @@ describe('Zedge Config', () => {
       preferredModel: string;
       cloudRunDirect: boolean;
     };
-    expect(config.preferredModel).toBe('gnosis-local');
-    expect(config.cloudRunDirect).toBe(false);
+    expect(config.preferredModel).toBe('codestral-22b');
+    expect(config.cloudRunDirect).toBe(true);
   });
 
   test('legacy persisted preferred model falls back to gnosis-local', async () => {

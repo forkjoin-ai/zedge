@@ -141,21 +141,26 @@ const KNOWN_ZEDGE_MODELS: KnownZedgeModel[] = [
     forkjoinTier: true,
   },
   {
-    // Re-encoded 34-byte Q8_0; ADMITTED via monster-guard (Paris token 6233 rank
-    // 0, reject 1040 fails) after the runtime bowl_q_filter fix. mistral = qwen2
-    // arch -> NativeLlama. See monster-swarm/ADMITTED_MODELS.md.
+    // CPU middle monofat gnosis-openai-mistral-7b — warm p50 ~189 / max ~222
+    // tok/s (2026-07-25). General daily driver for Zedge + edge-web chat.
     id: 'mistral-7b',
-    displayName: 'Mistral 7B Instruct v0.3 (Moonshine)',
+    displayName: 'Mistral 7B Instruct (CPU middle ~189 tok/s)',
     maxTokens: 8192,
     ownedBy: 'gnosis',
     forkjoinTier: true,
   },
   {
-    // Dense Codestral 22B is admitted in R2 and surfaced through the
-    // gnosis-openai-mesh lane. Selection still requires the live `/v1/models`
-    // sync to advertise it, so stale local clients cannot choose a dark model.
+    // CPU middle monofat peer race (gnosis-openai-codestral-22b + -b).
+    // Warm peer-a ~139 p50 / ~204 max tok/s (2026-07-25). Coding daily driver.
     id: CODESTRAL_ZEDGE_MODEL_ID,
-    displayName: 'Codestral 22B (Gnosis mesh)',
+    displayName: 'Codestral 22B (CPU middle race)',
+    maxTokens: 8192,
+    ownedBy: 'gnosis',
+    forkjoinTier: true,
+  },
+  {
+    id: 'gemma4-12b-it',
+    displayName: 'Gemma4 12B Instruct (CPU middle)',
     maxTokens: 8192,
     ownedBy: 'gnosis',
     forkjoinTier: true,
@@ -211,12 +216,9 @@ const KNOWN_ZEDGE_MODELS: KnownZedgeModel[] = [
     forkjoinTier: true,
   },
   {
-    // ADMITTED 2026-05-24 (Paris 9079 rank0, logit 21.25 == HF; monster-guard PASS).
-    // Fixed the SWAPPED gemma3 sandwich norms in model_gemma4.rs: the knot's
-    // ffn_norm IS HF post_attention_layernorm and post_attention_norm IS HF
-    // pre_feedforward_layernorm (llama.cpp gemma naming) — were fetched backwards.
+    // CPU middle monofat — warm p50 ~147 / max ~185 tok/s (2026-07-25).
     id: 'gemma3-4b-it',
-    displayName: 'Gemma3 4B Instruct (Moonshine)',
+    displayName: 'Gemma3 4B Instruct (CPU middle ~147 tok/s)',
     maxTokens: 8192,
     ownedBy: 'gnosis',
     forkjoinTier: true,
@@ -254,14 +256,14 @@ const LEGACY_EDGEWORK_MODEL_IDS = new Set([
   // Demoted: knot exists neither locally nor in R2. Re-promote once produced.
   'qwen-2.5-coder-7b',
   'qwen-edit',
-  'mistral-7b',
+  // mistral-7b / gemma3-4b-it RE-PROMOTED 2026-07-25 (CPU monofat live).
   'deepseek-r1-7b',
   'deepseek-r1-distill-qwen-7b',
   'llama-70b',
   'glm-4-9b',
   'step-3.5-flash',
-  'gemma3-4b-it',
   'nanbeige-3b',
+  // gemma3-1b-it still qualityFail (empty decode) — keep out of default picker.
   'gemma3-1b-it',
   'deepseek-r1-distill-qwen-1.5b',
   'cog-360m',

@@ -117,10 +117,20 @@ const DEFAULT_ZEDGE_CONFIG: ZedgeConfig = {
     enabled: false,
     maxCpuPercent: 50,
     maxMemoryMb: 2048,
-    allowedModels: ['gnosis-local', 'tinyllama-1.1b', 'gemma4-31b-it'],
+    allowedModels: [
+      'codestral-22b',
+      'mistral-7b',
+      'gemma3-4b-it',
+      'gemma4-12b-it',
+      'gemma4-31b-it',
+      'gnosis-local',
+      'tinyllama-1.1b',
+    ],
   },
-  preferredModel: DEFAULT_ZEDGE_MODEL_ID,
-  cloudRunDirect: false,
+  preferredModel: 'codestral-22b',
+  // CPU middle monofat is the production path for catalog models with
+  // CLOUD_RUN_COORDINATORS entries (see coordinator-urls.ts + inference-bridge).
+  cloudRunDirect: true,
   babelfish: {
     enabled: true,
     ambientSuggestions: true,

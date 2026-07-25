@@ -8,7 +8,11 @@
  */
 
 import { getApiBaseUrl, getAuthHeaders, getZedgeConfig } from './config.ts';
-import { CLOUD_RUN_COORDINATORS } from './coordinator-urls.ts';
+import {
+  getCloudRunPeerUrls,
+  hasCloudRunCoordinatorForModel,
+  resolveCloudRunUpstreamModel,
+} from './coordinator-urls.ts';
 import { isSkymeshTeleportEnabled, trySkymeshCacheTeleport, SKYMESH_DEFAULT_CACHE_URL, warmSkymeshCache, prewarmSkymeshTeleport, streamCachedAnswer } from './skymesh-cache.ts';
 import { appendFileSync, mkdirSync, writeFileSync } from 'fs';
 import { join, dirname } from 'path';
@@ -1710,73 +1714,82 @@ async function tryEdgeCoordinator(
 }
 
 /**
- * Attempt inference via Cloud Run Coordinator directly
- * Bypasses CF Worker 120s timeout for larger models.
- *
- * Retries on 503 (Service Unavailable) which Cloud Run returns transiently
- * while a container is cold-starting from zero instances. The container is
- * typically ready within 3-10s, so we retry with exponential backoff.
+ * Whether Cloud Run monofat (CPU middle) tier is enabled. ON by default when
+ * coordinators are configured. Set ZEDGE_CLOUDRUN_ENABLED=0 to skip.
  */
-async function tryCloudRunCoordinator(
+function isCloudRunTierEnabled(): boolean {
+  const raw = process.env.ZEDGE_CLOUDRUN_ENABLED;
+  if (raw === undefined) return true;
+  const normalized = raw.trim().toLowerCase();
+  return normalized !== '0' && normalized !== 'false' && normalized !== 'off';
+}
+
+function getCloudRunTimeoutMs(): number {
+  // Cold minScale=0 monofat can need long heat (codestral ~3–5 min first hit).
+  // Warm is hundreds of ms. Env override for interactive tighter budgets.
+  return Number(process.env.ZEDGE_CLOUDRUN_TIMEOUT_MS ?? 180_000);
+}
+
+/**
+ * POST one monofat peer. Retries 503 cold-start with short backoff.
+ */
+async function postCloudRunPeer(
+  coordinatorUrl: string,
   request: ChatCompletionRequest,
   signal?: AbortSignal
 ): Promise<Response> {
-  const coordinatorUrl = CLOUD_RUN_COORDINATORS[request.model];
-  if (!coordinatorUrl) {
-    throw new Error(`No Cloud Run coordinator for model: ${request.model}`);
-  }
-
   const MAX_RETRIES = 2;
-  const INITIAL_BACKOFF_MS = 1_000;
-  const MAX_BACKOFF_MS = 3_000;
+  const INITIAL_BACKOFF_MS = 1_500;
+  const MAX_BACKOFF_MS = 6_000;
+  const upstreamModel = resolveCloudRunUpstreamModel(request.model);
+  const body = JSON.stringify({ ...request, model: upstreamModel });
 
   for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
-    if (signal?.aborted)
+    if (signal?.aborted) {
       throw new DOMException('The operation was aborted.', 'AbortError');
+    }
 
     const authHeaders = await getCloudRunAuthHeaders(coordinatorUrl);
-
     if (attempt === 0) {
       logInference(
-        `[cloudrun] → ${coordinatorUrl}/v1/chat/completions model=${
-          request.model
-        } headers=${JSON.stringify(Object.keys(authHeaders))}`
+        `[cloudrun] → ${coordinatorUrl}/v1/chat/completions model=${request.model}→${upstreamModel}`
       );
     } else {
       logInference(
-        `[cloudrun] → retry ${attempt}/${MAX_RETRIES} model=${
-          request.model
-        } headers=${JSON.stringify(Object.keys(authHeaders))}`
+        `[cloudrun] → retry ${attempt}/${MAX_RETRIES} peer=${coordinatorUrl} model=${request.model}`
       );
     }
 
-    const resp = await fetch(`${coordinatorUrl}/v1/chat/completions`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Accept:
-          request.stream === true ? 'text/event-stream' : 'application/json',
-        ...authHeaders,
-      },
-      body: JSON.stringify(request),
-      signal,
-    });
+    const timeoutMs = getCloudRunTimeoutMs();
+    const timeoutController = new AbortController();
+    const onAbort = () => timeoutController.abort();
+    signal?.addEventListener('abort', onAbort, { once: true });
+    const timer = setTimeout(() => timeoutController.abort(), timeoutMs);
 
-    const respHeaders: Record<string, string> = {};
-    resp.headers.forEach((v, k) => {
-      respHeaders[k] = v;
-    });
+    let resp: Response;
+    try {
+      resp = await fetch(`${coordinatorUrl}/v1/chat/completions`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Accept:
+            request.stream === true ? 'text/event-stream' : 'application/json',
+          ...authHeaders,
+        },
+        body,
+        signal: timeoutController.signal,
+      });
+    } finally {
+      clearTimeout(timer);
+      signal?.removeEventListener('abort', onAbort);
+    }
+
     logInference(
-      `[cloudrun] ← ${resp.status} ${resp.statusText} headers=${JSON.stringify(
-        respHeaders
-      )}`
+      `[cloudrun] ← ${resp.status} ${resp.statusText} peer=${coordinatorUrl}`
     );
 
-    // Reject small responses that are likely error messages disguised as 200 OK.
-    // Real SSE streams are chunked (no content-length). Error responses are tiny
-    // (e.g., 114 bytes with {"error": "Range out of bounds"}).
     const contentLength = resp.headers.get('content-length');
-    if (resp.ok && contentLength && parseInt(contentLength) < 200) {
+    if (resp.ok && contentLength && parseInt(contentLength, 10) < 80) {
       logInference(
         `[cloudrun] Rejecting small 200 response (${contentLength}B) -- likely error`
       );
@@ -1789,22 +1802,24 @@ async function tryCloudRunCoordinator(
       );
     }
 
-    // 503 = container cold-starting, retry with backoff
-    if (resp.status === 503 && attempt < MAX_RETRIES) {
+    // 503 = container cold-starting / model warming
+    if (
+      (resp.status === 503 || resp.status === 500) &&
+      attempt < MAX_RETRIES
+    ) {
       const backoff = Math.min(
         INITIAL_BACKOFF_MS * Math.pow(1.5, attempt),
         MAX_BACKOFF_MS
       );
       logInference(
-        `[cloudrun] 503 cold-start, retrying in ${Math.round(backoff)}ms`
+        `[cloudrun] ${resp.status} warming, retrying in ${Math.round(backoff)}ms`
       );
       await new Promise((resolve) => {
-        const timer = setTimeout(resolve, backoff);
-        // If abort fires during backoff, resolve immediately
+        const t = setTimeout(resolve, backoff);
         signal?.addEventListener(
           'abort',
           () => {
-            clearTimeout(timer);
+            clearTimeout(t);
             resolve(undefined);
           },
           { once: true }
@@ -1816,8 +1831,66 @@ async function tryCloudRunCoordinator(
     return resp;
   }
 
-  // Should never reach here, but satisfy TypeScript
   throw new Error(`Cloud Run: exhausted ${MAX_RETRIES} retries`);
+}
+
+/**
+ * Attempt inference via Cloud Run monofat peers (CPU middle).
+ * Codestral races peer-a ‖ peer-b; first OK wins. Others hit primary only.
+ */
+async function tryCloudRunCoordinator(
+  request: ChatCompletionRequest,
+  signal?: AbortSignal
+): Promise<Response> {
+  const peers = getCloudRunPeerUrls(request.model);
+  if (peers.length === 0) {
+    throw new Error(`No Cloud Run coordinator for model: ${request.model}`);
+  }
+
+  if (peers.length === 1) {
+    return postCloudRunPeer(peers[0]!, request, signal);
+  }
+
+  // Peer race: first ok response wins; abort losers.
+  logInference(
+    `[cloudrun] peer-race model=${request.model} peers=${peers.length}`
+  );
+  const controllers = peers.map(() => new AbortController());
+  const onParentAbort = () => {
+    for (const c of controllers) c.abort();
+  };
+  signal?.addEventListener('abort', onParentAbort, { once: true });
+
+  try {
+    const raced = await Promise.any(
+      peers.map(async (url, i) => {
+        const linked = AbortSignal.any
+          ? AbortSignal.any([
+              controllers[i]!.signal,
+              ...(signal ? [signal] : []),
+            ])
+          : controllers[i]!.signal;
+        const resp = await postCloudRunPeer(url, request, linked);
+        if (!resp.ok) {
+          throw new Error(`peer ${url} status ${resp.status}`);
+        }
+        // Cancel siblings
+        for (let j = 0; j < controllers.length; j++) {
+          if (j !== i) controllers[j]!.abort();
+        }
+        logInference(`[cloudrun] peer-race winner=${url}`);
+        return resp;
+      })
+    );
+    return raced;
+  } catch (err) {
+    // Promise.any AggregateError when all peers fail
+    throw new Error(
+      `Cloud Run peer race failed for ${request.model}: ${String(err)}`
+    );
+  } finally {
+    signal?.removeEventListener('abort', onParentAbort);
+  }
 }
 
 async function cancelResponseBody(response: Response): Promise<void> {
@@ -2942,7 +3015,64 @@ export async function infer(
     }
   }
 
-  // Tier 0 (primary): Forkjoin own-runtime distributed-inference mesh.
+  // Tier 0a: Cloud Run monofat (CPU middle) — measured daily drivers
+  // (mistral ~189, gemma* ~145–185, codestral race ~139/68). Prefer over local
+  // moonshine for catalog models that have a monofat box. minScale=0 cold ok.
+  if (
+    isCloudRunTierEnabled() &&
+    hasCloudRunCoordinatorForModel(request.model)
+  ) {
+    const t0 = Date.now();
+    const controller = new AbortController();
+    try {
+      const resp = await tryCloudRunCoordinator(request, controller.signal);
+      if (resp.ok) {
+        attempts.push({ tier: 'cloudrun', status: 'ok', ms: Date.now() - t0 });
+        logInference(
+          `model=${request.model} tier=cloudrun status=ok ms=${Date.now() - t0}`
+        );
+        return {
+          tier: 'cloudrun',
+          response: resp,
+          upstreamHeaders: {
+            ...extractUpstreamDebugHeaders(resp),
+            'X-Zedge-Tier': 'cloudrun',
+          },
+          attempts,
+        };
+      }
+      attempts.push({
+        tier: 'cloudrun',
+        status: 'http_error',
+        ms: Date.now() - t0,
+        detail: `${resp.status} ${resp.statusText}`,
+      });
+      logInference(
+        `[cloudrun] http_error ${resp.status} model=${request.model}`
+      );
+    } catch (err) {
+      const isTimeout =
+        err instanceof DOMException && err.name === 'AbortError';
+      attempts.push({
+        tier: 'cloudrun',
+        status: isTimeout ? 'timeout' : 'error',
+        ms: Date.now() - t0,
+        detail: String(err),
+      });
+      logInference(`[cloudrun] error: ${String(err)}`);
+    }
+  } else {
+    attempts.push({
+      tier: 'cloudrun',
+      status: 'skipped',
+      ms: 0,
+      detail: !isCloudRunTierEnabled()
+        ? 'disabled'
+        : `no monofat coordinator for ${request.model}`,
+    });
+  }
+
+  // Tier 0b: Forkjoin own-runtime distributed-inference mesh.
   // Passthrough to the mesh OpenAI-compatible endpoint. Falls through to
   // Moonshine then echo on any failure, so ON-by-default is safe.
   if (

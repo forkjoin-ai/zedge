@@ -277,7 +277,12 @@ const LOCAL_MOONSHINE_MODELS: Record<string, LocalMoonshineModelSpec> = {
   'qwen2.5-7b': meshKnotSpec('qwen2.5-7b'),
   // ADMITTED (monster-guard PASS, Paris 6233 rank0) after bowl_q_filter fix.
   // 34-byte Q8_0, mistral = qwen2 arch / NativeLlama (32 layers / 4096 hidden).
+  // Prefer Cloud Run monofat when Zedge cloudrun tier is enabled (~189 tok/s).
   'mistral-7b': meshKnotSpec('mistral-7b'),
+  // Codestral 22B — local knot when present; production path is Cloud Run
+  // monofat peer race (see companion/src/coordinator-urls.ts).
+  'codestral-22b': meshKnotSpec('codestral-22b'),
+  'gemma4-12b-it': meshKnotSpec('gemma4-12b-it'),
   // ADMITTED (monster-guard PASS, Paris 12366 rank0) after rope_theta re-encode
   // (500000) + bowl_q_filter fix. arch=llama / NativeLlama (28L / 3072h).
   'llama-3.2-3b': meshKnotSpec('llama-3.2-3b'),
