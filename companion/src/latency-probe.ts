@@ -43,9 +43,37 @@ let probeAbortController: AbortController | null = null;
  * Returns whether is Reachable Coordinator Health Status is true.
  */
 export function isReachableCoordinatorHealthStatus(status: number): boolean {
-  // 2xx = healthy. 403 = service is alive but requires IAM auth we don't have
-  // locally -- still reachable for inference (which sends its own auth).
-  return (status >= 200 && status < 300) || status === 403;
+  // ONLY 2xx counts. 403 used to be treated as healthy on the theory that the
+  // service is alive and merely wants IAM auth the probe does not send. That is
+  // unsound as a routing signal on two counts:
+  //   1. An unauthenticated 403 is refused at the Cloud Run front door, so the
+  //      probe never reaches the container and its `latencyMs` measures the
+  //      edge rejection, not the coordinator. Routing then ranks a lane it has
+  //      never actually timed.
+  //   2. It cannot distinguish "alive but locked" from "locked and dead" — a
+  //      broken coordinator behind a 403 reads as healthy forever.
+  // Since 2026-07-29 the monofat coordinators have no allUsers invoker binding,
+  // so every anonymous probe gets 403; under the old rule all six would report
+  // healthy and attract traffic that can only fail.
+  return status >= 200 && status < 300;
+}
+
+/**
+ * Cloud Run coordinator probing is OPT-IN and defaults to OFF.
+ *
+ * A 60s health probe defeats `min-instances=0`. Cloud Run keeps an instance
+ * warm ~15 min after each request, so any ping faster than that pins the
+ * instance permanently. This probe pinned all six CPU-middle coordinators at
+ * ~24 billable instance-hours/day each — measured 2026-07-29 at ~$99/day
+ * (5x 8vCPU/32GiB + 1x 4vCPU/16GiB, cpu-throttling=false). Same failure mode
+ * as the 2026-06-15 L4 GPU drain.
+ *
+ * Infra belongs on Skymesh, not Cloud Run. Set ZEDGE_PROBE_CLOUDRUN=1 to
+ * re-enable this lane deliberately, and expect the bill.
+ */
+export function isCloudRunProbeEnabled(): boolean {
+  const raw = process.env.ZEDGE_PROBE_CLOUDRUN?.trim().toLowerCase();
+  return raw === '1' || raw === 'true' || raw === 'yes';
 }
 
 export interface CloudRunHealthProbeResult {
@@ -215,9 +243,11 @@ async function probeAll(): Promise<void> {
     probeEndpoint('edge', 'global', `${getApiBaseUrl()}/v1/models`)
   );
 
-  // Probe each Cloud Run coordinator
-  for (const [model, url] of Object.entries(CLOUD_RUN_COORDINATORS)) {
-    promises.push(probeCloudRunEndpoint(model, url));
+  // Probe each Cloud Run coordinator (opt-in — see isCloudRunProbeEnabled)
+  if (isCloudRunProbeEnabled()) {
+    for (const [model, url] of Object.entries(CLOUD_RUN_COORDINATORS)) {
+      promises.push(probeCloudRunEndpoint(model, url));
+    }
   }
 
   await Promise.allSettled(promises);

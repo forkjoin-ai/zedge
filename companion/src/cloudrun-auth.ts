@@ -6,7 +6,12 @@ import {
   resolveCloudRunServiceAccountKey,
 } from '@a0n/shared-utils/edge/cloudrun-auth';
 
-export const CLOUD_RUN_HEALTH_PATHS = ['/api/v1/health', '/health'] as const;
+// `/health` FIRST: it is the path the monofat coordinators actually serve.
+// `/api/v1/health` 404s on every one of them, so probing it first doubled every
+// probe cycle's request count for zero information (measured 2026-07-29 — each
+// service logged a 404 immediately followed by a 200, once per cycle). Keep the
+// legacy path as a fallback for surfaces that only expose the versioned route.
+export const CLOUD_RUN_HEALTH_PATHS = ['/health', '/api/v1/health'] as const;
 
 /**
  * Builds the Cloud Run Health Urls.

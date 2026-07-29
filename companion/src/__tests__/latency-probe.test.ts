@@ -72,11 +72,12 @@ describe('Latency Probe', () => {
     }
   });
 
-  test('treats reachable coordinator health statuses as healthy', () => {
+  test('treats only 2xx coordinator health statuses as healthy', () => {
     expect(isReachableCoordinatorHealthStatus(200)).toBe(true);
     expect(isReachableCoordinatorHealthStatus(204)).toBe(true);
-    // 403 = service is alive but requires IAM auth we don't have locally
-    expect(isReachableCoordinatorHealthStatus(403)).toBe(true);
+    // 403 is refused at the Cloud Run front door, so the probe never timed the
+    // coordinator and cannot tell "alive but locked" from "locked and dead".
+    expect(isReachableCoordinatorHealthStatus(403)).toBe(false);
     expect(isReachableCoordinatorHealthStatus(404)).toBe(false);
     expect(isReachableCoordinatorHealthStatus(500)).toBe(false);
   });
@@ -104,16 +105,15 @@ describe('Latency Probe', () => {
       expect(result.healthy).toBe(true);
       expect(result.status).toBe(200);
       expect(result.url).toBe('https://example.run.app/health');
-      expect(calls).toEqual([
-        'https://example.run.app/api/v1/health',
-        'https://example.run.app/health',
-      ]);
+      // `/health` is tried FIRST and short-circuits, so the always-404
+      // `/api/v1/health` is never requested. One request per cycle, not two.
+      expect(calls).toEqual(['https://example.run.app/health']);
     } finally {
       global.fetch = originalFetch;
     }
   });
 
-  test('cloudrun health probe treats 403 as reachable (IAM auth required)', async () => {
+  test('cloudrun health probe treats 403 as unhealthy (never reached container)', async () => {
     const originalFetch = global.fetch;
     global.fetch = (async () =>
       new Response(JSON.stringify({ error: 'forbidden' }), {
@@ -123,9 +123,10 @@ describe('Latency Probe', () => {
 
     try {
       const result = await probeCloudRunHealth('https://example.run.app');
-      // 403 means the service is alive but requires IAM auth we don't
-      // have locally -- still reachable for inference requests.
-      expect(result.healthy).toBe(true);
+      // A 403 is refused at the front door, so nothing was measured about the
+      // coordinator. Reporting it healthy would attract traffic that can only
+      // fail — which is exactly what the locked-down monofat services do now.
+      expect(result.healthy).toBe(false);
       expect(result.status).toBe(403);
     } finally {
       global.fetch = originalFetch;
