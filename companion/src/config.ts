@@ -263,10 +263,20 @@ function mergeZedgeConfig(config: PartialZedgeConfig | undefined): ZedgeConfig {
       config?.computePool?.allowedModels ??
       DEFAULT_ZEDGE_CONFIG.computePool.allowedModels,
   };
+  // ABSENT and INVALID are different questions, and collapsing them was the bug.
+  // normalizePreferredModel() answers "this persisted id is legacy/candidate — what
+  // is safe?" with DEFAULT_ZEDGE_MODEL_ID (gnosis-local). Handing it `undefined` made
+  // a config that never set a model take that same safety fallback, so a FRESH
+  // install silently came up on gnosis-local instead of the intended CPU-middle
+  // monofat daily driver in DEFAULT_ZEDGE_CONFIG.preferredModel (codestral-22b) —
+  // even though the spread below sets exactly that, then got overridden here.
+  // Nothing persisted ⇒ take the product default; something persisted ⇒ validate it.
   const preferredModel =
     getMoonshineModelEnvOverride() ??
     getZedPreferredModelOverride() ??
-    normalizePreferredModel(config?.preferredModel);
+    (config?.preferredModel == null
+      ? DEFAULT_ZEDGE_CONFIG.preferredModel
+      : normalizePreferredModel(config.preferredModel));
 
   return {
     ...DEFAULT_ZEDGE_CONFIG,
