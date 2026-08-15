@@ -59,7 +59,7 @@ describe('Zedge model catalog', () => {
     const model = getKnownZedgeModel('codestral');
     expect(model).toBeDefined();
     expect(model?.id).toBe('codestral-22b');
-    expect(model?.displayName).toBe('Codestral 22B (Gnosis mesh)');
+    expect(model?.displayName).toBe('Codestral 22B (CPU middle race)');
     expect(model?.maxTokens).toBe(8192);
     expect(model?.availability).toBeUndefined();
     expect(model?.unavailableReason).toBeUndefined();

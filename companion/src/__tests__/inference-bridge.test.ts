@@ -15,6 +15,11 @@ import type {
   ChatCompletionResponse,
 } from '../inference-bridge';
 
+// These tests assert local tier ordering. Keep live cache/Cloud Run discovery
+// from changing the first attempt underneath them.
+process.env.ZEDGE_SKYMESH_TELEPORT = '0';
+process.env.ZEDGE_CLOUDRUN_ENABLED = '0';
+
 describe('Inference Bridge', () => {
   test('getModels falls back to the Moonshine catalog when the live catalog hangs', async () => {
     const originalFetch = global.fetch;
