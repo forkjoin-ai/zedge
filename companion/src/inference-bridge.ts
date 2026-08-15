@@ -423,6 +423,14 @@ function getForkjoinBaseUrl(): string {
   );
 }
 
+/** An explicit own-mesh endpoint is an operator routing decision. */
+function hasExplicitForkjoinEndpoint(): boolean {
+  return Boolean(
+    process.env.ZEDGE_FORKJOIN_URL?.trim() ||
+      process.env.FORKJOIN_OPENAI_URL?.trim()
+  );
+}
+
 function getForkjoinTimeoutMs(): number {
   return Number(process.env.ZEDGE_FORKJOIN_TIMEOUT_MS ?? 90_000);
 }
@@ -3021,6 +3029,7 @@ export async function infer(
   // moonshine for catalog models that have a monofat box. minScale=0 cold ok.
   if (
     isCloudRunTierEnabled() &&
+    !hasExplicitForkjoinEndpoint() &&
     hasCloudRunCoordinatorForModel(request.model)
   ) {
     const t0 = Date.now();
