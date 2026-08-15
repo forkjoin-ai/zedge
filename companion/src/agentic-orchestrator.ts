@@ -12,7 +12,11 @@ import {
   type ToolExecutionResult,
 } from '@a0n/distributed-inference-host/agentic-chat';
 import type { ChatCompletionRequest } from './inference-bridge.ts';
-import { appendInferenceDiagnostic, infer } from './inference-bridge.ts';
+import {
+  appendInferenceDiagnostic,
+  infer,
+  resolveMoonshineTimeoutMsForModel,
+} from './inference-bridge.ts';
 import {
   callLocalTool,
   preflightLocalTools,
@@ -297,6 +301,10 @@ async function runCompanionInferFallback(
 async function runMoonshineBareGeneration(
   request: TextGenerationRequest,
 ): Promise<TextGenerationResult> {
+  const timeoutMs = Math.max(
+    MOONSHINE_AGENTIC_TIMEOUT_MS,
+    resolveMoonshineTimeoutMsForModel(request.model),
+  );
   let response: Response;
   try {
     response = await fetch(`${MOONSHINE_BASE_URL}/v1/chat/completions`, {
@@ -318,7 +326,7 @@ async function runMoonshineBareGeneration(
           ? { response_format: request.responseFormat }
           : {}),
       }),
-      signal: AbortSignal.timeout(MOONSHINE_AGENTIC_TIMEOUT_MS),
+      signal: AbortSignal.timeout(timeoutMs),
     });
   } catch (error) {
     const cause = error instanceof Error ? error.message : String(error);

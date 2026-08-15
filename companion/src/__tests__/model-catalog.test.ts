@@ -5,6 +5,7 @@ import {
   getKnownZedgeModels,
   isCandidateZedgeModel,
   isFallbackSelectableModel,
+  isExactSkymeshModel,
   isForkjoinTierModel,
   normalizeZedgeModelId,
 } from '../model-catalog.ts';
@@ -22,6 +23,21 @@ describe('Zedge model catalog', () => {
     expect(model).toBeDefined();
     expect(model?.displayName).toBe('TinyLlama 1.1B (Moonshine)');
     expect(model?.maxTokens).toBe(2048);
+  });
+
+  test('exposes the admitted exact Skymesh agentic lanes', () => {
+    for (const [id, ownedBy, maxTokens] of [
+      ['qwen3-coder-next', 'skymesh', 4096],
+      ['muse-glimmer-30b-3', 'skymesh', 256],
+    ] as const) {
+      const model = getKnownZedgeModel(id);
+      expect(model?.ownedBy).toBe(ownedBy);
+      expect(model?.maxTokens).toBe(maxTokens);
+      expect(model?.forkjoinTier).toBe(true);
+      expect(isExactSkymeshModel(id)).toBe(true);
+      expect(isFallbackSelectableModel(id)).toBe(true);
+      expect(getKnownZedgeModels().some((entry) => entry.id === id)).toBe(true);
+    }
   });
 
   test('includes Qwen2.5 model metadata for the Moonshine KNOT trial', () => {

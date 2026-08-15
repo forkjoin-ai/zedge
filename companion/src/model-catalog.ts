@@ -31,6 +31,8 @@ export interface ZedAvailableModel {
 
 export const DEFAULT_ZEDGE_MODEL_ID = 'gnosis-local';
 export const CODESTRAL_ZEDGE_MODEL_ID = 'codestral-22b';
+export const QWEN3_CODER_NEXT_MODEL_ID = 'qwen3-coder-next';
+export const MUSE_GLIMMER_MODEL_ID = 'muse-glimmer-30b-3';
 
 const ZEDGE_MODEL_ALIASES = new Map<string, string>([
   ['codestral', CODESTRAL_ZEDGE_MODEL_ID],
@@ -45,6 +47,20 @@ export function normalizeZedgeModelId(modelId: string): string {
 }
 
 const KNOWN_ZEDGE_MODELS: KnownZedgeModel[] = [
+  {
+    id: QWEN3_CODER_NEXT_MODEL_ID,
+    displayName: 'Qwen3 Coder Next (Skymesh exact relay)',
+    maxTokens: 4096,
+    ownedBy: 'skymesh',
+    forkjoinTier: true,
+  },
+  {
+    id: MUSE_GLIMMER_MODEL_ID,
+    displayName: 'Muse Glimmer 30B (Skymesh exact relay)',
+    maxTokens: 256,
+    ownedBy: 'skymesh',
+    forkjoinTier: true,
+  },
   {
     id: DEFAULT_ZEDGE_MODEL_ID,
     displayName: 'Gnosis Local (Moonshine)',
@@ -377,6 +393,15 @@ export function isForkjoinTierModel(modelId: string): boolean {
     normalized.startsWith('qwen-coder') ||
     normalized.startsWith('codestral') ||
     normalized.startsWith('forkjoin')
+  );
+}
+
+/** Exact Skymesh relays must never silently degrade to a local echo answer. */
+export function isExactSkymeshModel(modelId: string): boolean {
+  const normalized = normalizeZedgeModelId(modelId).toLowerCase();
+  return (
+    normalized === QWEN3_CODER_NEXT_MODEL_ID ||
+    normalized === MUSE_GLIMMER_MODEL_ID
   );
 }
 

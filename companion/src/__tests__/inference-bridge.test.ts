@@ -151,6 +151,8 @@ describe('Inference Bridge', () => {
   test('Loki uses the slow Moonshine timeout budget', () => {
     expect(resolveMoonshineTimeoutMsForModel('gnosis-local')).toBe(90_000);
     expect(resolveMoonshineTimeoutMsForModel('loki-erotica-8b')).toBe(300_000);
+    expect(resolveMoonshineTimeoutMsForModel('qwen3-coder-next')).toBe(300_000);
+    expect(resolveMoonshineTimeoutMsForModel('muse-glimmer-30b-3')).toBe(300_000);
   });
 
   test('infer preserves streaming and honors requested Moonshine token budgets', async () => {
@@ -434,6 +436,36 @@ describe('Inference Bridge', () => {
       expect(result.attempts[1]?.status).toBe('http_error');
       const data = (await result.response.json()) as ChatCompletionResponse;
       expect(data.choices[0]?.message.content).toContain('Moonshine');
+    } finally {
+      global.fetch = originalFetch;
+      if (previousForkjoinEnabled === undefined)
+        delete process.env.ZEDGE_FORKJOIN_ENABLED;
+      else process.env.ZEDGE_FORKJOIN_ENABLED = previousForkjoinEnabled;
+    }
+  });
+
+  test('exact Skymesh models fail closed instead of returning echo', async () => {
+    const originalFetch = global.fetch;
+    const previousForkjoinEnabled = process.env.ZEDGE_FORKJOIN_ENABLED;
+    process.env.ZEDGE_FORKJOIN_ENABLED = '0';
+    global.fetch = (async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith('/v1/chat/completions')) {
+        // Avoid the repair/retry path; this test is specifically about the
+        // exact-model no-echo invariant.
+        return new Response('unavailable', { status: 418 });
+      }
+      return new Response('unexpected', { status: 500 });
+    }) as typeof fetch;
+
+    try {
+      await expect(
+        infer({
+          model: 'muse-glimmer-30b-3',
+          messages: [{ role: 'user', content: 'exact lane probe' }],
+          max_tokens: 8,
+        })
+      ).rejects.toThrow('refusing echo fallback');
     } finally {
       global.fetch = originalFetch;
       if (previousForkjoinEnabled === undefined)

@@ -61,6 +61,12 @@ forkjoin (primary) -> moonshine (fallback) -> echo (guaranteed last)
 - `echo` — guaranteed local response so the editor always gets a reply when the
   upper tiers are unavailable.
 
+The admitted exact Skymesh lanes are selectable from Zed's model catalog:
+`qwen3-coder-next` and `muse-glimmer-30b-3`. They use the same Moonshine
+agentic/tool loop, with a 300-second per-turn budget for their measured cold
+sharded latency. If either exact relay is unavailable, Zedge returns an error
+instead of fabricating an echo answer or silently substituting another model.
+
 The tier actually used is reported on the `X-Zedge-Tier` response header and in
 the `attempts[]` chain. See
 `open-source/gnosis/distributed-inference-host/ZEDGE_CONSUMER_MAP.md` (section 5)

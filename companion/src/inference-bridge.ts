@@ -24,6 +24,7 @@ import {
   getKnownZedgeModel,
   getKnownZedgeModels,
   isForkjoinTierModel,
+  isExactSkymeshModel,
   isLiveModelVisible,
 } from './model-catalog.ts';
 import {
@@ -648,7 +649,7 @@ function resolveMoonshineMaxTokens(request: ChatCompletionRequest): number {
 }
 
 function isSlowMoonshineModel(model: string): boolean {
-  return model === 'loki-erotica-8b';
+  return model === 'loki-erotica-8b' || isExactSkymeshModel(model);
 }
 
 /**
@@ -3213,6 +3214,14 @@ export async function infer(
   }
 
   // Tier 2: Echo fallback (guaranteed response)
+  if (isExactSkymeshModel(request.model)) {
+    const chain = attempts
+      .map((a) => `${a.tier}:${a.status}(${a.ms}ms)`)
+      .join(' → ');
+    throw new Error(
+      `Exact Skymesh model ${request.model} is unavailable; refusing echo fallback (chain: ${chain})`
+    );
+  }
   attempts.push({ tier: 'echo', status: 'ok', ms: 0 });
   const echoChain = attempts
     .map((a) => `${a.tier}:${a.status}(${a.ms}ms)`)
