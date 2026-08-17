@@ -150,6 +150,8 @@ const REMOTE_EMBEDDING_MODELS = new Set(['text-embedding-3-small']);
 
 export type InferenceTier =
   | 'skymesh'
+  /** The SSM relay at skymesh.forkjoin.ai. Distinct from `skymesh`, which is the cache teleport. */
+  | 'skymesh-relay'
   | 'forkjoin'
   | 'mesh'
   | 'edge'
@@ -241,6 +243,84 @@ export const FAT_STATION_BASE_URL =
   process.env.ZEDGE_FAT_STATION_URL ??
   process.env.FAT_STATION_URL ??
   'http://127.0.0.1:8000';
+/**
+ * The SSM relay. `rwkv7-mini` and the other exact-Skymesh models live at
+ * `apps/skymesh` (which fronts sovereign-infer), NOT in the local Moonshine
+ * container — MOONSHINE_BASE_URL is loopback, so without this the only tier
+ * that could serve them dialled 127.0.0.1 and the request died in 2ms.
+ */
+export const SKYMESH_RELAY_BASE_URL = (
+  process.env.ZEDGE_SKYMESH_PUBLIC_BASE ?? 'https://skymesh.forkjoin.ai'
+).replace(/\/+$/, '');
+/**
+ * Two deadlines, not one. `fetch` resolves when the RESPONSE HEADERS arrive, so
+ * a lane that is simply down is detectable long before a slow lane that is
+ * genuinely working: the first token must show up promptly, after which a real
+ * SSM answer is allowed to take its time.
+ *
+ * Before this tier existed the same request failed in 2ms against loopback —
+ * fast and useless. A single 180s ceiling would trade that for a three-minute
+ * hang, which is worse: the editor sits there with nothing to show.
+ */
+const SKYMESH_RELAY_HEADERS_TIMEOUT_MS = Number(
+  // 15s: long enough to collect the lane's own error (the OOM upstream answers
+  // in ~10.5s, and that message is the whole diagnosis), short enough that a
+  // fully dead lane does not hold the editor. Paid at most once per cooldown.
+  process.env.ZEDGE_SKYMESH_HEADERS_TIMEOUT_MS ?? 15_000
+);
+/** After headers, the mesh is slow by design; a real answer can outlast Moonshine. */
+const SKYMESH_RELAY_TIMEOUT_MS = Number(
+  process.env.ZEDGE_SKYMESH_TIMEOUT_MS ?? 180_000
+);
+/**
+ * How long a failed lane stays known-down. While it holds, the tier is skipped
+ * in ~0ms with the reason it failed, instead of every request paying the full
+ * discovery cost again (the sovereign-infer OOM answers in ~10s — a 10s wait
+ * per keystroke-driven completion is indistinguishable from a hang).
+ */
+const SKYMESH_RELAY_COOLDOWN_MS = Number(
+  process.env.ZEDGE_SKYMESH_COOLDOWN_MS ?? 60_000
+);
+
+interface SkymeshRelayBreaker {
+  downUntil: number;
+  reason: string;
+}
+
+let skymeshRelayBreaker: SkymeshRelayBreaker | null = null;
+
+/** Remaining cooldown in ms, or 0 when the lane is allowed to be tried. */
+export function skymeshRelayCooldownRemainingMs(now = Date.now()): number {
+  if (!skymeshRelayBreaker) return 0;
+  const remaining = skymeshRelayBreaker.downUntil - now;
+  if (remaining <= 0) {
+    skymeshRelayBreaker = null;
+    return 0;
+  }
+  return remaining;
+}
+
+/** Why the lane is being skipped, for the attempt chain. */
+export function skymeshRelayCooldownReason(): string {
+  return skymeshRelayBreaker?.reason ?? '';
+}
+
+function tripSkymeshRelayBreaker(reason: string, now = Date.now()): void {
+  skymeshRelayBreaker = {
+    downUntil: now + SKYMESH_RELAY_COOLDOWN_MS,
+    reason: reason.slice(0, 200),
+  };
+}
+
+/** A working answer clears the breaker immediately — no half-open dance needed. */
+function clearSkymeshRelayBreaker(): void {
+  skymeshRelayBreaker = null;
+}
+
+/** Test seam: forget any recorded outage. */
+export function resetSkymeshRelayBreakerForTests(): void {
+  skymeshRelayBreaker = null;
+}
 const MOONSHINE_TIMEOUT_MS = Number(
   process.env.ZEDGE_MOONSHINE_TIMEOUT_MS ?? 90_000
 );
@@ -1411,6 +1491,95 @@ async function tryForkjoinDistributedInference(
       } catch (err) {
         // Mesh down / timeout / network error -- fall through gracefully.
         logInference(`[forkjoin] error: ${String(err)}`);
+        return null;
+      } finally {
+        clearTimeout(timer);
+        signal?.removeEventListener('abort', abortFromUpstream);
+      }
+    },
+    `${request.model} chat`
+  );
+}
+
+/**
+ * Tier 0c: the SSM relay at skymesh.forkjoin.ai.
+ *
+ * `apps/skymesh` speaks the OpenAI chat contract and forwards to
+ * sovereign-infer's `/generate-<lane>`; it implements REAL SSE for the SSM
+ * lanes, so `stream` is passed straight through and prefill headers ride along
+ * exactly as they do for Moonshine. Returns null on any failure so the ladder
+ * continues — except that `infer()` refuses the echo fallback for these
+ * models, because an exact-Skymesh model answered by echo is a lie.
+ */
+async function trySkymeshRelayInference(
+  request: ChatCompletionRequest,
+  signal?: AbortSignal
+): Promise<Response | null> {
+  return await runWithCompanionActivity(
+    'skymesh-relay-chat',
+    SKYMESH_RELAY_TIMEOUT_MS + MOONSHINE_BUSY_BUFFER_MS,
+    async () => {
+      const url = `${SKYMESH_RELAY_BASE_URL}/v1/chat/completions`;
+      const maxTokens = resolveMoonshineMaxTokens(request);
+      const stream = request.stream ?? false;
+      logInference(
+        `[skymesh-relay] -> ${url} model=${request.model} stream=${stream} max_tokens=${maxTokens}`
+      );
+
+      const controller = new AbortController();
+      // Headers first, body second: a lane that never answers is cut loose in
+      // seconds, while a lane that HAS answered keeps the long window it needs
+      // to finish generating.
+      let timer = setTimeout(
+        () => controller.abort(),
+        SKYMESH_RELAY_HEADERS_TIMEOUT_MS
+      );
+      const abortFromUpstream = () => controller.abort();
+      signal?.addEventListener('abort', abortFromUpstream, { once: true });
+
+      try {
+        const resp = await fetch(url, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            ...moonshinePrefillHeaders(request.prefillWindowId),
+          },
+          body: JSON.stringify({
+            model: request.model,
+            messages: request.messages,
+            stream,
+            temperature: request.temperature ?? 0.7,
+            max_tokens: maxTokens,
+            top_p: request.top_p,
+          }),
+          signal: controller.signal,
+        });
+        // Headers are in: extend to the generation deadline.
+        clearTimeout(timer);
+        timer = setTimeout(() => controller.abort(), SKYMESH_RELAY_TIMEOUT_MS);
+        logInference(
+          `[skymesh-relay] <- ${resp.status} ${resp.statusText}`
+        );
+        if (!resp.ok) {
+          // Surface WHY, not just that it failed: the lane returns a JSON
+          // OpenAI error body (e.g. an upstream OOM), and swallowing it is how
+          // "the SSM lane does not stream" gets misdiagnosed for a week.
+          const detail = await resp
+            .clone()
+            .text()
+            .then((text) => text.slice(0, 300))
+            .catch(() => '');
+          logInference(
+            `[skymesh-relay] upstream error ${resp.status}: ${detail}`
+          );
+          tripSkymeshRelayBreaker(`HTTP ${resp.status}: ${detail}`);
+          return null;
+        }
+        clearSkymeshRelayBreaker();
+        return resp;
+      } catch (err) {
+        logInference(`[skymesh-relay] error: ${String(err)}`);
+        tripSkymeshRelayBreaker(String(err));
         return null;
       } finally {
         clearTimeout(timer);
@@ -3154,8 +3323,55 @@ export async function infer(
     });
   }
 
+  // Tier 0c: the SSM relay. Exact-Skymesh models are not local, so they take
+  // this lane INSTEAD of Moonshine — dialling loopback for them is what made
+  // the SSM daily driver look like it had stopped yielding tokens.
+  if (isExactSkymeshModel(request.model)) {
+    const t0 = Date.now();
+    // A lane known to be down fails HERE, in about a microsecond, carrying the
+    // reason it went down. Paying the full discovery cost on every request is
+    // how a broken upstream turns into an editor that appears to hang.
+    const cooldownMs = skymeshRelayCooldownRemainingMs();
+    if (cooldownMs > 0) {
+      const detail = `lane down for ${Math.ceil(cooldownMs / 1000)}s more: ${skymeshRelayCooldownReason()}`;
+      attempts.push({
+        tier: 'skymesh-relay',
+        status: 'skipped',
+        ms: Date.now() - t0,
+        detail,
+      });
+      logInference(`model=${request.model} tier=skymesh-relay skipped (${detail})`);
+      throw new Error(
+        `Exact Skymesh model ${request.model} is unavailable; ${detail}`
+      );
+    }
+    const relayResponse = await trySkymeshRelayInference(request);
+    const ms = Date.now() - t0;
+    if (relayResponse) {
+      attempts.push({ tier: 'skymesh-relay', status: 'ok', ms });
+      logInference(
+        `model=${request.model} tier=skymesh-relay status=ok ms=${ms}`
+      );
+      return {
+        tier: 'skymesh-relay',
+        response: relayResponse,
+        upstreamHeaders: { 'X-Zedge-Tier': 'skymesh-relay' },
+        attempts,
+      };
+    }
+    attempts.push({ tier: 'skymesh-relay', status: 'error', ms });
+    // Moonshine cannot serve this model at all; say so rather than letting a
+    // loopback connection refusal stand in as the reason.
+    attempts.push({
+      tier: 'moonshine',
+      status: 'skipped',
+      ms: 0,
+      detail: 'exact-skymesh model is not served by the local container',
+    });
+  }
+
   // Tier 1: Moonshine container (repair + one retry when the shim is down)
-  {
+  if (!isExactSkymeshModel(request.model)) {
     const moonshineResult = await runMoonshineTier(request, attempts);
     if (moonshineResult) {
       const resp = moonshineResult.response;

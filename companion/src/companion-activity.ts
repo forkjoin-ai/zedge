@@ -4,6 +4,7 @@ import { dirname, join } from 'path';
 
 export type CompanionActivityKind =
   | 'forkjoin-chat'
+  | 'skymesh-relay-chat'
   | 'moonshine-chat'
   | 'wasm-chat'
   | 'wasm-fim'
