@@ -5,3 +5,9 @@
 # Mandatory monorepo ignores (synced by a0)
 .wrangler/
 .x-ranger/
+
+# Installed dependencies are never source. 27 pnpm bin shims under
+# companion/node_modules/.bin were TRACKED here (15 executables, 12 symlinks),
+# and two more arrived untracked-and-unignored, one `git add -A` away from
+# joining them. They regenerate on install.
+node_modules/
