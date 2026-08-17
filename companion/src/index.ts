@@ -81,19 +81,51 @@ function isAddressInUseError(error: unknown): boolean {
 
 /** Refreshes the live model catalog and writes it into Zed's static picker config. */
 async function syncZedSettingsFromModelCatalog(): Promise<void> {
-  const [{ getModels }, { syncZedgeProviderAccess }, { getCompanionPort }] =
-    await Promise.all([
-      import('./inference-bridge.ts'),
-      import('./zed-provider-sync.ts'),
-      import('./config.ts'),
-    ]);
+  const [
+    { getModels },
+    { syncZedgeProviderAccess },
+    {
+      getCompanionPort,
+      isDefaultModelMigrationPending,
+      markDefaultModelMigrated,
+      readZedgeDefaultModelPin,
+    },
+    { DEFAULT_ZEDGE_PREFERRED_MODEL_ID, isSupersededDefaultModelId },
+  ] = await Promise.all([
+    import('./inference-bridge.ts'),
+    import('./zed-provider-sync.ts'),
+    import('./config.ts'),
+    import('./model-catalog.ts'),
+  ]);
   const port = getCompanionPort();
   const models = await getModels({ refresh: true, refreshTimeoutMs: 5_000 });
+
+  // One-time migration of a stale default pin. Zed keeps whatever model it was
+  // handed, and the catalog sync only rewrites a pin that has left
+  // `available_models` — so a default from two product generations ago
+  // (mistral-7b) survived every boot. Migrate exactly once, and only when the
+  // pin is an old SHIPPED default: a deliberate pick of anything else is never
+  // touched, and once recorded this never fires again.
+  const pinnedModel = readZedgeDefaultModelPin();
+  const migrateStalePin =
+    pinnedModel !== null &&
+    isSupersededDefaultModelId(pinnedModel) &&
+    isDefaultModelMigrationPending();
+
   const syncResult = syncZedgeProviderAccess(
     port,
     models.map((model) => model.id),
-    process.env.ZEDGE_MOONSHINE_MODEL
+    process.env.ZEDGE_MOONSHINE_MODEL ??
+      (migrateStalePin ? DEFAULT_ZEDGE_PREFERRED_MODEL_ID : undefined)
   );
+
+  if (migrateStalePin) {
+    markDefaultModelMigrated();
+    console.log(
+      `[zedge] Migrated Zed default model ${pinnedModel} -> ${DEFAULT_ZEDGE_PREFERRED_MODEL_ID} ` +
+        '(stale pin from an older shipped default; runs once)'
+    );
+  }
   if (syncResult.keychain.updated) {
     console.log(
       `[zedge] Seeded Zedge API key in macOS keychain for ${syncResult.keychain.apiUrl}`
@@ -110,12 +142,15 @@ async function syncZedSettingsFromModelCatalog(): Promise<void> {
   }
 }
 
-/** Starts Moonshine when possible, then syncs Zed settings from whatever catalog is live. */
+/**
+ * Companion boot may start the watchdog, but must not birth fat-station.
+ * Watchdog only repairs after explicit demand (infer / model-use / doctor).
+ */
 async function startMoonshineAndSyncZedSettings(): Promise<void> {
   try {
-    const { ensureMoonshineRunning, startMoonshineRuntimeWatchdog } =
-      await import('./moonshine-docker.ts');
-    await ensureMoonshineRunning();
+    const { startMoonshineRuntimeWatchdog } = await import(
+      './moonshine-docker.ts'
+    );
     startMoonshineRuntimeWatchdog();
   } catch (err) {
     console.warn(`[moonshine] Startup failed: ${getErrorMessage(err)}`);

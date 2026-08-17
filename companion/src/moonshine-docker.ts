@@ -1,8 +1,10 @@
 /**
  * Moonshine container lifecycle for the Zedge companion sidecar.
  *
- * Starts the fat-station + openai-compat services at sidecar startup, then
- * waits for the /health endpoint to become ready.
+ * Companion HTTP/MCP may autospawn. Fat-station + the OpenAI-compat shim
+ * must not: they start only after explicit demand (first infer, `zedge-model
+ * use`, or doctor/repair). The watchdog repairs a demanded runtime; it does
+ * not birth one on companion boot.
  *
  * The preferred local path uses the repo-built fat-station binary and the
  * TypeScript OpenAI-compatible shim. Docker compose remains a fallback for
@@ -16,6 +18,7 @@ import { basename, join, dirname } from 'path';
 import { isCompanionInferenceBusy } from './companion-activity.ts';
 import { fileURLToPath } from 'url';
 import { readZedModelSelection } from './zed-settings.ts';
+import { isExactSkymeshModel } from './model-catalog.ts';
 import {
   guardedSubagentCreate,
   guardedSubagentReap,
@@ -173,6 +176,38 @@ let watchdogInterval: ReturnType<typeof setInterval> | null = null;
 let watchdogRepair: Promise<void> | null = null;
 let ensureMoonshineInFlight: Promise<void> | null = null;
 let watchdogConsecutiveFailures = 0;
+/** Set by ensureMoonshineRunning. Companion boot must leave this false. */
+let moonshineDemandArmed = false;
+
+export type MoonshineWatchdogAction = 'idle' | 'busy' | 'ready' | 'repair';
+
+/**
+ * Fat-station launch policy. Companion boot arms nothing; only an explicit
+ * ensure (infer / model-use / doctor) may ask the watchdog to repair.
+ */
+export function moonshineWatchdogShouldRepair(input: {
+  demandArmed: boolean;
+  inferenceBusy: boolean;
+  runtimeReady: boolean;
+}): MoonshineWatchdogAction {
+  if (!input.demandArmed) return 'idle';
+  if (input.inferenceBusy) return 'busy';
+  if (input.runtimeReady) return 'ready';
+  return 'repair';
+}
+
+export function isMoonshineDemandArmed(): boolean {
+  return moonshineDemandArmed;
+}
+
+export function armMoonshineDemand(): void {
+  moonshineDemandArmed = true;
+}
+
+/** Test-only: companion boot must leave demand disarmed. */
+export function resetMoonshineDemandForTests(): void {
+  moonshineDemandArmed = false;
+}
 let dockerDaemonAvailable: boolean | null = null;
 let dockerDaemonProbeAt = 0;
 let dockerDaemonWarned = false;
@@ -480,6 +515,11 @@ function resolveStartupModelSpec(): LocalMoonshineModelSpec | null {
     const envSpec = LOCAL_MOONSHINE_MODELS[configuredModel];
     if (envSpec && canUseModelSpec(envSpec)) {
       return envSpec;
+    }
+    // SSM CF skymesh (rwkv7-mini) is not a local knot. Do not fall through
+    // to Zed/mistral and birth a fat-station for someone else's default.
+    if (!envSpec || isExactSkymeshModel(configuredModel)) {
+      return null;
     }
     console.warn(
       `[moonshine] ZEDGE_MOONSHINE_MODEL=${configuredModel} is not runnable locally ` +
@@ -1616,6 +1656,7 @@ async function startDockerMoonshine(
  * Handles the zedge ensure Moonshine Running workflow.
  */
 export async function ensureMoonshineRunning(): Promise<void> {
+  armMoonshineDemand();
   if (ensureMoonshineInFlight) {
     await ensureMoonshineInFlight;
     return;
@@ -1725,14 +1766,18 @@ export function startMoonshineRuntimeWatchdog(): void {
     if (watchdogRepair !== null) return;
     watchdogRepair = (async () => {
       try {
-        if (moonshineInferenceBusy()) {
+        const busy = moonshineInferenceBusy();
+        const ready = busy ? false : await isMoonshineRuntimeReady();
+        const action = moonshineWatchdogShouldRepair({
+          demandArmed: isMoonshineDemandArmed(),
+          inferenceBusy: busy,
+          runtimeReady: ready,
+        });
+        if (action === 'idle' || action === 'busy') {
           return;
         }
-        if (await isMoonshineRuntimeReady()) {
+        if (action === 'ready') {
           watchdogConsecutiveFailures = 0;
-          return;
-        }
-        if (moonshineInferenceBusy()) {
           return;
         }
         watchdogConsecutiveFailures += 1;

@@ -27,6 +27,7 @@ describe('Zedge model catalog', () => {
 
   test('exposes the admitted exact Skymesh agentic lanes', () => {
     for (const [id, ownedBy, maxTokens] of [
+      ['rwkv7-mini', 'skymesh', 2048],
       ['qwen3-coder-next', 'skymesh', 4096],
       ['muse-glimmer-30b-3', 'skymesh', 256],
     ] as const) {

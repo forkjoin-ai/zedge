@@ -33,6 +33,53 @@ export const DEFAULT_ZEDGE_MODEL_ID = 'gnosis-local';
 export const CODESTRAL_ZEDGE_MODEL_ID = 'codestral-22b';
 export const QWEN3_CODER_NEXT_MODEL_ID = 'qwen3-coder-next';
 export const MUSE_GLIMMER_MODEL_ID = 'muse-glimmer-30b-3';
+/** SSM on CF skymesh (`apps/ssm-mini` via skymesh.forkjoin.ai). Not a local fat-station. */
+export const RWKV7_MINI_MODEL_ID = 'rwkv7-mini';
+export const DEFAULT_ZEDGE_PREFERRED_MODEL_ID = RWKV7_MINI_MODEL_ID;
+
+/**
+ * Model ids that HAVE BEEN the shipped default at some point.
+ *
+ * A pin equal to one of these is indistinguishable from "this install never
+ * chose anything" — it is what the product handed the user, not what the user
+ * picked. When the shipped default moves (mistral-7b → codestral-22b →
+ * rwkv7-mini), those pins are stale artifacts and must migrate; anything else
+ * in the catalog is a real choice and is never touched.
+ *
+ * This is why the SSM switch did not take: `updateZedgeAgentDefaultModel`
+ * only replaces Zed's `agent.default_model` when the pinned id has left
+ * `available_models` entirely, and mistral-7b never left — so every startup
+ * sync re-blessed a default from two product generations ago.
+ *
+ * Deliberately NARROW. `codestral-22b` is excluded even though it was the
+ * previous default: it has its own alias, it is a model somebody would pick
+ * today on purpose, and a test already pins that a persisted `codestral` stays
+ * codestral. `gnosis-local` is included because it is the SAFETY FALLBACK that
+ * a since-fixed merge bug wrote into fresh installs (see the note above
+ * `persistedPreferred` in config.ts) — a pin that the product placed, not the
+ * user. When in doubt, leave an id out: a missed migration is a slower daily
+ * driver, a wrong one silently overrides somebody's choice.
+ *
+ * Append here when `DEFAULT_ZEDGE_PREFERRED_MODEL_ID` changes AND the outgoing
+ * default is not a model worth choosing on its own; never remove, since old
+ * installs keep old pins indefinitely.
+ */
+const SUPERSEDED_DEFAULT_MODEL_IDS = new Set<string>([
+  'mistral-7b',
+  DEFAULT_ZEDGE_MODEL_ID,
+]);
+
+/**
+ * Whether `modelId` is a pin left behind by an older shipped default rather
+ * than a deliberate selection. The CURRENT default is never superseded, so a
+ * user who re-picks it keeps it.
+ */
+export function isSupersededDefaultModelId(modelId: string): boolean {
+  const normalized = normalizeZedgeModelId(modelId).trim();
+  if (normalized.length === 0) return false;
+  if (normalized === DEFAULT_ZEDGE_PREFERRED_MODEL_ID) return false;
+  return SUPERSEDED_DEFAULT_MODEL_IDS.has(normalized);
+}
 
 const ZEDGE_MODEL_ALIASES = new Map<string, string>([
   ['codestral', CODESTRAL_ZEDGE_MODEL_ID],
@@ -47,6 +94,13 @@ export function normalizeZedgeModelId(modelId: string): string {
 }
 
 const KNOWN_ZEDGE_MODELS: KnownZedgeModel[] = [
+  {
+    id: RWKV7_MINI_MODEL_ID,
+    displayName: 'RWKV-7 Mini (SSM CF skymesh)',
+    maxTokens: 2048,
+    ownedBy: 'skymesh',
+    forkjoinTier: true,
+  },
   {
     id: QWEN3_CODER_NEXT_MODEL_ID,
     displayName: 'Qwen3 Coder Next (Skymesh exact relay)',
@@ -400,6 +454,7 @@ export function isForkjoinTierModel(modelId: string): boolean {
 export function isExactSkymeshModel(modelId: string): boolean {
   const normalized = normalizeZedgeModelId(modelId).toLowerCase();
   return (
+    normalized === RWKV7_MINI_MODEL_ID ||
     normalized === QWEN3_CODER_NEXT_MODEL_ID ||
     normalized === MUSE_GLIMMER_MODEL_ID
   );

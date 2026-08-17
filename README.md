@@ -48,7 +48,7 @@ pnpm install
 pnpm run zedge:launch-agent:install
 ```
 
-That registers a launch agent with **KeepAlive**, so the sidecar comes back after reboots and you do not need to remember commands. The launch agent defaults Moonshine to **`deepseek-r1-1.5b`** using the cached knot at `~/.edgework/models/deepseek-r1-1.5b.knot` so inference works offline (no R2 fetch). Override with `ZEDGE_MOONSHINE_MODEL` in the plist or env.
+That registers a launch agent with **KeepAlive**, so the sidecar comes back after reboots and you do not need to remember commands. The launch agent defaults to **`rwkv7-mini`** (SSM on CF skymesh) — companion HTTP may autospawn; a local fat-station does not. Override with `ZEDGE_MOONSHINE_MODEL` in the plist or env.
 
 **Then in Zed:** the companion **auto-configures** Zedge at startup:
 

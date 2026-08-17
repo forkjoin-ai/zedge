@@ -10,8 +10,10 @@ import { join } from 'path';
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'fs';
 import {
   DEFAULT_ZEDGE_MODEL_ID,
+  DEFAULT_ZEDGE_PREFERRED_MODEL_ID,
   isCandidateZedgeModel,
   isLegacyEdgeworkModelId,
+  isSupersededDefaultModelId,
   normalizeZedgeModelId,
 } from './model-catalog.ts';
 import { readZedModelSelection } from './zed-settings.ts';
@@ -54,6 +56,15 @@ export interface ZedgeConfig {
     defaultHumanLanguage: string;
     requirePreviewForInPlaceRewrite: boolean;
   };
+  /**
+   * The shipped default this install has already been migrated to.
+   *
+   * Set once, after a stale pin from an OLDER shipped default is rewritten to
+   * the current one. Its presence is what stops the migration from running
+   * again: a user who deliberately picks an older model AFTER the migration
+   * keeps it, because we never migrate twice for the same target.
+   */
+  defaultModelMigratedTo?: string;
   /** DashRelay WebSocket URL for Ghostwriter CRDT sync */
   dashRelayUrl?: string;
   /** DashRelay API key (format: dr_<64-hex>) */
@@ -118,6 +129,7 @@ const DEFAULT_ZEDGE_CONFIG: ZedgeConfig = {
     maxCpuPercent: 50,
     maxMemoryMb: 2048,
     allowedModels: [
+      DEFAULT_ZEDGE_PREFERRED_MODEL_ID,
       'codestral-22b',
       'mistral-7b',
       'gemma3-4b-it',
@@ -127,9 +139,10 @@ const DEFAULT_ZEDGE_CONFIG: ZedgeConfig = {
       'tinyllama-1.1b',
     ],
   },
-  preferredModel: 'codestral-22b',
-  // CPU middle monofat is the production path for catalog models with
-  // CLOUD_RUN_COORDINATORS entries (see coordinator-urls.ts + inference-bridge).
+  preferredModel: DEFAULT_ZEDGE_PREFERRED_MODEL_ID,
+  // Default daily driver is SSM on CF skymesh (`rwkv7-mini` / ssm-mini).
+  // That path does not birth a local fat-station. CPU monofat remains
+  // opt-in (see coordinator-urls.ts + inference-bridge).
   cloudRunDirect: true,
   babelfish: {
     enabled: true,
@@ -186,9 +199,56 @@ function getMoonshineModelEnvOverride(): string | null {
   return normalizeZedgeModelId(envModel);
 }
 
+/** Zed's currently pinned Zedge default model, or null when nothing is pinned. */
+export function readZedgeDefaultModelPin(): string | null {
+  const selection = readZedModelSelection();
+  const pinned = selection?.defaultModel?.trim();
+  return pinned && pinned.length > 0 ? pinned : null;
+}
+
+/**
+ * Whether this install still has to migrate a stale default pin.
+ *
+ * Reads the raw file, not `getZedgeConfig()`, because the merge that computes
+ * `preferredModel` asks THIS question — going through it would recurse.
+ */
+export function isDefaultModelMigrationPending(): boolean {
+  const raw = readJsonFile<PartialZedgeConfig>(ZEDGE_CONFIG_FILE, {});
+  return raw.defaultModelMigratedTo !== DEFAULT_ZEDGE_PREFERRED_MODEL_ID;
+}
+
+/**
+ * Record that the stale-pin migration has run for the current default, so it
+ * never runs a second time and never overrides a later deliberate choice.
+ */
+export function markDefaultModelMigrated(): void {
+  const raw = readJsonFile<PartialZedgeConfig>(ZEDGE_CONFIG_FILE, {});
+  if (raw.defaultModelMigratedTo === DEFAULT_ZEDGE_PREFERRED_MODEL_ID) {
+    return;
+  }
+  writeJsonFile(ZEDGE_CONFIG_FILE, {
+    ...raw,
+    defaultModelMigratedTo: DEFAULT_ZEDGE_PREFERRED_MODEL_ID,
+  });
+}
+
 function getZedPreferredModelOverride(): string | null {
   const selection = readZedModelSelection();
   if (!selection) {
+    return null;
+  }
+
+  // A pin equal to an OLDER shipped default is an artifact of that default,
+  // not a choice — Zed keeps whatever it was handed, and the catalog sync only
+  // rewrites pins that have left `available_models` entirely. Ignore it until
+  // the one-time migration has run, so the current product default is what the
+  // companion actually serves. A deliberate pick of anything else still wins,
+  // and after migration this branch is inert.
+  if (
+    typeof selection.defaultModel === 'string' &&
+    isSupersededDefaultModelId(selection.defaultModel) &&
+    isDefaultModelMigrationPending()
+  ) {
     return null;
   }
 
@@ -267,16 +327,26 @@ function mergeZedgeConfig(config: PartialZedgeConfig | undefined): ZedgeConfig {
   // normalizePreferredModel() answers "this persisted id is legacy/candidate — what
   // is safe?" with DEFAULT_ZEDGE_MODEL_ID (gnosis-local). Handing it `undefined` made
   // a config that never set a model take that same safety fallback, so a FRESH
-  // install silently came up on gnosis-local instead of the intended CPU-middle
-  // monofat daily driver in DEFAULT_ZEDGE_CONFIG.preferredModel (codestral-22b) —
+  // install silently came up on gnosis-local instead of the intended SSM CF
+  // skymesh daily driver in DEFAULT_ZEDGE_CONFIG.preferredModel (rwkv7-mini) —
   // even though the spread below sets exactly that, then got overridden here.
   // Nothing persisted ⇒ take the product default; something persisted ⇒ validate it.
+  // A persisted id that is merely an OLDER shipped default is the same
+  // artifact as the Zed pin above (this install's zedge.json carried
+  // `gnosis-local` from June while the product had moved on twice), so it also
+  // yields to the current default until the one-time migration has run.
+  const persistedPreferred =
+    config?.preferredModel == null
+      ? DEFAULT_ZEDGE_CONFIG.preferredModel
+      : isSupersededDefaultModelId(config.preferredModel) &&
+          isDefaultModelMigrationPending()
+        ? DEFAULT_ZEDGE_CONFIG.preferredModel
+        : normalizePreferredModel(config.preferredModel);
+
   const preferredModel =
     getMoonshineModelEnvOverride() ??
     getZedPreferredModelOverride() ??
-    (config?.preferredModel == null
-      ? DEFAULT_ZEDGE_CONFIG.preferredModel
-      : normalizePreferredModel(config.preferredModel));
+    persistedPreferred;
 
   return {
     ...DEFAULT_ZEDGE_CONFIG,

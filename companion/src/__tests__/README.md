@@ -14,6 +14,7 @@ Focused sidecar tests for MCP tooling, Babelfish behavior, gnot and deploy-helpe
 - `companion-agentic.e2e.test.ts` drives the public companion control surface through an in-process HTTP request multiplexer plus a local Moonshine mock, covering `/tools/preflight`, `/mcp`, agentic `/v1/chat/completions`, Babelfish, agent swarm, Daydream, TTS preview, and preview-first range edits without spawning a sidecar.
 - `companion-supervisor.e2e.test.ts` boots the supervisor on an isolated port, kills the owned companion child, and verifies that health returns on a fresh child PID while the restarted child preserves the same model and host runtime contract.
 - `mcp-babysitter.test.ts` verifies the shared companion restart policy that both the manual supervisor and the MCP bridge use for startup grace, busy-child suppression, repeated health failures, forced child-exit restarts, and restart-storm throttling.
+- `moonshine-demand.test.ts` locks the contract that companion HTTP/MCP may autospawn while fat-station does not: watchdog stays idle until an explicit ensure, and companion boot no longer calls `ensureMoonshineRunning`.
 - `companion-activity.test.ts` verifies the on-disk busy marker that lets the parent watchdogs distinguish the owned sidecar's long local WASM warmup/generation windows from an actual dead child.
 - `runtime-command.test.ts` verifies the wrapper-backed TypeScript entrypoint command builder used for the local TypeScript launch path.
 - `babelfish-mcp.test.ts` verifies the MCP bridge tool list and Babelfish proxying behavior.

@@ -15,7 +15,7 @@ pnpm run zedge:launch-agent:install
 This also:
 - Auto-configures Zed `settings.json` (`api_url` + model catalog) at `~/.config/zed/settings.json`.
 - Stores the placeholder API key `zedge-local` in the macOS Keychain / `ZEDGE_API_KEY` (Zed ignores `settings.json` `api_key` for `openai_compatible` providers).
-- Defaults Moonshine to `deepseek-r1-1.5b` using the cached knot at `~/.edgework/models/deepseek-r1-1.5b.knot` (offline, no R2 fetch). Override with `ZEDGE_MOONSHINE_MODEL`.
+- Defaults to `rwkv7-mini` (SSM on CF skymesh). Companion HTTP may autospawn; a local fat-station does not. Override with `ZEDGE_MOONSHINE_MODEL`.
 
 Lost inside Zed? Run the slash command **`/edge-setup`** for the same steps, copy-paste friendly.
 

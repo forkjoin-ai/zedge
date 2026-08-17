@@ -49,7 +49,7 @@ describe('Zedge Config', () => {
     expect(config.babelfish).toHaveProperty('requirePreviewForInPlaceRewrite');
   });
 
-  test('default preferred model is codestral-22b monofat', async () => {
+  test('default preferred model is rwkv7-mini SSM CF skymesh', async () => {
     const tempHome = mkdtempSync(join(tmpdir(), 'zedge-default-model-test-'));
     mkdirSync(join(tempHome, '.edgework'), { recursive: true });
     const configModulePath = fileURLToPath(
@@ -81,8 +81,126 @@ describe('Zedge Config', () => {
       preferredModel: string;
       cloudRunDirect: boolean;
     };
-    expect(config.preferredModel).toBe('codestral-22b');
+    expect(config.preferredModel).toBe('rwkv7-mini');
     expect(config.cloudRunDirect).toBe(true);
+  });
+
+  test('a stale pin from an older shipped default does not win', async () => {
+    // The exact shape this machine was in: Zed pinned mistral-7b (the default
+    // two product generations ago) and zedge.json carried gnosis-local from
+    // June, so the SSM switch never reached the running companion.
+    const tempHome = mkdtempSync(join(tmpdir(), 'zedge-stale-pin-test-'));
+    const edgeworkDir = join(tempHome, '.edgework');
+    const zedDir = join(tempHome, '.config', 'zed');
+    mkdirSync(edgeworkDir, { recursive: true });
+    mkdirSync(zedDir, { recursive: true });
+    writeFileSync(
+      join(edgeworkDir, 'zedge.json'),
+      JSON.stringify({ preferredModel: 'gnosis-local' })
+    );
+    writeFileSync(
+      join(zedDir, 'settings.json'),
+      JSON.stringify({
+        agent: { default_model: { provider: 'Zedge', model: 'mistral-7b' } },
+        language_models: {
+          openai_compatible: {
+            Zedge: {
+              api_url: 'http://127.0.0.1:7331/v1',
+              available_models: [
+                { name: 'rwkv7-mini', display_name: 'RWKV-7 Mini', max_tokens: 2048 },
+                { name: 'mistral-7b', display_name: 'Mistral 7B', max_tokens: 4096 },
+              ],
+            },
+          },
+        },
+      })
+    );
+
+    const configModulePath = fileURLToPath(
+      new URL('../config.ts', import.meta.url)
+    );
+    const script = `
+      (async () => {
+        const { getZedgeConfig, markDefaultModelMigrated } = await import(${JSON.stringify(
+          configModulePath
+        )});
+        const before = getZedgeConfig().preferredModel;
+        markDefaultModelMigrated();
+        const after = getZedgeConfig().preferredModel;
+        process.stdout.write(JSON.stringify({ before, after }));
+      })().catch((error) => {
+        console.error(error);
+        process.exit(1);
+      });
+    `;
+    const result = spawnSync(process.execPath, ['-e', script], {
+      env: { ...process.env, HOME: tempHome, ZEDGE_MOONSHINE_MODEL: '' },
+      encoding: 'utf-8',
+    });
+
+    expect(result.status).toBe(0);
+    const { before, after } = JSON.parse(result.stdout) as {
+      before: string;
+      after: string;
+    };
+    // Before the migration is recorded, neither stale artifact wins.
+    expect(before).toBe('rwkv7-mini');
+    // After it is recorded the guard is inert, and the pin is honoured again —
+    // which is what keeps a LATER deliberate pick of an old model working.
+    expect(after).toBe('mistral-7b');
+  });
+
+  test('a deliberate pick that was never a shipped default is never migrated', async () => {
+    const tempHome = mkdtempSync(join(tmpdir(), 'zedge-deliberate-pick-test-'));
+    const edgeworkDir = join(tempHome, '.edgework');
+    const zedDir = join(tempHome, '.config', 'zed');
+    mkdirSync(edgeworkDir, { recursive: true });
+    mkdirSync(zedDir, { recursive: true });
+    writeFileSync(
+      join(zedDir, 'settings.json'),
+      JSON.stringify({
+        agent: {
+          default_model: { provider: 'Zedge', model: 'muse-glimmer-30b-3' },
+        },
+        language_models: {
+          openai_compatible: {
+            Zedge: {
+              api_url: 'http://127.0.0.1:7331/v1',
+              available_models: [
+                { name: 'rwkv7-mini', display_name: 'RWKV-7 Mini', max_tokens: 2048 },
+                {
+                  name: 'muse-glimmer-30b-3',
+                  display_name: 'Muse Glimmer',
+                  max_tokens: 4096,
+                },
+              ],
+            },
+          },
+        },
+      })
+    );
+
+    const configModulePath = fileURLToPath(
+      new URL('../config.ts', import.meta.url)
+    );
+    const script = `
+      (async () => {
+        const { getZedgeConfig } = await import(${JSON.stringify(
+          configModulePath
+        )});
+        process.stdout.write(getZedgeConfig().preferredModel);
+      })().catch((error) => {
+        console.error(error);
+        process.exit(1);
+      });
+    `;
+    const result = spawnSync(process.execPath, ['-e', script], {
+      env: { ...process.env, HOME: tempHome, ZEDGE_MOONSHINE_MODEL: '' },
+      encoding: 'utf-8',
+    });
+
+    expect(result.status).toBe(0);
+    expect(result.stdout.trim()).toBe('muse-glimmer-30b-3');
   });
 
   test('legacy persisted preferred model falls back to gnosis-local', async () => {

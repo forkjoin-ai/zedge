@@ -282,7 +282,7 @@ write_plist() {
     <key>PATH</key>
     <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
     <key>ZEDGE_MOONSHINE_MODEL</key>
-    <string>qwen2.5-0.5b-instruct</string>
+    <string>rwkv7-mini</string>
     <key>ZEDGE_MOONSHINE_TIMEOUT_MS</key>
     <string>180000</string>
     <key>ZEDGE_GUARDED_SUBAGENT</key>
@@ -341,7 +341,7 @@ EOF
     <key>PATH</key>
     <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
     <key>ZEDGE_MOONSHINE_MODEL</key>
-    <string>qwen2.5-0.5b-instruct</string>
+    <string>rwkv7-mini</string>
     <key>ZEDGE_MOONSHINE_TIMEOUT_MS</key>
     <string>180000</string>
     <key>ZEDGE_GUARDED_SUBAGENT</key>
