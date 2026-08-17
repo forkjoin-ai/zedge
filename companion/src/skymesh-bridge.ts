@@ -352,6 +352,20 @@ function handleWebSocketMessage(msg: Record<string, unknown>): void {
 
 // --- Preflight PARIS Probe ---
 
+/**
+ * Station request headers, carrying `X-Internal-Secret` when the mesh is armed.
+ *
+ * A fat-station configured with `STATION_INTERNAL_SECRET` rejects every route
+ * except `/health` without a matching header, and there is NO loopback bypass,
+ * so an armed station 401s this preflight and the companion reports the node
+ * unreachable when it is merely unauthenticated. Omitted entirely when the
+ * variable is unset, so an unarmed mesh behaves exactly as before.
+ */
+function stationHeaders(base: Record<string, string>): Record<string, string> {
+  const secret = (process.env['STATION_INTERNAL_SECRET'] ?? '').trim();
+  return secret ? { ...base, 'X-Internal-Secret': secret } : base;
+}
+
 async function handlePreflightMessage(
   msg: Record<string, unknown>
 ): Promise<void> {
@@ -367,7 +381,7 @@ async function handlePreflightMessage(
     // Step 1: Tokenize
     const tokenRes = await fetch(`${FAT_STATION_BASE_URL}/tokenize`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: stationHeaders({ 'Content-Type': 'application/json' }),
       body: JSON.stringify({ text: probePrompt }),
       signal: AbortSignal.timeout(5000),
     });
