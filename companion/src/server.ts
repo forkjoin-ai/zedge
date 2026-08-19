@@ -585,6 +585,38 @@ function summarizeChatRouting(
   ].join(' ');
 }
 
+function zedOpenAiRoleChunk(model: string): Uint8Array {
+  // Zed's OpenAI-compatible provider cannot parse SSE comments, and its
+  // low_speed_timeout fires on a 0-byte stall ("temporarily unavailable").
+  // An assistant-role delta is a legal first token and resets that timer
+  // before infer() waits on Moonshine.
+  return new TextEncoder().encode(
+    `data: ${JSON.stringify({
+      id: `chatcmpl-${Date.now()}`,
+      object: 'chat.completion.chunk',
+      created: Math.floor(Date.now() / 1000),
+      model,
+      choices: [
+        { index: 0, delta: { role: 'assistant' }, finish_reason: null },
+      ],
+    })}\n\n`
+  );
+}
+
+function zedOpenAiKeepaliveChunk(model: string): Uint8Array {
+  // Empty delta, not an SSE comment: a 90s local generate still outlasts
+  // Zed's 60s low_speed_timeout unless we keep the stream from going idle.
+  return new TextEncoder().encode(
+    `data: ${JSON.stringify({
+      id: `chatcmpl-${Date.now()}`,
+      object: 'chat.completion.chunk',
+      created: Math.floor(Date.now() / 1000),
+      model,
+      choices: [{ index: 0, delta: {}, finish_reason: null }],
+    })}\n\n`
+  );
+}
+
 function chatCompletionToSseStream(
   data: Record<string, unknown>
 ): ReadableStream<Uint8Array> {
@@ -2680,29 +2712,71 @@ export async function handleWebRequest(req: Request): Promise<Response> {
     );
 
     if (useCompanionAgentic) {
+      if (request.stream) {
+        const encoder = new TextEncoder();
+        return new Response(
+          new ReadableStream<Uint8Array>({
+            async start(controller) {
+              controller.enqueue(zedOpenAiRoleChunk(request.model));
+              const keepalive = setInterval(() => {
+                try {
+                  controller.enqueue(zedOpenAiKeepaliveChunk(request.model));
+                } catch {
+                  /* stream already closed */
+                }
+              }, 15_000);
+              try {
+                const { runCompanionAgenticChatCompletion } = await import(
+                  './agentic-orchestrator.ts'
+                );
+                const result = await runCompanionAgenticChatCompletion(
+                  request,
+                  body
+                );
+                const inner = chatCompletionToSseStream(
+                  result as unknown as Record<string, unknown>
+                );
+                const reader = inner.getReader();
+                for (;;) {
+                  const { done, value } = await reader.read();
+                  if (done) break;
+                  if (value) controller.enqueue(value);
+                }
+              } catch (err) {
+                const message =
+                  err instanceof Error ? err.message : String(err);
+                controller.enqueue(
+                  encoder.encode(
+                    `data: ${JSON.stringify({
+                      error: { message, type: 'server_error', agentic: true },
+                    })}\n\n`
+                  )
+                );
+                controller.enqueue(encoder.encode('data: [DONE]\n\n'));
+              } finally {
+                clearInterval(keepalive);
+                controller.close();
+              }
+            },
+          }),
+          {
+            headers: {
+              'Content-Type': 'text/event-stream',
+              'Cache-Control': 'no-cache',
+              Connection: 'keep-alive',
+              'Access-Control-Allow-Origin': '*',
+              'X-Zedge-Tier': 'companion-agentic',
+              'X-Zedge-Agentic': 'true',
+            },
+          }
+        );
+      }
+
       try {
         const { runCompanionAgenticChatCompletion } = await import(
           './agentic-orchestrator.ts'
         );
         const result = await runCompanionAgenticChatCompletion(request, body);
-        if (request.stream) {
-          return new Response(
-            chatCompletionToSseStream(
-              result as unknown as Record<string, unknown>
-            ),
-            {
-              headers: {
-                'Content-Type': 'text/event-stream',
-                'Cache-Control': 'no-cache',
-                Connection: 'keep-alive',
-                'Access-Control-Allow-Origin': '*',
-                'X-Zedge-Tier': 'companion-agentic',
-                'X-Zedge-Agentic': 'true',
-              },
-            }
-          );
-        }
-
         return new Response(JSON.stringify(result), {
           status: 200,
           headers: {
@@ -2727,8 +2801,24 @@ export async function handleWebRequest(req: Request): Promise<Response> {
     // Agentic mode is only entered when the request explicitly asks for tools.
 
     if (request.stream) {
+      const encoder = new TextEncoder();
+      const buildUpstream = async (): Promise<Response> => {
       const result = await infer(request);
       const attemptHeaders = buildAttemptHeaders(result.attempts);
+      if (!result.response.ok) {
+        return new Response(result.response.body, {
+          status: result.response.status,
+          headers: {
+            'Content-Type':
+              result.response.headers.get('content-type') ??
+              'application/json',
+            'Access-Control-Allow-Origin': '*',
+            'X-Zedge-Tier': result.tier,
+            ...result.upstreamHeaders,
+            ...attemptHeaders,
+          },
+        });
+      }
       const contentType = result.response.headers.get('content-type') ?? '';
 
       if (contentType.includes('text/event-stream') && result.response.body) {
@@ -2857,11 +2947,88 @@ export async function handleWebRequest(req: Request): Promise<Response> {
           ...attemptHeaders,
         },
       });
+      };
+
+      return new Response(
+        new ReadableStream<Uint8Array>({
+          async start(controller) {
+            controller.enqueue(zedOpenAiRoleChunk(request.model));
+            const keepalive = setInterval(() => {
+              try {
+                controller.enqueue(zedOpenAiKeepaliveChunk(request.model));
+              } catch {
+                /* stream already closed */
+              }
+            }, 15_000);
+            try {
+              const upstream = await buildUpstream();
+              if (!upstream.ok || !upstream.body) {
+                const text = await upstream
+                  .text()
+                  .catch(() => upstream.statusText);
+                controller.enqueue(
+                  encoder.encode(
+                    `data: ${JSON.stringify({
+                      error: {
+                        message: text.slice(0, 400),
+                        type: 'overloaded',
+                        status: upstream.status,
+                      },
+                    })}\n\n`
+                  )
+                );
+                controller.enqueue(encoder.encode('data: [DONE]\n\n'));
+                return;
+              }
+              const reader = upstream.body.getReader();
+              for (;;) {
+                const { done, value } = await reader.read();
+                if (done) break;
+                if (value) controller.enqueue(value);
+              }
+            } catch (err) {
+              const message = err instanceof Error ? err.message : String(err);
+              controller.enqueue(
+                encoder.encode(
+                  `data: ${JSON.stringify({
+                    error: { message, type: 'server_error' },
+                  })}\n\n`
+                )
+              );
+              controller.enqueue(encoder.encode('data: [DONE]\n\n'));
+            } finally {
+              clearInterval(keepalive);
+              controller.close();
+            }
+          },
+        }),
+        {
+          headers: {
+            'Content-Type': 'text/event-stream',
+            'Cache-Control': 'no-cache',
+            Connection: 'keep-alive',
+            'Access-Control-Allow-Origin': '*',
+          },
+        }
+      );
     }
 
     const inferRequest = { ...request, stream: false };
     const result = await infer(inferRequest);
     const attemptHeaders = buildAttemptHeaders(result.attempts);
+    if (!result.response.ok) {
+      return new Response(result.response.body, {
+        status: result.response.status,
+        headers: {
+          'Content-Type':
+            result.response.headers.get('content-type') ?? 'application/json',
+          'Access-Control-Allow-Origin': '*',
+          'X-Zedge-Tier': result.tier,
+          ...attemptHeaders,
+          ...result.upstreamHeaders,
+        },
+      });
+    }
     const data = await extractResponseData(result.response);
     const resolvedModel =
       typeof data.model === 'string' ? data.model : request.model;

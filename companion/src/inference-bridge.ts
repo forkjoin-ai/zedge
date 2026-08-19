@@ -337,21 +337,57 @@ function moonshineFailureWorthRepair(
   httpStatus?: number
 ): boolean {
   const lower = detail.toLowerCase();
+  // A hung /generate looks like AbortError/timeout while /health stays 200.
+  // Repairing then kills the healthy OpenAI shim, respawns it in front of the
+  // same busy station, and Zed sees a 60s 0-byte stall ("temporarily
+  // unavailable"). Only dead listeners are worth a restart.
   if (
     lower.includes('fetch failed') ||
     lower.includes('econnrefused') ||
     lower.includes('enotfound') ||
     lower.includes('socket hang up') ||
-    lower.includes('network') ||
-    lower.includes('aborted') ||
-    lower.includes('timeout')
+    lower.includes('network')
   ) {
     return true;
   }
-  return (
-    httpStatus !== undefined &&
-    (httpStatus === 500 || httpStatus === 502 || httpStatus === 503)
+  return httpStatus !== undefined && (httpStatus === 500 || httpStatus === 502);
+}
+
+function moonshineStationBusyResponse(inflight: number): Response {
+  return new Response(
+    JSON.stringify({
+      error: {
+        message: `Moonshine fat-station is busy (inflight=${inflight}). Retry shortly.`,
+        type: 'overloaded',
+        code: 'station_busy',
+      },
+    }),
+    {
+      status: 503,
+      headers: {
+        'Content-Type': 'application/json',
+        'Retry-After': '2',
+        'X-Zedge-Moonshine': 'busy',
+      },
+    }
   );
+}
+
+async function probeFatStationInflight(
+  timeoutMs = 2_000
+): Promise<number | null> {
+  try {
+    const resp = await fetch(`${FAT_STATION_BASE_URL}/status`, {
+      signal: AbortSignal.timeout(timeoutMs),
+    });
+    if (!resp.ok) return null;
+    const body = (await resp.json()) as { inflight?: unknown };
+    return typeof body.inflight === 'number' && Number.isFinite(body.inflight)
+      ? body.inflight
+      : null;
+  } catch {
+    return null;
+  }
 }
 
 async function repairMoonshineListeners(reason: string): Promise<void> {
@@ -376,6 +412,30 @@ async function runMoonshineTier(
   const controller = new AbortController();
   let failureDetail = '';
   let failureStatus: number | undefined;
+
+  // Fat-station /generate holds stateful_request_gate for the whole forward
+  // and only then writes headers. Concurrent chats block with 0 bytes, while
+  // /health try_locks the inner pipeline (released between tokens) and stays
+  // 200. /status.inflight is the honest busy bit — fail closed before we
+  // join the mutex queue that Zed then times out on.
+  const inflight = await probeFatStationInflight();
+  if (inflight !== null && inflight > 0) {
+    attempts.push({
+      tier: 'moonshine',
+      status: 'http_error',
+      ms: Date.now() - t0,
+      detail: `station inflight=${inflight}`,
+    });
+    logInference(
+      `[moonshine] station busy inflight=${inflight} model=${request.model}`
+    );
+    return {
+      tier: 'moonshine',
+      response: moonshineStationBusyResponse(inflight),
+      upstreamHeaders: { 'X-Zedge-Moonshine': 'busy' },
+      attempts,
+    };
+  }
 
   try {
     const resp = await tryMoonshineInference(request, controller.signal);
