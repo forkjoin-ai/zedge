@@ -2840,6 +2840,14 @@ export async function handleWebRequest(req: Request): Promise<Response> {
         return new Response(
           new ReadableStream<Uint8Array>({
             async start(controller) {
+              controller.enqueue(zedOpenAiRoleChunk(request.model));
+              const keepalive = setInterval(() => {
+                try {
+                  controller.enqueue(zedOpenAiKeepaliveChunk(request.model));
+                } catch {
+                  /* stream already closed */
+                }
+              }, 15_000);
               try {
                 const { runCompanionAgenticChatCompletion } = await import(
                   './agentic-orchestrator.ts'
@@ -2869,6 +2877,7 @@ export async function handleWebRequest(req: Request): Promise<Response> {
                 );
                 controller.enqueue(encoder.encode('data: [DONE]\n\n'));
               } finally {
+                clearInterval(keepalive);
                 controller.close();
               }
             },
