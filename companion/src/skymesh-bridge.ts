@@ -31,6 +31,44 @@ const BRIDGE_PING_INTERVAL_MS = 20_000;
 const PREFLIGHT_TIMEOUT_MS = 10_000;
 const QUERY_TIMEOUT_MS = 60_000;
 
+// --- Owner self-use ---
+
+let cachedOwnerUcan: string | null | undefined;
+
+/**
+ * The node owner's self-issued mesh/own@node:<id> UCAN, if present.
+ * Resolution order: SKYMESH_OWNER_UCAN env, then ~/.edgework/owner-ucan.
+ * Cached after first read; empty string means "absent" (never re-reads).
+ */
+export function loadOwnerUcan(): string | null {
+  if (cachedOwnerUcan !== undefined) return cachedOwnerUcan;
+  const fromEnv = process.env.SKYMESH_OWNER_UCAN?.trim();
+  if (fromEnv) {
+    cachedOwnerUcan = fromEnv;
+    return cachedOwnerUcan;
+  }
+  try {
+    // Bun sync FS — path mirrors auth.ts's ~/.edgework token storage.
+    const { homedir } = require('os') as typeof import('os');
+    const { readFileSync, existsSync } = require('fs') as typeof import('fs');
+    const { join } = require('path') as typeof import('path');
+    const ownerPath = join(homedir(), '.edgework', 'owner-ucan');
+    const token = existsSync(ownerPath)
+      ? readFileSync(ownerPath, 'utf8').trim()
+      : '';
+    cachedOwnerUcan = token || null;
+  } catch {
+    cachedOwnerUcan = null;
+  }
+  return cachedOwnerUcan;
+}
+
+/** Headers a client sends so owner-served requests are billed as self-use. */
+export function ownerSelfUseHeaders(): Record<string, string> {
+  const ucan = loadOwnerUcan();
+  return ucan ? { 'X-Owner-UCAN': ucan } : {};
+}
+
 // --- Types ---
 
 export interface SkymeshBridgeStatus {
@@ -283,6 +321,9 @@ function sendHello(): void {
       role: 'bridge',
       models: bridgeState.models,
       admitted: bridgeState.admitted,
+      // Owner self-use: a self-issued mesh/own@node:<nodeId> UCAN registers
+      // this node's owner with the relay (invalid tokens are ignored there).
+      ...(loadOwnerUcan() ? { ownerUcan: loadOwnerUcan() } : {}),
     })
   );
 }
