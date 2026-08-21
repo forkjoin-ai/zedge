@@ -1,12 +1,46 @@
 import { describe, expect, test } from '@a0n/gnosis/test';
 
 import {
+  applyConversationPromptBudget,
   applySystemPromptBudget,
   getCompactSystemPrompt,
   shouldSkipHeavySystemContext,
 } from '../prompt-budget.ts';
 
 describe('prompt budget', () => {
+  test('reduces an unrelated small-model greeting to the latest user turn', () => {
+    expect(
+      applyConversationPromptBudget('rwkv7-mini', [
+        { role: 'system', content: 'A long agent prompt about Forkjoin.' },
+        { role: 'user', content: 'Create a forkjoin.' },
+        { role: 'assistant', content: 'Previous answer.' },
+        { role: 'user', content: 'howdy' },
+      ])
+    ).toEqual([
+      {
+        role: 'user',
+        content: 'Reply directly and briefly to the user message:\n\nhowdy',
+      },
+    ]);
+  });
+
+  test('retains one assistant turn when a small-model question is referential', () => {
+    expect(
+      applyConversationPromptBudget('rwkv7-2.9b', [
+        { role: 'user', content: 'What are Brier scores?' },
+        { role: 'assistant', content: 'They score probability forecasts.' },
+        { role: 'user', content: 'How are they used?' },
+      ])
+    ).toEqual([
+      { role: 'assistant', content: 'They score probability forecasts.' },
+      {
+        role: 'user',
+        content:
+          'Reply directly and briefly to the user message:\n\nHow are they used?',
+      },
+    ]);
+  });
+
   test('drops all system prompts for local wasm models', () => {
     const messages = [
       { role: 'system', content: 'Answer tersely.' },

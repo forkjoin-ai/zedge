@@ -196,14 +196,17 @@ export async function main(): Promise<void> {
       openai_compatible: {
         Zedge: {
           api_url: companionApiUrl,
-          api_key: 'zedge-local',
           available_models: companionAvailableModels,
         },
       },
     },
     edit_predictions: {
-      copilot: {
+      provider: 'open_ai_compatible_api',
+      open_ai_compatible_api: {
         api_url: `${companionApiUrl}/completions`,
+        model: 'rwkv7-mini',
+        prompt_format: 'qwen',
+        max_output_tokens: 256,
       },
     },
   };

@@ -87,6 +87,7 @@ import {
 } from './superinference.ts';
 import { shouldStreamChatCompletion } from './chat-request.ts';
 import {
+  applyConversationPromptBudget,
   applySystemPromptBudget,
   shouldSkipHeavySystemContext,
 } from './prompt-budget.ts';
@@ -585,6 +586,59 @@ function summarizeChatRouting(
   ].join(' ');
 }
 
+function isTitleGenerationRequest(body: ChatRequestBody): boolean {
+  const rawContent = body.messages?.at(-1)?.content;
+  const last = Array.isArray(rawContent)
+    ? rawContent
+        .map((part) =>
+          part && typeof part === 'object' && 'text' in part
+            ? String((part as { text?: unknown }).text ?? '')
+            : '',
+        )
+        .join('\n')
+        .toLowerCase()
+    : String(rawContent ?? '').toLowerCase();
+  return (
+    last.includes('generate a concise') &&
+    last.includes('title for this conversation')
+  );
+}
+
+function fastConversationTitle(messages: ChatCompletionRequest['messages']): string {
+  const candidate = messages.find(
+    (message) =>
+      message.role === 'user' &&
+      !message.content.toLowerCase().includes('title for this conversation')
+  )?.content;
+  const words = (candidate ?? 'New conversation')
+    .replace(/[*_`#>]/g, '')
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 7);
+  return words.join(' ').replace(/[?!.,:;]+$/, '') || 'New conversation';
+}
+
+function fastTitleCompletion(
+  model: string,
+  messages: ChatCompletionRequest['messages']
+): Record<string, unknown> {
+  return {
+    id: `chatcmpl-title-${Date.now()}`,
+    object: 'chat.completion',
+    created: Math.floor(Date.now() / 1000),
+    model,
+    choices: [
+      {
+        index: 0,
+        message: { role: 'assistant', content: fastConversationTitle(messages) },
+        finish_reason: 'stop',
+      },
+    ],
+    usage: { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 },
+  };
+}
+
 function zedOpenAiRoleChunk(model: string): Uint8Array {
   // Zed's OpenAI-compatible provider cannot parse SSE comments, and its
   // low_speed_timeout fires on a 0-byte stall ("temporarily unavailable").
@@ -637,6 +691,23 @@ function chatCompletionToSseStream(
 
   return new ReadableStream<Uint8Array>({
     start(controller) {
+      controller.enqueue(
+        encoder.encode(
+          `data: ${JSON.stringify({
+            id,
+            object: 'chat.completion.chunk',
+            created,
+            model,
+            choices: [
+              {
+                index: 0,
+                delta: { role: 'assistant' },
+                finish_reason: null,
+              },
+            ],
+          })}\n\n`
+        )
+      );
       for (let i = 0; i < tokens.length; i++) {
         controller.enqueue(
           encoder.encode(
@@ -645,15 +716,12 @@ function chatCompletionToSseStream(
               object: 'chat.completion.chunk',
               created,
               model,
-              choices: [
-                {
-                  index: 0,
-                  delta:
-                    i === 0
-                      ? { role: 'assistant', content: tokens[i] }
-                      : { content: tokens[i] },
-                  finish_reason: null,
-                },
+                  choices: [
+                    {
+                      index: 0,
+                      delta: { content: tokens[i] },
+                      finish_reason: null,
+                    },
               ],
             })}\n\n`
           )
@@ -2639,6 +2707,27 @@ export async function handleWebRequest(req: Request): Promise<Response> {
       return { role: msg.role, content: String(msg.content ?? '') };
     }) as ChatCompletionRequest['messages'];
 
+    // Zed requests a title after the answer has already completed. Sending
+    // that tiny metadata task through a cold model made the finished chat
+    // appear to hang for tens of seconds, so derive it locally and terminate
+    // the protocol immediately.
+    if (isTitleGenerationRequest(body)) {
+      const completion = fastTitleCompletion(model, messages);
+      appendInferenceDiagnostic('[chat-route] local-title-completion');
+      if (shouldStreamChatCompletion(body.stream, req.headers.get('accept'))) {
+        return new Response(chatCompletionToSseStream(completion), {
+          headers: {
+            'Content-Type': 'text/event-stream',
+            'Cache-Control': 'no-cache',
+            Connection: 'keep-alive',
+            'Access-Control-Allow-Origin': '*',
+            'X-Zedge-Tier': 'local-title',
+          },
+        });
+      }
+      return jsonResponse(completion);
+    }
+
     // --- Auto-attach codebase context ---
     // Extract the last user message, search the semantic code index, and
     // inject the top relevant blocks as additional context. This makes every
@@ -2686,9 +2775,9 @@ export async function handleWebRequest(req: Request): Promise<Response> {
         // Code index may not be initialized yet -- proceed without context
       }
     }
-    messages = applySystemPromptBudget(
+    messages = applyConversationPromptBudget(
       model,
-      messages
+      applySystemPromptBudget(model, messages)
     ) as ChatCompletionRequest['messages'];
 
     const request: ChatCompletionRequest = requestWithPrefillWindow(
@@ -2713,18 +2802,44 @@ export async function handleWebRequest(req: Request): Promise<Response> {
 
     if (useCompanionAgentic) {
       if (request.stream) {
+        // RWKV-7 Mini cannot execute the supplied tool surface, but it can
+        // stream ordinary text. Keep the small-model guard and bypass the
+        // buffered agentic orchestrator so prefill and token deltas reach Zed
+        // as they arrive.
+        if (request.model === 'rwkv7-mini') {
+          const streamed = await infer(request);
+          if (streamed.response.ok && streamed.response.body) {
+            const sseStream = createSSEProxyStream(
+              streamed.response.body,
+              streamed.tier,
+              streamed.upstreamHeaders,
+              streamed.attempts,
+              request.model,
+              {
+                forwardNamedEvents:
+                  req.headers.get('x-zedge-sse-events')?.toLowerCase() ===
+                  'passthrough',
+                suppressPrefillProgress: isTitleGenerationRequest(body),
+              },
+            );
+            return new Response(sseStream, {
+              headers: {
+                'Content-Type': 'text/event-stream',
+                'Cache-Control': 'no-cache',
+                Connection: 'keep-alive',
+                'Access-Control-Allow-Origin': '*',
+                'X-Zedge-Tier': streamed.tier,
+                'X-Zedge-Agentic': 'true',
+                ...streamed.upstreamHeaders,
+                ...buildAttemptHeaders(streamed.attempts),
+              },
+            });
+          }
+        }
         const encoder = new TextEncoder();
         return new Response(
           new ReadableStream<Uint8Array>({
             async start(controller) {
-              controller.enqueue(zedOpenAiRoleChunk(request.model));
-              const keepalive = setInterval(() => {
-                try {
-                  controller.enqueue(zedOpenAiKeepaliveChunk(request.model));
-                } catch {
-                  /* stream already closed */
-                }
-              }, 15_000);
               try {
                 const { runCompanionAgenticChatCompletion } = await import(
                   './agentic-orchestrator.ts'
@@ -2754,7 +2869,6 @@ export async function handleWebRequest(req: Request): Promise<Response> {
                 );
                 controller.enqueue(encoder.encode('data: [DONE]\n\n'));
               } finally {
-                clearInterval(keepalive);
                 controller.close();
               }
             },
@@ -2832,6 +2946,7 @@ export async function handleWebRequest(req: Request): Promise<Response> {
             forwardNamedEvents:
               req.headers.get('x-zedge-sse-events')?.toLowerCase() ===
               'passthrough',
+            suppressPrefillProgress: isTitleGenerationRequest(body),
           }
         );
 

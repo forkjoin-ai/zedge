@@ -6,6 +6,7 @@ import { buildZedAvailableModels } from './model-catalog.ts';
 interface ZedModelProviderConfig {
   api_url?: string;
   api_key?: string;
+  low_speed_timeout_in_seconds?: number;
   available_models?: unknown;
 }
 
@@ -96,16 +97,16 @@ function normalizeLocalLoopbackUrls(settings: Record<string, unknown>): void {
   if (!isRecord(editPredictions)) {
     return;
   }
-  const copilot = editPredictions.copilot;
-  if (!isRecord(copilot)) {
+  const custom = editPredictions.open_ai_compatible_api;
+  if (!isRecord(custom)) {
     return;
   }
-  const copilotUrl = copilot.api_url;
-  if (typeof copilotUrl === 'string') {
-    if (isBrokenLocalZedgeUrl(copilotUrl) || copilotUrl.length === 0) {
-      copilot.api_url = getLocalZedgeCompletionsUrl(7331);
+  const customUrl = custom.api_url;
+  if (typeof customUrl === 'string') {
+    if (isBrokenLocalZedgeUrl(customUrl) || customUrl.length === 0) {
+      custom.api_url = getLocalZedgeCompletionsUrl(7331);
     } else {
-      copilot.api_url = rewriteLocalhost7331(copilotUrl);
+      custom.api_url = rewriteLocalhost7331(customUrl);
     }
   }
 }
@@ -158,6 +159,8 @@ export function ensureLocalZedgeProviderBlock(
   }
 
   zedge.api_url = getLocalZedgeApiUrl(port);
+  delete zedge.api_key;
+  delete zedge.low_speed_timeout_in_seconds;
 
   let editPredictions = settings.edit_predictions;
   if (!isRecord(editPredictions)) {
@@ -165,21 +168,18 @@ export function ensureLocalZedgeProviderBlock(
     settings.edit_predictions = editPredictions;
   }
 
-  let copilot = editPredictions.copilot;
-  if (!isRecord(copilot)) {
-    copilot = {};
-    editPredictions.copilot = copilot;
+  const copilot = editPredictions.copilot;
+  if (isRecord(copilot) && 'api_url' in copilot) {
+    delete copilot.api_url;
+    if (Object.keys(copilot).length === 0) delete editPredictions.copilot;
   }
-
-  const copilotUrl = typeof copilot.api_url === 'string' ? copilot.api_url : '';
-  if (
-    copilotUrl.length === 0 ||
-    isBrokenLocalZedgeUrl(copilotUrl) ||
-    isLocalZedgeApiUrl(copilotUrl, port) ||
-    copilotUrl.includes(':7331')
-  ) {
-    copilot.api_url = getLocalZedgeCompletionsUrl(port);
-  }
+  editPredictions.provider = 'open_ai_compatible_api';
+  editPredictions.open_ai_compatible_api = {
+    api_url: getLocalZedgeCompletionsUrl(port),
+    model: 'rwkv7-mini',
+    prompt_format: 'qwen',
+    max_output_tokens: 256,
+  };
 
   return zedge;
 }

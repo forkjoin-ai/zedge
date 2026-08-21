@@ -27,6 +27,15 @@ export interface ZedAvailableModel {
   name: string;
   display_name: string;
   max_tokens: number;
+  capabilities?: {
+    tools: boolean;
+    images: boolean;
+    parallel_tool_calls: boolean;
+    prompt_cache_key: boolean;
+    chat_completions: boolean;
+    interleaved_reasoning: boolean;
+    max_tokens_parameter: boolean;
+  };
 }
 
 export const DEFAULT_ZEDGE_MODEL_ID = 'gnosis-local';
@@ -495,11 +504,25 @@ export function buildZedAvailableModels(
     seen.add(normalizedId);
 
     const known = getKnownZedgeModel(normalizedId);
-    models.push({
+    const model: ZedAvailableModel = {
       name: normalizedId,
       display_name: known?.displayName ?? humanizeModelId(normalizedId),
       max_tokens: known?.maxTokens ?? 4096,
-    });
+    };
+    // This SSM emits text but does not implement Zed's tool protocol. Without
+    // this override Zed defaults tools on and keeps the agent turn active.
+    if (normalizedId === RWKV7_MINI_MODEL_ID) {
+      model.capabilities = {
+        tools: false,
+        images: false,
+        parallel_tool_calls: false,
+        prompt_cache_key: false,
+        chat_completions: true,
+        interleaved_reasoning: false,
+        max_tokens_parameter: true,
+      };
+    }
+    models.push(model);
   }
 
   return models;

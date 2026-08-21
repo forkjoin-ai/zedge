@@ -382,15 +382,27 @@ export async function runCompanionAgenticChatCompletion(
   const providedTools = Array.isArray(bodyOptions.tools)
     ? (bodyOptions.tools as AgenticToolDefinition[])
     : undefined;
+  // RWKV-7 Mini is the tiny SSM relay model. It can answer short prompts, but
+  // injecting Zed's 68-tool surface makes it emit unstable tool calls and
+  // drives a follow-up round past the relay deadline. Keep this exact model
+  // on the documented small-model path: no tool prompt, one answer round.
+  const smallSkymeshModel = request.model === 'rwkv7-mini';
   const agenticRequest: AgenticChatRequest = {
     model: request.model,
     messages: request.messages as AgenticChatMessage[],
     temperature: request.temperature,
     max_tokens: request.max_tokens,
-    auto_tools: parseBoolean(bodyOptions.auto_tools, true),
-    execute_tools: parseBoolean(bodyOptions.execute_tools, true),
+    auto_tools: smallSkymeshModel
+      ? false
+      : parseBoolean(bodyOptions.auto_tools, true),
+    execute_tools: smallSkymeshModel
+      ? false
+      : parseBoolean(bodyOptions.execute_tools, true),
     evaluate_intent: true,
-    max_tool_rounds: parsePositiveInteger(bodyOptions.max_tool_rounds, 5),
+    max_tool_rounds: smallSkymeshModel
+      ? 1
+      : parsePositiveInteger(bodyOptions.max_tool_rounds, 5),
+    ...(smallSkymeshModel ? { max_tools_in_prompt: 0 } : {}),
     ...(providedTools ? { tools: providedTools } : {}),
     ...(bodyOptions.tool_choice !== undefined
       ? { tool_choice: bodyOptions.tool_choice as AgenticChatRequest['tool_choice'] }

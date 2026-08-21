@@ -28,6 +28,7 @@ import {
   isLiveModelVisible,
 } from './model-catalog.ts';
 import {
+  applyConversationPromptBudget,
   applySystemPromptBudget,
   shouldSkipHeavySystemContext,
 } from './prompt-budget.ts';
@@ -227,6 +228,11 @@ export interface TierAttempt {
   detail?: string;
 }
 
+function formatAttemptDuration(ms: number): string {
+  if (ms < 1) return `${Math.max(0, Math.round(ms * 1_000_000))}ns`;
+  return `${Math.round(ms)}ms`;
+}
+
 export interface TierResult {
   tier: InferenceTier;
   response: Response;
@@ -408,7 +414,7 @@ async function runMoonshineTier(
   request: ChatCompletionRequest,
   attempts: TierAttempt[]
 ): Promise<TierResult | null> {
-  const t0 = Date.now();
+  const t0 = performance.now();
   const controller = new AbortController();
   let failureDetail = '';
   let failureStatus: number | undefined;
@@ -423,7 +429,7 @@ async function runMoonshineTier(
     attempts.push({
       tier: 'moonshine',
       status: 'http_error',
-      ms: Date.now() - t0,
+      ms: performance.now() - t0,
       detail: `station inflight=${inflight}`,
     });
     logInference(
@@ -440,10 +446,10 @@ async function runMoonshineTier(
   try {
     const resp = await tryMoonshineInference(request, controller.signal);
     if (resp.ok) {
-      attempts.push({ tier: 'moonshine', status: 'ok', ms: Date.now() - t0 });
+      attempts.push({ tier: 'moonshine', status: 'ok', ms: performance.now() - t0 });
       logInference(
         `model=${request.model} tier=moonshine status=ok ms=${
-          Date.now() - t0
+          performance.now() - t0
         }`
       );
       return {
@@ -458,7 +464,7 @@ async function runMoonshineTier(
     attempts.push({
       tier: 'moonshine',
       status: 'http_error',
-      ms: Date.now() - t0,
+      ms: performance.now() - t0,
       detail: failureDetail,
     });
     logInference(
@@ -471,7 +477,7 @@ async function runMoonshineTier(
     attempts.push({
       tier: 'moonshine',
       status: isTimeout ? 'timeout' : 'error',
-      ms: Date.now() - t0,
+      ms: performance.now() - t0,
       detail: failureDetail,
     });
     logInference(`[moonshine] error: ${failureDetail}`);
@@ -854,7 +860,16 @@ function isZedgeFallbackAssistantMessage(message: ChatMessage): boolean {
 
 /** Remove Zedge's in-content prefill status before calling Moonshine. */
 function stripZedgeProgressPrefix(content: string): string {
-  return content
+  let remaining = content;
+  // Current Zed-compatible progress is ordinary content because Zed does not
+  // render reasoning_content. Remove every completed progress paragraph from
+  // assistant history before another model sees it. The dots may wrap.
+  const currentProgress =
+    /^\s*\*?\d+t\/s\s*\|[\s\S]*?prefill\s+\d+(?:ns|ms|s)\s*\*\s*/u;
+  while (currentProgress.test(remaining)) {
+    remaining = remaining.replace(currentProgress, '');
+  }
+  return remaining
     .replace(/^\s*\*?\d+t\/s\s*\|\s*[^\n]*?\u28FF\s*[\u2588\s]*\*?\s*/u, '')
     .replace(/^\s*\*?\u28FF\s+[^\n]*\|\s*moonshine:[^\n]*\*?\s*/u, '');
 }
@@ -933,7 +948,7 @@ function sanitizeMoonshineMessage(message: ChatMessage): ChatMessage | null {
 }
 
 /** Remove previous local fallback and prompt-artifact turns before Moonshine. */
-function sanitizeMoonshineMessages(messages: ChatMessage[]): ChatMessage[] {
+export function sanitizeMoonshineMessages(messages: ChatMessage[]): ChatMessage[] {
   const filteredMessages: ChatMessage[] = [];
   for (const message of messages) {
     const sanitized = sanitizeMoonshineMessage(message);
@@ -1582,6 +1597,10 @@ async function trySkymeshRelayInference(
       const url = `${SKYMESH_RELAY_BASE_URL}/v1/chat/completions`;
       const maxTokens = resolveMoonshineMaxTokens(request);
       const stream = request.stream ?? false;
+      const relayMessages = applyConversationPromptBudget(
+        request.model,
+        sanitizeMoonshineMessages(request.messages)
+      );
       logInference(
         `[skymesh-relay] -> ${url} model=${request.model} stream=${stream} max_tokens=${maxTokens}`
       );
@@ -1590,10 +1609,13 @@ async function trySkymeshRelayInference(
       // Headers first, body second: a lane that never answers is cut loose in
       // seconds, while a lane that HAS answered keeps the long window it needs
       // to finish generating.
-      let timer = setTimeout(
-        () => controller.abort(),
-        SKYMESH_RELAY_HEADERS_TIMEOUT_MS
-      );
+      // Non-streaming agentic rounds do not receive response headers until
+      // generation is complete, so the short dead-lane probe would abort a
+      // healthy SSM request before it can return its JSON body.
+      const initialTimeoutMs = stream
+        ? SKYMESH_RELAY_HEADERS_TIMEOUT_MS
+        : SKYMESH_RELAY_TIMEOUT_MS;
+      let timer = setTimeout(() => controller.abort(), initialTimeoutMs);
       const abortFromUpstream = () => controller.abort();
       signal?.addEventListener('abort', abortFromUpstream, { once: true });
 
@@ -1606,7 +1628,7 @@ async function trySkymeshRelayInference(
           },
           body: JSON.stringify({
             model: request.model,
-            messages: request.messages,
+            messages: relayMessages,
             stream,
             temperature: request.temperature ?? 0.7,
             max_tokens: maxTokens,
@@ -2251,7 +2273,7 @@ async function tryWasmFallback(
         throw new Error('Local model failed to load');
       }
 
-      const t0 = Date.now();
+      const t0 = performance.now();
       const remainingGenerateMs = Math.max(1, deadline - Date.now());
       const content = await withTimeout(
         aetherLocalRuntime.generate(request.messages, maxTokens, temperature),
@@ -2261,7 +2283,7 @@ async function tryWasmFallback(
       const normalizedContent = hasUsableFallbackText(content)
         ? content
         : 'Local WASM fallback returned no usable tokens. Please retry the request.';
-      const inferenceMs = Date.now() - t0;
+      const inferenceMs = performance.now() - t0;
 
       const promptTokens = request.messages.reduce(
         (acc, m) => acc + Math.ceil(m.content.length / 4),
@@ -2314,10 +2336,10 @@ export function startLocalWasmWarmup(): Promise<boolean> {
     'wasm-prewarm',
     LOCAL_WASM_PREWARM_BUSY_MS,
     async () => {
-      const t0 = Date.now();
+      const t0 = performance.now();
       try {
         const ready = await aetherLocalRuntime.ensureChatReady();
-        const elapsed = Date.now() - t0;
+        const elapsed = performance.now() - t0;
         if (ready) {
           logInference(
             `[wasm] prewarmed chat model in ${elapsed}ms (${aetherLocalRuntime.modelId})`
@@ -2383,9 +2405,13 @@ export function createSSEProxyStream(
   upstreamHeaders: Record<string, string> = {},
   attempts?: TierAttempt[],
   modelName?: string,
-  options: { forwardNamedEvents?: boolean } = {}
+  options: {
+    forwardNamedEvents?: boolean;
+    suppressPrefillProgress?: boolean;
+  } = {}
 ): ReadableStream<Uint8Array> {
   const forwardNamedEvents = options.forwardNamedEvents === true;
+  const suppressPrefillProgress = options.suppressPrefillProgress === true;
   const encoder = new TextEncoder();
   const decoder = new TextDecoder('utf-8', { fatal: true });
 
@@ -2396,7 +2422,7 @@ export function createSSEProxyStream(
     const chainStr = attempts
       .map(
         (a) =>
-          `${a.tier}:${a.status}(${a.ms}ms)${
+          `${a.tier}:${a.status}(${formatAttemptDuration(a.ms)})${
             a.detail ? '[' + a.detail.slice(0, 40) + ']' : ''
           }`
       )
@@ -2472,11 +2498,13 @@ export function createSSEProxyStream(
       let lastPrefillMs = 0;
       let lastPrefillPos = 0;
       let currentEventName: string | null = null;
-      const progressBarBlocks = 20;
+      const progressTickCount = 20;
       const progressId = `chatcmpl-progress-${Date.now()}`;
       const progressCreated = Math.floor(Date.now() / 1000);
       const progressChainInfo = attempts?.length
-        ? attempts.map((a) => `${a.tier}:${a.status}(${a.ms}ms)`).join(' > ')
+        ? attempts
+            .map((a) => `${a.tier}:${a.status}(${formatAttemptDuration(a.ms)})`)
+            .join(' > ')
         : tier;
 
       const handleLine = (
@@ -2493,7 +2521,7 @@ export function createSSEProxyStream(
             dataEventCount++;
             if (payload === '[DONE]') {
               sawDone = true;
-            } else if (!firstDataLogged) {
+            } else if (!firstDataLogged && hasMeaningfulSseDelta(payload)) {
               firstDataLogged = true;
               logInference(
                 `[sse-proxy] tier=${tier} first-data: ${payload.slice(0, 200)}`
@@ -2519,7 +2547,12 @@ export function createSSEProxyStream(
                 );
               } else if (emittedProgress) {
                 // Close the markdown progress line before forwarding text.
-                const closingText = '*\n\n';
+                const prefillDuration = observedPrefill
+                  ? formatAttemptDuration(Date.now() - prefillStartMs)
+                  : null;
+                const closingText = prefillDuration
+                  ? `* prefill ${prefillDuration} *\n\n`
+                  : '*\n\n';
                 if (useReasoning) {
                   const sep = {
                     id: progressId,
@@ -2580,7 +2613,11 @@ export function createSSEProxyStream(
                 )}`
               );
             }
-            if (currentEventName === 'prefill' && !firstDataLogged) {
+            if (
+              currentEventName === 'prefill' &&
+              !firstDataLogged &&
+              !suppressPrefillProgress
+            ) {
               try {
                 const parsed = JSON.parse(payload) as {
                   completed_tokens?: number;
@@ -2732,7 +2769,11 @@ export function createSSEProxyStream(
           // Convert prefill progress into an append-only filled bar. Zed
           // appends deltas, so this emits only newly crossed buckets.
           const prefillMatch = line.match(/^: prefill (\d+)\/(\d+)/);
-          if (prefillMatch && !firstDataLogged) {
+          if (
+            prefillMatch &&
+            !firstDataLogged &&
+            !suppressPrefillProgress
+          ) {
             const pos = parseInt(prefillMatch[1], 10);
             const total = parseInt(prefillMatch[2], 10);
             emitPrefillProgress(pos, total);
@@ -2750,21 +2791,18 @@ export function createSSEProxyStream(
           lastPrefillPos = pos;
         }
 
-        const targetBlocks =
+        const targetTicks =
           total > 0 && pos > 0
             ? Math.max(
                 1,
                 Math.min(
-                  progressBarBlocks,
-                  Math.ceil((pos / total) * progressBarBlocks)
+                  progressTickCount,
+                  Math.ceil((pos / total) * progressTickCount)
                 )
               )
             : 0;
-        const newBlocks = Math.max(0, targetBlocks - emittedProgressBlocks);
-        if (isStart && targetBlocks === 0) {
-          return;
-        }
-        emittedProgressBlocks = Math.max(emittedProgressBlocks, targetBlocks);
+        const newTicks = Math.max(0, targetTicks - emittedProgressBlocks);
+        emittedProgressBlocks = Math.max(emittedProgressBlocks, targetTicks);
         const elapsedPrefillMs = Math.max(1, now - prefillStartMs);
         const recentElapsedMs = Math.max(1, now - lastPrefillMs);
         const recentProgress = Math.max(0, pos - lastPrefillPos);
@@ -2777,8 +2815,9 @@ export function createSSEProxyStream(
         lastPrefillMs = now;
         lastPrefillPos = pos;
         const tickContent =
-          (isStart ? `*${currentTokSec}t/s | ${progressChainInfo} \u28FF ` : '') +
-          '\u2588'.repeat(newBlocks);
+          (isStart
+            ? `*${currentTokSec}t/s | ${progressChainInfo} prefill \u2591`
+            : '') + '\u2588'.repeat(newTicks);
         if (!tickContent) {
           return;
         }
@@ -2919,6 +2958,49 @@ export function createSSEProxyStream(
   });
 }
 
+/**
+ * Empty role/progress chunks are valid OpenAI SSE, but they are not the first
+ * generated token. Skymesh emits those chunks while prefill is running; using
+ * them as the first-data marker suppresses the visible prefill progress bar.
+ */
+function hasMeaningfulSseDelta(payload: string): boolean {
+  try {
+    const parsed = JSON.parse(payload) as {
+      choices?: Array<{
+        delta?: {
+          content?: unknown;
+          reasoning_content?: unknown;
+          tool_calls?: unknown;
+          function_call?: unknown;
+        };
+        message?: { content?: unknown };
+      }>;
+    };
+    const choice = parsed.choices?.[0];
+    if (!choice) return false;
+    const delta = choice.delta;
+    if (delta) {
+      if (typeof delta.content === 'string' && delta.content.length > 0)
+        return true;
+      if (
+        typeof delta.reasoning_content === 'string' &&
+        delta.reasoning_content.length > 0
+      )
+        return true;
+      if (Array.isArray(delta.tool_calls) && delta.tool_calls.length > 0)
+        return true;
+      if (delta.function_call !== undefined && delta.function_call !== null)
+        return true;
+    }
+    return (
+      typeof choice.message?.content === 'string' &&
+      choice.message.content.length > 0
+    );
+  } catch {
+    return false;
+  }
+}
+
 // ---------------------------------------------------------------------------
 // FIM (Fill-in-Middle) Fast Path
 // ---------------------------------------------------------------------------
@@ -2990,7 +3072,7 @@ export async function inferFim(
   maxTokens = 128,
   temperature = 0.2
 ): Promise<FimResult> {
-  const t0 = Date.now();
+  const t0 = performance.now();
   const attempts: TierAttempt[] = [];
   const fimPrompt = buildFimPrompt(prefix, suffix, model);
 
@@ -3000,7 +3082,7 @@ export async function inferFim(
 
   // Moonshine container handles FIM
   {
-    const t1 = Date.now();
+    const t1 = performance.now();
     try {
       const resp = await tryMoonshineInference({
         model,
@@ -3018,29 +3100,29 @@ export async function inferFim(
       if (resp.ok) {
         const data = (await resp.json()) as ChatCompletionResponse;
         const completion = data.choices?.[0]?.message?.content ?? '';
-        attempts.push({ tier: 'moonshine', status: 'ok', ms: Date.now() - t1 });
+        attempts.push({ tier: 'moonshine', status: 'ok', ms: performance.now() - t1 });
         logInference(
-          `[fim:moonshine] ${completion.length}c in ${Date.now() - t1}ms`
+          `[fim:moonshine] ${completion.length}c in ${performance.now() - t1}ms`
         );
         return {
           completion,
           tier: 'moonshine',
           model,
           attempts,
-          durationMs: Date.now() - t0,
+          durationMs: performance.now() - t0,
         };
       }
       attempts.push({
         tier: 'moonshine',
         status: 'http_error',
-        ms: Date.now() - t1,
+        ms: performance.now() - t1,
         detail: `${resp.status}`,
       });
     } catch (err) {
       attempts.push({
         tier: 'moonshine',
         status: 'error',
-        ms: Date.now() - t1,
+        ms: performance.now() - t1,
         detail: String(err),
       });
     }
@@ -3058,7 +3140,7 @@ export async function inferFim(
     tier: 'echo',
     model,
     attempts,
-    durationMs: Date.now() - t0,
+    durationMs: performance.now() - t0,
   };
 }
 
@@ -3170,7 +3252,7 @@ export async function infer(
   // On verified hit: returns cached answer with zero inference (geodesicLength=0).
   // On miss / fat-station down / error: falls through silently.
   if (isSkymeshTeleportEnabled()) {
-    const t0 = Date.now();
+    const t0 = performance.now();
     try {
       const lastUserContent =
         [...request.messages]
@@ -3186,9 +3268,9 @@ export async function infer(
           getSkymeshCacheUrl()
         );
         if (answerText !== null) {
-          attempts.push({ tier: 'skymesh', status: 'ok', ms: Date.now() - t0 });
+          attempts.push({ tier: 'skymesh', status: 'ok', ms: performance.now() - t0 });
           logInference(
-            `model=${request.model} tier=skymesh status=ok (teleport hit) ms=${Date.now() - t0}`
+            `model=${request.model} tier=skymesh status=ok (teleport hit) ms=${performance.now() - t0}`
           );
 
           // Handle streaming vs non-streaming
@@ -3227,7 +3309,7 @@ export async function infer(
         attempts.push({
           tier: 'skymesh',
           status: 'skipped',
-          ms: Date.now() - t0,
+          ms: performance.now() - t0,
           detail: 'miss',
         });
       } else {
@@ -3246,7 +3328,7 @@ export async function infer(
       attempts.push({
         tier: 'skymesh',
         status: 'error',
-        ms: Date.now() - t0,
+        ms: performance.now() - t0,
         detail: String(err),
       });
       logInference(`[skymesh] teleport error: ${String(err)}`);
@@ -3261,14 +3343,14 @@ export async function infer(
     !hasExplicitForkjoinEndpoint() &&
     hasCloudRunCoordinatorForModel(request.model)
   ) {
-    const t0 = Date.now();
+    const t0 = performance.now();
     const controller = new AbortController();
     try {
       const resp = await tryCloudRunCoordinator(request, controller.signal);
       if (resp.ok) {
-        attempts.push({ tier: 'cloudrun', status: 'ok', ms: Date.now() - t0 });
+          attempts.push({ tier: 'cloudrun', status: 'ok', ms: performance.now() - t0 });
         logInference(
-          `model=${request.model} tier=cloudrun status=ok ms=${Date.now() - t0}`
+          `model=${request.model} tier=cloudrun status=ok ms=${performance.now() - t0}`
         );
         return {
           tier: 'cloudrun',
@@ -3283,7 +3365,7 @@ export async function infer(
       attempts.push({
         tier: 'cloudrun',
         status: 'http_error',
-        ms: Date.now() - t0,
+        ms: performance.now() - t0,
         detail: `${resp.status} ${resp.statusText}`,
       });
       logInference(
@@ -3295,7 +3377,7 @@ export async function infer(
       attempts.push({
         tier: 'cloudrun',
         status: isTimeout ? 'timeout' : 'error',
-        ms: Date.now() - t0,
+        ms: performance.now() - t0,
         detail: String(err),
       });
       logInference(`[cloudrun] error: ${String(err)}`);
@@ -3319,7 +3401,7 @@ export async function infer(
     !forkjoinCollidesWithMoonshine() &&
     isForkjoinTierModel(request.model)
   ) {
-    const t0 = Date.now();
+    const t0 = performance.now();
     const controller = new AbortController();
     try {
       const resp = await tryForkjoinDistributedInference(
@@ -3327,10 +3409,10 @@ export async function infer(
         controller.signal
       );
       if (resp && resp.ok) {
-        attempts.push({ tier: 'forkjoin', status: 'ok', ms: Date.now() - t0 });
+        attempts.push({ tier: 'forkjoin', status: 'ok', ms: performance.now() - t0 });
         logInference(
           `model=${request.model} tier=forkjoin status=ok ms=${
-            Date.now() - t0
+            performance.now() - t0
           }`
         );
         return {
@@ -3344,7 +3426,7 @@ export async function infer(
         attempts.push({
           tier: 'forkjoin',
           status: 'http_error',
-          ms: Date.now() - t0,
+          ms: performance.now() - t0,
           detail: `${resp.status} ${resp.statusText}`,
         });
         logInference(
@@ -3355,7 +3437,7 @@ export async function infer(
         attempts.push({
           tier: 'forkjoin',
           status: 'error',
-          ms: Date.now() - t0,
+          ms: performance.now() - t0,
           detail: 'mesh unavailable',
         });
       }
@@ -3365,7 +3447,7 @@ export async function infer(
       attempts.push({
         tier: 'forkjoin',
         status: isTimeout ? 'timeout' : 'error',
-        ms: Date.now() - t0,
+        ms: performance.now() - t0,
         detail: String(err),
       });
       logInference(`[forkjoin] error: ${String(err)}`);
@@ -3387,7 +3469,7 @@ export async function infer(
   // this lane INSTEAD of Moonshine — dialling loopback for them is what made
   // the SSM daily driver look like it had stopped yielding tokens.
   if (isExactSkymeshModel(request.model)) {
-    const t0 = Date.now();
+    const t0 = performance.now();
     // A lane known to be down fails HERE, in about a microsecond, carrying the
     // reason it went down. Paying the full discovery cost on every request is
     // how a broken upstream turns into an editor that appears to hang.
@@ -3397,7 +3479,7 @@ export async function infer(
       attempts.push({
         tier: 'skymesh-relay',
         status: 'skipped',
-        ms: Date.now() - t0,
+        ms: performance.now() - t0,
         detail,
       });
       logInference(`model=${request.model} tier=skymesh-relay skipped (${detail})`);
@@ -3406,7 +3488,7 @@ export async function infer(
       );
     }
     const relayResponse = await trySkymeshRelayInference(request);
-    const ms = Date.now() - t0;
+    const ms = performance.now() - t0;
     if (relayResponse) {
       attempts.push({ tier: 'skymesh-relay', status: 'ok', ms });
       logInference(

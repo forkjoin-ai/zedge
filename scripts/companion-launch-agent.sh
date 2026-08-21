@@ -58,16 +58,19 @@ resolve_node_for_plist() {
     printf '%s' "${ZEDGE_NODE_RUNTIME}"
     return 0
   fi
-  if command -v node >/dev/null 2>&1; then
-    command -v node
-    return 0
-  fi
+  # launchd cannot execute the repo's bin/node shim from macOS-protected
+  # Documents paths. Prefer a real runtime binary before consulting PATH,
+  # whose first entry is commonly the sovereign shim.
   for candidate in /opt/homebrew/bin/node /usr/local/bin/node; do
     if [ -x "${candidate}" ]; then
       printf '%s' "${candidate}"
       return 0
     fi
   done
+  if command -v node >/dev/null 2>&1; then
+    command -v node
+    return 0
+  fi
   echo "zedge: could not find Node. Install Node or set ZEDGE_NODE_RUNTIME." >&2
   return 1
 }

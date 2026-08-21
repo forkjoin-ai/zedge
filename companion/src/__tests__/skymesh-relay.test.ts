@@ -74,6 +74,10 @@ describe('SSM lane routing', () => {
     expect(relay.includes('stream: false')).toBe(false);
     // Prefill headers ride along exactly as they do for Moonshine.
     expect(relay).toContain('moonshinePrefillHeaders(request.prefillWindowId)');
+    // Visible progress is transport UI, not conversational content. Sending it
+    // back makes tiny models echo the status line instead of answering.
+    expect(relay).toContain('sanitizeMoonshineMessages(request.messages)');
+    expect(relay).toContain('messages: relayMessages');
   });
 
   test('an upstream failure is logged with its reason, not swallowed', () => {
@@ -129,6 +133,8 @@ describe('SSM lane routing', () => {
     const afterFetch = relay.slice(fetchAt);
 
     expect(beforeFetch).toContain('SKYMESH_RELAY_HEADERS_TIMEOUT_MS');
+    expect(beforeFetch).toContain('const initialTimeoutMs = stream');
+    expect(beforeFetch).toContain('SKYMESH_RELAY_TIMEOUT_MS');
     expect(beforeFetch.includes('controller.abort(), SKYMESH_RELAY_TIMEOUT_MS')).toBe(
       false
     );

@@ -182,7 +182,7 @@ describe('SSE Chat Completions (createSSEProxyStream)', () => {
     expect(dataObjects.length).toBeGreaterThanOrEqual(1);
   });
 
-  test('renders prefill progress as a filled append-only bar', async () => {
+  test('renders prefill progress with an empty cell and filled cells', async () => {
     const chunk = JSON.stringify({
       id: 'chatcmpl-progress-bar',
       object: 'chat.completion.chunk',
@@ -209,14 +209,46 @@ describe('SSE Chat Completions (createSSEProxyStream)', () => {
       .map((data) => data.choices[0].delta.content ?? '')
       .join('');
 
-    expect(renderedContent).toMatch(/^\*\d+t\/s \| moonshine:ok\(5ms\) ⣿ /);
-    expect(renderedContent).not.toContain('*0t/s |');
-    expect(renderedContent.indexOf('t/s | moonshine:ok(5ms) ⣿')).toBeLessThan(
-      renderedContent.indexOf('████')
-    );
-    expect(renderedContent).toContain('████████████████████');
+    expect(renderedContent).toMatch(/^\*\d+t\/s \| moonshine:ok\(5ms\) prefill \u2591/);
+    expect(renderedContent).toContain('*0t/s |');
+    expect(renderedContent).toContain(`prefill \u2591${'\u2588'.repeat(20)}`);
     expect(renderedContent).toContain('moonshine:ok(5ms)');
     expect(renderedContent).not.toContain('▁');
+    expect(renderedContent).toContain('Done');
+  });
+
+  test('keeps prefill progress visible after an empty role chunk', async () => {
+    const roleChunk = JSON.stringify({
+      id: 'chatcmpl-role',
+      object: 'chat.completion.chunk',
+      created: 1000,
+      model: 'rwkv7-mini',
+      choices: [{ index: 0, delta: { role: 'assistant' }, finish_reason: null }],
+    });
+    const tokenChunk = JSON.stringify({
+      id: 'chatcmpl-token',
+      object: 'chat.completion.chunk',
+      created: 1000,
+      model: 'rwkv7-mini',
+      choices: [
+        { index: 0, delta: { content: 'Done' }, finish_reason: null },
+      ],
+    });
+    const upstream = sseStream(
+      `data: ${roleChunk}\n\n: prefill 0/100\n\n: prefill 50/100\n\ndata: ${tokenChunk}\n\ndata: [DONE]\n\n`
+    );
+
+    const output = await consumeStream(
+      createSSEProxyStream(upstream, 'skymesh-relay', {}, [], 'rwkv7-mini')
+    );
+    const dataObjects = parseSSEDataObjects(output) as Array<{
+      choices: Array<{ delta: { content?: string } }>;
+    }>;
+    const renderedContent = dataObjects
+      .map((data) => data.choices[0].delta.content ?? '')
+      .join('');
+
+    expect(renderedContent).toContain(`prefill \u2591${'\u2588'.repeat(10)}`);
     expect(renderedContent).toContain('Done');
   });
 
@@ -264,7 +296,7 @@ describe('SSE Chat Completions (createSSEProxyStream)', () => {
     )
       .map((data) => data.choices?.[0]?.delta?.content ?? '')
       .join('');
-    expect(renderedContent).toContain('████████████████████');
+    expect(renderedContent).toContain(`prefill \u2591${'\u2588'.repeat(20)}`);
     expect(renderedContent).toContain('Ready');
   });
 

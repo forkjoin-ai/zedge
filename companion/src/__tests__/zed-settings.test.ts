@@ -86,12 +86,17 @@ describe('Zed settings model sync', () => {
       (parsed.language_models as Record<string, unknown>)
         .openai_compatible as Record<string, unknown>
     ).Zedge as { api_url: string };
-    const copilot = (
+    const editPredictions = (
       parsed.edit_predictions as Record<string, unknown>
-    ).copilot as { api_url: string };
+    );
+    const custom = editPredictions.open_ai_compatible_api as {
+      api_url: string;
+    };
 
     expect(zedge.api_url).toBe('http://127.0.0.1:7331/v1');
-    expect(copilot.api_url).toBe('http://127.0.0.1:7331/v1/completions');
+    expect(editPredictions.provider).toBe('open_ai_compatible_api');
+    expect(custom.api_url).toBe('http://127.0.0.1:7331/v1/completions');
+    expect(editPredictions.copilot).toBeUndefined();
   });
 
   test('creates a local Zedge provider block when settings omit it', () => {

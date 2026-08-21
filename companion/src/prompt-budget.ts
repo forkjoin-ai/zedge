@@ -9,6 +9,19 @@ const SMALL_MODEL_MAX_TOKENS = 2048;
 const SMALL_MODEL_SYSTEM_PROMPT_MAX_CHARS = 900;
 const DEFAULT_SYSTEM_PROMPT_MAX_CHARS = 2000;
 const HEAVY_SYSTEM_CONTEXT_MARKERS = ['<codebase_context>', '<agent_memory>'];
+const COMPACT_CONVERSATION_MODELS = new Set([
+  'rwkv7-mini',
+  'rwkv7-2.9b',
+  'qwen2.5-0.5b-instruct',
+  'tinyllama-1.1b',
+  'smollm2-360m',
+  'deepseek-r1-1.5b',
+  'mamba-2.8b',
+  'falcon-mamba-7b',
+]);
+const REFERENTIAL_USER_TURN =
+  /\b(it|its|they|them|their|this|that|these|those|former|latter|above|previous)\b/i;
+const DIRECT_REPLY_PREFIX = 'Reply directly and briefly to the user message:';
 
 const COMPACT_SYSTEM_PROMPT = [
   'You are a concise coding assistant for the Forkjoin.ai monorepo.',
@@ -83,6 +96,38 @@ export function shouldSkipHeavySystemContext(modelId: string): boolean {
     (knownModel?.maxTokens ?? Number.POSITIVE_INFINITY) <=
     SMALL_MODEL_MAX_TOKENS
   );
+}
+
+/** Keep instruction-fragile SSM/small-model prompts focused on this turn. */
+export function applyConversationPromptBudget(
+  modelId: string,
+  messages: PromptBudgetMessage[]
+): PromptBudgetMessage[] {
+  if (!COMPACT_CONVERSATION_MODELS.has(modelId.toLowerCase())) {
+    return messages;
+  }
+
+  const latestUserIndex = messages.findLastIndex(
+    (message) => message.role === 'user' && message.content.trim().length > 0
+  );
+  if (latestUserIndex < 0) return messages;
+
+  const latestUser = messages[latestUserIndex]!;
+  const framedUser = {
+    ...latestUser,
+    content: `${DIRECT_REPLY_PREFIX}\n\n${latestUser.content}`,
+  };
+  if (!REFERENTIAL_USER_TURN.test(latestUser.content)) {
+    return [framedUser];
+  }
+
+  for (let index = latestUserIndex - 1; index >= 0; index -= 1) {
+    const message = messages[index]!;
+    if (message.role === 'assistant' && message.content.trim().length > 0) {
+      return [message, framedUser];
+    }
+  }
+  return [framedUser];
 }
 
 /**

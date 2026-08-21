@@ -11,6 +11,19 @@ import {
 } from '../model-catalog.ts';
 
 describe('Zedge model catalog', () => {
+  test('marks RWKV-7 Mini text-only so Zed terminates plain responses', () => {
+    const model = buildZedAvailableModels(['rwkv7-mini'])[0];
+    expect(model?.capabilities).toEqual({
+      tools: false,
+      images: false,
+      parallel_tool_calls: false,
+      prompt_cache_key: false,
+      chat_completions: true,
+      interleaved_reasoning: false,
+      max_tokens_parameter: true,
+    });
+  });
+
   test('gnosis-local metadata reflects the Moonshine container fallback', () => {
     const model = getKnownZedgeModel('gnosis-local');
     expect(model).toBeDefined();
