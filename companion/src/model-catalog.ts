@@ -126,7 +126,7 @@ const KNOWN_ZEDGE_MODELS: KnownZedgeModel[] = [
     ownedBy: 'gnosis',
     availability: 'candidate',
     unavailableReason:
-      'Exact 27B Paris qspec and live Cloudflare container reverification are pending.',
+      'Exact 27B Paris qspec passes; live OpenAI-adapter and agentic reverification are pending.',
     forkjoinTier: true,
   },
   {

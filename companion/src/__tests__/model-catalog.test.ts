@@ -61,7 +61,7 @@ describe('Zedge model catalog', () => {
     expect(model?.maxTokens).toBe(2048);
   });
 
-  test('keeps dense Qwen35 hidden and native-tools-off until its exact gates pass', () => {
+  test('keeps admitted dense Qwen35 hidden and native-tools-off until live agentic verification', () => {
     expect(normalizeZedgeModelId('qwen38')).toBe('qwen-uncensored-27b');
     const model = getKnownZedgeModel('qwen38');
     expect(model).toMatchObject({
