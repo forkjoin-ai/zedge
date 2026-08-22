@@ -42,6 +42,7 @@ export const DEFAULT_ZEDGE_MODEL_ID = 'gnosis-local';
 export const CODESTRAL_ZEDGE_MODEL_ID = 'codestral-22b';
 export const QWEN3_CODER_NEXT_MODEL_ID = 'qwen3-coder-next';
 export const MUSE_GLIMMER_MODEL_ID = 'muse-glimmer-30b-3';
+export const QWEN_UNCENSORED_27B_MODEL_ID = 'qwen-uncensored-27b';
 /** SSM on CF skymesh (`apps/ssm-mini` via skymesh.forkjoin.ai). Not a local fat-station. */
 export const RWKV7_MINI_MODEL_ID = 'rwkv7-mini';
 export const DEFAULT_ZEDGE_PREFERRED_MODEL_ID = RWKV7_MINI_MODEL_ID;
@@ -92,6 +93,7 @@ export function isSupersededDefaultModelId(modelId: string): boolean {
 
 const ZEDGE_MODEL_ALIASES = new Map<string, string>([
   ['codestral', CODESTRAL_ZEDGE_MODEL_ID],
+  ['qwen38', QWEN_UNCENSORED_27B_MODEL_ID],
 ]);
 
 /**
@@ -115,6 +117,16 @@ const KNOWN_ZEDGE_MODELS: KnownZedgeModel[] = [
     displayName: 'Qwen3 Coder Next (Skymesh exact relay)',
     maxTokens: 4096,
     ownedBy: 'skymesh',
+    forkjoinTier: true,
+  },
+  {
+    id: QWEN_UNCENSORED_27B_MODEL_ID,
+    displayName: 'Qwen3.8 27B Uncensored (CF container candidate)',
+    maxTokens: 8192,
+    ownedBy: 'gnosis',
+    availability: 'candidate',
+    unavailableReason:
+      'Exact 27B Paris qspec and live Cloudflare container reverification are pending.',
     forkjoinTier: true,
   },
   {
@@ -509,9 +521,12 @@ export function buildZedAvailableModels(
       display_name: known?.displayName ?? humanizeModelId(normalizedId),
       max_tokens: known?.maxTokens ?? 4096,
     };
-    // This SSM emits text but does not implement Zed's tool protocol. Without
-    // this override Zed defaults tools on and keeps the agent turn active.
-    if (normalizedId === RWKV7_MINI_MODEL_ID) {
+    // These runtimes emit text but do not implement Zed's native tool protocol.
+    // Without this override Zed defaults tools on and keeps the agent turn active.
+    if (
+      normalizedId === RWKV7_MINI_MODEL_ID ||
+      normalizedId === QWEN_UNCENSORED_27B_MODEL_ID
+    ) {
       model.capabilities = {
         tools: false,
         images: false,

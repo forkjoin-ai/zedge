@@ -61,6 +61,37 @@ describe('Zedge model catalog', () => {
     expect(model?.maxTokens).toBe(2048);
   });
 
+  test('keeps dense Qwen35 hidden and native-tools-off until its exact gates pass', () => {
+    expect(normalizeZedgeModelId('qwen38')).toBe('qwen-uncensored-27b');
+    const model = getKnownZedgeModel('qwen38');
+    expect(model).toMatchObject({
+      id: 'qwen-uncensored-27b',
+      maxTokens: 8192,
+      ownedBy: 'gnosis',
+      availability: 'candidate',
+      forkjoinTier: true,
+    });
+    expect(model?.unavailableReason).toContain('Exact 27B Paris qspec');
+    expect(isCandidateZedgeModel('qwen38')).toBe(true);
+    expect(isFallbackSelectableModel('qwen38')).toBe(false);
+    expect(isForkjoinTierModel('qwen38')).toBe(true);
+    expect(
+      getKnownZedgeModels().some((entry) => entry.id === 'qwen-uncensored-27b')
+    ).toBe(false);
+
+    // A live Moonshine model list may expose the candidate, but never by
+    // silently enabling Zed's native tool protocol.
+    expect(buildZedAvailableModels(['qwen38'])[0]?.capabilities).toEqual({
+      tools: false,
+      images: false,
+      parallel_tool_calls: false,
+      prompt_cache_key: false,
+      chat_completions: true,
+      interleaved_reasoning: false,
+      max_tokens_parameter: true,
+    });
+  });
+
   test('includes Gemma4 RKNOT metadata for the Moonshine hotpath', () => {
     const model = getKnownZedgeModel('gemma4-31b-it');
     expect(model).toBeDefined();
