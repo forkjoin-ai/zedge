@@ -6,6 +6,7 @@
     "npm:public"
   ],
   "targets": {
+    "build": { "executor": "a0:run-commands", "options": { "command": "echo source-only topology: checked-in parser sources are the artifact", "cwd": "open-source/zedge/grammars/gnosis" }, "metadata": { "topologyKind": "source-only" } },
     "typecheck": {
       "executor": "a0:run-commands",
       "dependsOn": [
