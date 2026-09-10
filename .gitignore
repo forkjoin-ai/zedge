@@ -11,3 +11,6 @@
 # and two more arrived untracked-and-unignored, one `git add -A` away from
 # joining them. They regenerate on install.
 node_modules/
+
+# Regenerated local build and agent output.
+/companion/dist/

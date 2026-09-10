@@ -75,23 +75,6 @@ resolve_node_for_plist() {
   return 1
 }
 
-resolve_tsx_loader_for_plist() {
-  if [ -n "${ZEDGE_TSX_LOADER:-}" ] && [ -f "${ZEDGE_TSX_LOADER}" ]; then
-    printf '%s' "${ZEDGE_TSX_LOADER}"
-    return 0
-  fi
-  for candidate in \
-    "${WORKSPACE_ROOT}/node_modules/.pnpm/tsx@4.21.0/node_modules/tsx/dist/loader.mjs" \
-    "${WORKSPACE_ROOT}/node_modules/tsx/dist/loader.mjs"; do
-    if [ -f "${candidate}" ]; then
-      printf '%s' "${candidate}"
-      return 0
-    fi
-  done
-  echo "zedge: could not find tsx loader. Install dependencies or set ZEDGE_TSX_LOADER." >&2
-  return 1
-}
-
 read_stored_domain() {
   if [ -f "${DOMAIN_STATE}" ]; then
     d="$(tr -d '\r\n' <"${DOMAIN_STATE}" | tr -d ' ')"
@@ -214,7 +197,7 @@ build_companion_dist() {
   fi
   echo "zedge: building companion dist (stable launchd binary)..."
   if ! "${NODE_BIN}" "${BUILD_SCRIPT}"; then
-    echo "zedge: companion dist build failed — launch agent will use tsx fallback" >&2
+    echo "zedge: companion dist build failed — launch agent will use the gnode source host" >&2
     return 1
   fi
   return 0
@@ -274,6 +257,8 @@ write_plist() {
     <string>$(escape_xml "${HOME}")</string>
     <key>AEON_ROOT</key>
     <string>${WD_XML}</string>
+    <key>GNODE_TSCONFIG_PATH</key>
+    <string>$(escape_xml "${WORKSPACE_ROOT}/open-source/zedge/companion/tsconfig.json")</string>
     <key>ZEDGE_COMPANION_USE_DIST</key>
     <string>0</string>
     <key>ZEDGE_API_KEY</key>
@@ -295,8 +280,8 @@ write_plist() {
 </plist>
 EOF
   else
-  TSX_LOADER_XML="$(escape_xml "$(resolve_tsx_loader_for_plist)")"
-  SUPERVISOR_IMPORT_XML="$(escape_xml "import(\"./${SUPERVISOR_REL}\").then((m) => m.main())")"
+  GNODE_XML="$(escape_xml "${WORKSPACE_ROOT}/open-source/gnosis/bin/gnode.js")"
+  SUPERVISOR_SOURCE_XML="$(escape_xml "${WORKSPACE_ROOT}/${SUPERVISOR_REL}")"
   cat >"${PLIST_PATH}" <<EOF
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -308,10 +293,11 @@ EOF
   <key>ProgramArguments</key>
   <array>
     <string>${NODE_XML}</string>
-    <string>--import</string>
-    <string>${TSX_LOADER_XML}</string>
-    <string>-e</string>
-    <string>${SUPERVISOR_IMPORT_XML}</string>
+    <string>${GNODE_XML}</string>
+    <string>run</string>
+    <string>${SUPERVISOR_SOURCE_XML}</string>
+    <string>--export</string>
+    <string>main</string>
   </array>
 
   <key>RunAtLoad</key>
@@ -333,8 +319,8 @@ EOF
     <string>$(escape_xml "${HOME}")</string>
     <key>AEON_ROOT</key>
     <string>${WD_XML}</string>
-    <key>GNODE_FORCE_TSX</key>
-    <string>1</string>
+    <key>GNODE_TSCONFIG_PATH</key>
+    <string>$(escape_xml "${WORKSPACE_ROOT}/open-source/zedge/companion/tsconfig.json")</string>
     <key>ZEDGE_API_KEY</key>
     <string>$(escape_xml "${LOCAL_ZED_API_KEY}")</string>
     <key>OPENAI_API_KEY</key>

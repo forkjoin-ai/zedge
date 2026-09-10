@@ -9,6 +9,9 @@
  * Default meshId is 'skymesh-global' (global partyline).
  */
 
+import { existsSync, readFileSync } from 'node:fs';
+import { homedir } from 'node:os';
+import { join } from 'node:path';
 import { getZedgeConfig } from './config.ts';
 import { infer } from './inference-bridge.ts';
 import {
@@ -49,9 +52,6 @@ export function loadOwnerUcan(): string | null {
   }
   try {
     // Bun sync FS — path mirrors auth.ts's ~/.edgework token storage.
-    const { homedir } = require('os') as typeof import('os');
-    const { readFileSync, existsSync } = require('fs') as typeof import('fs');
-    const { join } = require('path') as typeof import('path');
     const ownerPath = join(homedir(), '.edgework', 'owner-ucan');
     const token = existsSync(ownerPath)
       ? readFileSync(ownerPath, 'utf8').trim()

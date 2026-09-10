@@ -44,66 +44,25 @@ resolve_node_runtime() {
   exit 127
 }
 
-resolve_tsx_loader() {
-  if [ -n "${ZEDGE_TSX_LOADER:-}" ] && [ -f "${ZEDGE_TSX_LOADER}" ]; then
-    printf '%s\n' "${ZEDGE_TSX_LOADER}"
-    return 0
-  fi
-
-  for candidate in \
-    "${WORKSPACE_ROOT}/node_modules/.pnpm/tsx@4.21.0/node_modules/tsx/dist/loader.mjs" \
-    "${WORKSPACE_ROOT}/node_modules/tsx/dist/loader.mjs"; do
-    if [ -f "${candidate}" ]; then
-      printf '%s\n' "${candidate}"
-      return 0
-    fi
-  done
-
-  echo "zedge: could not find tsx loader. Install dependencies or set ZEDGE_TSX_LOADER." >&2
-  exit 127
-}
-
-exec_ts_main() {
-  NODE_RUNTIME="$(resolve_node_runtime)"
-  TSX_LOADER="$(resolve_tsx_loader)"
-  exec "${NODE_RUNTIME}" \
-    --import "${TSX_LOADER}" \
-    -e 'import("node:url").then(({ pathToFileURL }) => import(pathToFileURL(process.argv[1]).href)).then(async (mod) => {
-      if (typeof mod.main !== "function") throw new Error(`No exported main() in ${process.argv[1]}`);
-      const result = await mod.main();
-      if (typeof result === "number") process.exitCode = result;
-    }).catch((error) => {
-      console.error(error);
-      process.exitCode = 1;
-    })' \
-    "${ABS_ENTRY_PATH}" "$@"
-}
-
 if [ "${ENTRY_PATH#/}" = "${ENTRY_PATH}" ]; then
   ABS_ENTRY_PATH="${WORKSPACE_ROOT}/${ENTRY_PATH}"
 else
   ABS_ENTRY_PATH="${ENTRY_PATH}"
 fi
 
-: "${GNODE_FORCE_TSX:=1}"
-export GNODE_FORCE_TSX
-if [ -z "${TSX_TSCONFIG_PATH:-}" ] && [ -f "${WORKSPACE_ROOT}/open-source/zedge/companion/tsconfig.json" ]; then
-  TSX_TSCONFIG_PATH="${WORKSPACE_ROOT}/open-source/zedge/companion/tsconfig.json"
-  export TSX_TSCONFIG_PATH
-fi
+# Keep the selected host executable through Monster and its hosted children.
+MONSTER_NODE_RUNTIME="$(resolve_node_runtime)"
+export MONSTER_NODE_RUNTIME
+GNODE_TSCONFIG_PATH="${GNODE_TSCONFIG_PATH:-${WORKSPACE_ROOT}/open-source/zedge/companion/tsconfig.json}"
+export GNODE_TSCONFIG_PATH
 
 case "${ABS_ENTRY_PATH}" in
-  "${WORKSPACE_ROOT}/open-source/zedge/companion/src/index.ts")
-    exec_ts_main "$@"
-    ;;
-  "${WORKSPACE_ROOT}/open-source/zedge/companion/src/mcp-stdio.ts")
-    exec_ts_main "$@"
-    ;;
+  "${WORKSPACE_ROOT}/open-source/zedge/companion/src/index.ts"|\
+  "${WORKSPACE_ROOT}/open-source/zedge/companion/src/mcp-stdio.ts"|\
   "${WORKSPACE_ROOT}/open-source/zedge/companion/src/companion-supervisor.ts"|\
   "${WORKSPACE_ROOT}/open-source/zedge/companion/src/gnosis-lsp.ts")
-    exec_ts_main "$@"
+    exec "${WORKSPACE_ROOT}/open-source/gnosis/bin/monster" run "${ABS_ENTRY_PATH}" --export main -- "$@"
     ;;
 esac
 
-NODE_RUNTIME="$(resolve_node_runtime)"
-exec "${NODE_RUNTIME}" "${WORKSPACE_ROOT}/open-source/gnosis/bin/gnode.js" run "${ENTRY_PATH}" "$@"
+exec "${WORKSPACE_ROOT}/open-source/gnosis/bin/monster" run "${ABS_ENTRY_PATH}" -- "$@"

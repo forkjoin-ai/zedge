@@ -10,7 +10,7 @@
 import { mkdirSync, writeFileSync } from 'fs';
 import { dirname, join, resolve } from 'path';
 import { fileURLToPath } from 'url';
-import esbuild from 'esbuild';
+import { build } from '@a0n/ggbuild/node-bundle';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const companionRoot = resolve(__dirname, '..');
@@ -63,13 +63,13 @@ const supervisorBuild = {
   plugins: [externalizeWasmAndBitwise],
 };
 
-await esbuild.build({
+await build({
   ...supervisorBuild,
   entryPoints: [join(companionRoot, 'src/companion-supervisor.ts')],
   outfile: join(distDir, 'companion-supervisor.mjs'),
 });
 
-await esbuild.build({
+await build({
   ...supervisorBuild,
   entryPoints: [join(companionRoot, 'src/index.ts')],
   outfile: join(distDir, 'companion.mjs'),

@@ -114,6 +114,25 @@
         "command": "pnpm run monster -- scripts/open-source-repo-target.mjs pr-merge-all open-source/zedge",
         "cwd": "."
       }
+    },
+    "test:source-launcher": {
+      "executor": "a0:run-commands",
+      "cache": false,
+      "options": {
+        "cwd": ".",
+        "command": "node open-source/gnosis/bin/monster.mjs test open-source/zedge/companion/src/__tests__/source-launcher.test.ts open-source/zedge/companion/src/__tests__/runtime-command.test.ts",
+        "monster": {
+          "nodeLeaf": {
+            "reason": "The sovereign Monster harness qualifies shell launcher argument custody and runtime resolution with bounded child processes.",
+            "args": [
+              "open-source/gnosis/bin/monster.mjs",
+              "test",
+              "open-source/zedge/companion/src/__tests__/source-launcher.test.ts",
+              "open-source/zedge/companion/src/__tests__/runtime-command.test.ts"
+            ]
+          }
+        }
+      }
     }
   }
 }
