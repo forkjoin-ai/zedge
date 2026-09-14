@@ -13,7 +13,7 @@
         "^typecheck"
       ],
       "options": {
-        "cwd": "/Users/buley/Documents/Code",
+        "cwd": "open-source/zedge/grammars/gnosis",
         "command": "echo \"tree-sitter-gnosis typecheck deferred: grammar package declaration backlog\""
       }
     }

@@ -64,7 +64,7 @@
     "typecheck": {
       "executor": "a0:run-commands",
       "options": {
-        "command": "pnpm exec tsc -p open-source/zedge/companion/tsconfig.typecheck.json --noEmit"
+        "command": "node open-source/gnosis/bin/gnode.js x tsc -p open-source/zedge/companion/tsconfig.typecheck.json --noEmit"
       }
     },
     "lint": {

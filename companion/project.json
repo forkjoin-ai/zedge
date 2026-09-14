@@ -53,7 +53,7 @@
         "^typecheck"
       ],
       "options": {
-        "command": "pnpm exec tsc -p open-source/zedge/companion/tsconfig.typecheck.json --noEmit",
+        "command": "node open-source/gnosis/bin/gnode.js x tsc -p open-source/zedge/companion/tsconfig.typecheck.json --noEmit",
         "cwd": "."
       }
     }
