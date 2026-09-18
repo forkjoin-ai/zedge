@@ -645,7 +645,31 @@ function resolveTokenizerGgufPath(
     'gguf',
     `${knotBaseName}.gguf`
   );
-  return existsSync(adjacentGgufPath) ? adjacentGgufPath : undefined;
+  if (existsSync(adjacentGgufPath)) return adjacentGgufPath;
+
+  // A spec may declare a tokenizer GGUF that is simply absent on this machine:
+  // qwen2.5-0.5b-instruct names Qwen2.5-0.5B-Instruct-Q4_K_M.gguf, which is not
+  // in ~/.edgework/models while qwen-tokenizer.gguf sits beside the knot.
+  // Returning undefined used to omit TOKENIZER_GGUF_PATH silently, so the
+  // runtime fell back to the in-tree smoke tokenizer and answered with a 400
+  // from /tokenize, far from this cause. Probe the sibling Qwen tokenizer,
+  // qwen knots only: a non-Qwen model silently adopting a Qwen vocab is worse
+  // than the announced absence below.
+  if (basename(knotPath).toLowerCase().startsWith('qwen')) {
+    const siblingQwenTokenizer = join(dirname(knotPath), 'qwen-tokenizer.gguf');
+    if (existsSync(siblingQwenTokenizer)) return siblingQwenTokenizer;
+  }
+
+  console.warn(
+    `[moonshine] no tokenizer GGUF resolved for ${knotPath}` +
+      (spec?.tokenizerGgufPath
+        ? ` (spec declares ${spec.tokenizerGgufPath}, absent on disk)`
+        : '') +
+      '; TOKENIZER_GGUF_PATH stays unset, so /tokenize uses the in-tree smoke ' +
+      'tokenizer and refuses ordinary text. Set ZEDGE_MOONSHINE_TOKENIZER_GGUF ' +
+      'or TOKENIZER_GGUF_PATH to a Qwen2 GGUF.'
+  );
+  return undefined;
 }
 
 function resolveTokenizerJsonPath(
