@@ -199,6 +199,49 @@ Inside Zed, use `/edge-tts status`, `/edge-tts enable`, `/edge-tts disable`,
 `/edge-tts host`, `/edge-tts file`, `/edge-tts pulse`, `/edge-tts alsa`,
 `/edge-tts auto`, or `/edge-tts speak <text>`.
 
+### Adaptive Voice Mode
+
+Voice mode is an opt-in front-end modality: a transcript enters the normal
+prompt pipeline and the normal assistant reply is spoken. It never forks a
+second agent, never persists raw audio beyond the turn, and never silently
+degrades to a paid route. Every turn reports the tier that served it.
+
+```bash
+curl http://127.0.0.1:7331/voice/status
+curl http://127.0.0.1:7331/voice/capabilities
+
+curl -X POST http://127.0.0.1:7331/voice/config \
+  -H 'Content-Type: application/json' \
+  -d '{"enabled":true,"captureMode":"push-to-talk"}'
+
+curl -X POST http://127.0.0.1:7331/voice/listen \
+  -H 'Content-Type: application/json' \
+  -d '{"seconds":5}'
+
+curl -X POST http://127.0.0.1:7331/voice/say \
+  -H 'Content-Type: application/json' \
+  -d '{"input":"hello from Moonshine"}'
+```
+
+Inside Zed, use `/edge-voice status`, `/edge-voice enable`,
+`/edge-voice disable`, `/edge-voice capabilities`, `/edge-voice listen`, or
+`/edge-voice say <text>`.
+
+Route ladders: STT prefers a local whisper binary (`ZEDGE_STT_BIN`), then the
+fleet station (`ZEDGE_STT_URL`/`ZEDGE_MOONSHINE_URL`), then reports
+`unavailable` (Node has no device-system STT). TTS prefers a local squeezebox
+binary (`ZEDGE_TTS_BIN`), then the fleet station through `tts-relay`, then the
+host voice (`say` on macOS, `espeak-ng`/`spd-say` on Linux). `MOONSHINE_*`
+spellings are accepted as fallbacks. `offlineReady` is true only when both
+endpoints resolve device-local.
+
+Capture supports push-to-talk (bounded) and continuous listening
+(`ZEDGE_VOICE_CAPTURE_MODE=continuous`) with an energy VAD that finalizes after
+a ~1.4 s silence gap and restarts. Continuous mode has an explicit pause
+(privacy) and tears down its media stream on stop and unmount; barge-in stops
+playback.
+
+
 Native Linux Docker hosts can opt into ALSA passthrough:
 
 ```bash

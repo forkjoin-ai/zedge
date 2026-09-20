@@ -151,6 +151,29 @@ Moonshine TTS is controlled from Zed through `/edge-tts`:
 `disable` only turns off the companion playback relay. It does not affect chat
 completion, SSE streaming, or the Moonshine model picker.
 
+## Adaptive Voice Mode Slash Command
+
+Voice mode is adapted from the Ambush continuous-listening pattern and is
+controlled from Zed through `/edge-voice`:
+
+```text
+/edge-voice status
+/edge-voice enable
+/edge-voice disable
+/edge-voice capabilities
+/edge-voice listen
+/edge-voice say hello from Moonshine
+```
+
+The companion resolves the best sovereign STT/TTS tier for each turn
+(`device-local-wasm` -> `fleet-http` -> `device-system` -> `unavailable`) and
+reports the tier that served it. The transcript enters the normal prompt
+pipeline; voice mode never forks a second agent. Push-to-talk and continuous
+capture expose the same observable activity state (idle/listening/processing/
+speaking), and continuous mode has an explicit privacy pause plus barge-in.
+See `docs/VOICE_MODE.md`.
+
+
 ## Babelfish (WASM Native Compiler)
 
 Babelfish is the universal code-translation layer built on top of the Gnosis topological IR. It is integrated directly into the `zedge` extension using `gnosis-betti-wasm` for a zero-latency, high-performance compilation pipeline. Zedge queries the native Gnosis polyglot registry to expose the following capabilities:

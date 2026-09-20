@@ -111,11 +111,28 @@ Rules:
     max_tokens: 4096,
   };
 
-  const result = await infer(planRequest);
-  const data = (await result.response.json()) as {
-    choices?: Array<{ message?: { content?: string } }>;
-  };
-  const responseContent = data.choices?.[0]?.message?.content ?? '';
+  let responseContent = '';
+  try {
+    const result = await infer(planRequest);
+    const data = (await result.response.json()) as {
+      choices?: Array<{ message?: { content?: string } }>;
+    };
+    responseContent = data.choices?.[0]?.message?.content ?? '';
+  } catch (err) {
+    // Exact-Skymesh lanes fail closed instead of echoing. Orchestration still
+    // has to return a result carrying the reason, not throw at the caller.
+    errors.push(
+      `inference failed: ${err instanceof Error ? err.message : String(err)}`
+    );
+    return {
+      instruction: input.instruction,
+      edits: [],
+      appliedCount: 0,
+      failedCount: 0,
+      errors,
+      durationMs: Math.max(1, Date.now() - t0),
+    };
+  }
 
   // Step 2: Parse code blocks from the response
   const codeBlocks = parseCodeBlocks(responseContent);

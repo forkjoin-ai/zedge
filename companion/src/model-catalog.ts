@@ -144,10 +144,13 @@ const KNOWN_ZEDGE_MODELS: KnownZedgeModel[] = [
     forkjoinTier: true,
   },
   {
+    // KNOT trial: metadata is known, but the id is not selectable from the
+    // fallback catalog until the runtime advertises it.
     id: 'qwen2.5-0.5b-instruct',
     displayName: 'Qwen2.5 0.5B Instruct (Moonshine)',
     maxTokens: 2048,
     ownedBy: 'gnosis',
+    availability: 'candidate',
     forkjoinTier: true,
   },
   {

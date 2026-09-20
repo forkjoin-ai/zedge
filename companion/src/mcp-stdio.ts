@@ -558,6 +558,13 @@ const ZEDGE_PROMPTS: McpPromptDefinition[] = [
       'Inspect or change local TTS relay state. Use the `zedge_command` tool with `command: "zedge-tts"`. Pass `args` as `status`, `enable`, `disable`, `host`, `file`, `pulse`, `alsa`, `auto`, or `speak <text>`.',
   },
   {
+    name: 'zedge-voice',
+    description: 'Adaptive sovereign voice mode — STT/TTS tiers and listen/say turns',
+    arguments: slashArgsPrompt,
+    instructions:
+      'Inspect or drive sovereign voice mode. Use the `zedge_command` tool with `command: "zedge-voice"`. Pass `args` as `status`, `enable`, `disable`, `capabilities`, `listen`, or `say <text>`. Voice mode is a prompt modality, not a second agent; every turn reports the tier that served it.',
+  },
+  {
     name: 'zedgework',
     description: 'Run edgework commands for analysis and account operations',
     arguments: slashArgsPrompt,
@@ -577,6 +584,20 @@ const ZEDGE_PROMPTS: McpPromptDefinition[] = [
     arguments: slashArgsPrompt,
     instructions:
       'Control or inspect the P2P inference mesh. Use the `zedge_command` tool with `command: "zedge-mesh"`. The argument should be `status`, `start`, or `stop`.',
+  },
+  {
+    name: 'zedge-skymesh',
+    description: 'Control or inspect the global Skymesh bridge',
+    arguments: slashArgsPrompt,
+    instructions:
+      'Control or inspect the global Skymesh bridge. Use the `zedge_command` tool with `command: "zedge-skymesh"`. The argument may be `status`, `start`, `stop`, or `warm <prompt>`.',
+  },
+  {
+    name: 'zedge-team',
+    description: 'Inspect or manage a team-scoped shared inference workspace',
+    arguments: slashArgsPrompt,
+    instructions:
+      'Inspect or manage the team workspace. Use the `zedge_command` tool with `command: "zedge-team"`. The argument may be `status`, `create <name>`, `join <teamId> [token]`, `leave`, or `invite`.',
   },
   {
     name: 'zedge-crdt',
@@ -1253,6 +1274,42 @@ async function executeZedgeCommandTool(
         }
         return createToolResult(await fetchCompanionText('/tts/status'));
       }
+      case 'zedge-voice':
+      case 'edge-voice': {
+        const subcommand = parts[0] ?? 'status';
+        if (subcommand === 'enable' || subcommand === 'on') {
+          return createToolResult(
+            await postCompanionJson('/voice/config', { enabled: true }, 10_000)
+          );
+        }
+        if (subcommand === 'disable' || subcommand === 'off') {
+          return createToolResult(
+            await postCompanionJson('/voice/config', { enabled: false }, 10_000)
+          );
+        }
+        if (subcommand === 'capabilities') {
+          return createToolResult(
+            await fetchCompanionText('/voice/capabilities')
+          );
+        }
+        if (subcommand === 'listen') {
+          const seconds = Number.parseInt(parts[1] ?? '', 10);
+          const body = Number.isFinite(seconds) ? { seconds } : {};
+          return createToolResult(
+            await postCompanionJson('/voice/listen', body, 120_000)
+          );
+        }
+        if (subcommand === 'say') {
+          const input = parts.slice(1).join(' ');
+          if (!input.trim()) {
+            return createToolResult('Usage: zedge-voice say <text>', true);
+          }
+          return createToolResult(
+            await postCompanionJson('/voice/say', { input }, 120_000)
+          );
+        }
+        return createToolResult(await fetchCompanionText('/voice/status'));
+      }
       case 'zedgework': {
         if (!argsText) {
           return createToolResult(
@@ -1296,6 +1353,62 @@ async function executeZedgeCommandTool(
           return createToolResult(await postCompanionJson('/mesh/stop'));
         }
         return createToolResult(await fetchCompanionText('/mesh/status'));
+      }
+      case 'zedge-skymesh': {
+        const subcommand = parts[0] ?? 'status';
+        if (subcommand === 'start') {
+          return createToolResult(await postCompanionJson('/skymesh/bridge/start'));
+        }
+        if (subcommand === 'stop') {
+          return createToolResult(await postCompanionJson('/skymesh/bridge/stop'));
+        }
+        if (subcommand === 'warm') {
+          const prompt = parts.slice(1).join(' ').trim();
+          if (!prompt) {
+            return createToolResult('Usage: zedge-skymesh warm <prompt>', true);
+          }
+          return createToolResult(
+            await postCompanionJson('/skymesh/warm', {
+              prompt,
+              model: 'qwen2-0.5b-instruct',
+            })
+          );
+        }
+        return createToolResult(
+          await fetchCompanionText('/skymesh/bridge/status')
+        );
+      }
+      case 'zedge-team': {
+        const subcommand = parts[0] ?? 'status';
+        if (subcommand === 'create') {
+          const name = parts.slice(1).join(' ').trim();
+          if (!name) {
+            return createToolResult('Usage: zedge-team create <name>', true);
+          }
+          return createToolResult(await postCompanionJson('/teams/create', { name }));
+        }
+        if (subcommand === 'join') {
+          const teamId = parts[1];
+          if (!teamId) {
+            return createToolResult(
+              'Usage: zedge-team join <teamId> [token]',
+              true
+            );
+          }
+          return createToolResult(
+            await postCompanionJson('/teams/join', {
+              teamId,
+              ...(parts[2] ? { token: parts[2] } : {}),
+            })
+          );
+        }
+        if (subcommand === 'leave') {
+          return createToolResult(await postCompanionJson('/teams/leave'));
+        }
+        if (subcommand === 'invite') {
+          return createToolResult(await fetchCompanionText('/teams/invite'));
+        }
+        return createToolResult(await fetchCompanionText('/teams/status'));
       }
       case 'zedge-crdt': {
         const subcommand = parts[0] ?? 'status';
@@ -1908,6 +2021,82 @@ export async function handleToolsList(): Promise<Record<string, unknown>> {
         inputSchema: { type: 'object', properties: {} },
       },
       {
+        name: 'zedge_voice_status',
+        description:
+          'Show adaptive sovereign voice mode state and the resolved STT/TTS routes.',
+        inputSchema: { type: 'object', properties: {} },
+      },
+      {
+        name: 'zedge_voice_capabilities',
+        description:
+          'Return the voice capability tiers for speech-to-text and text-to-speech.',
+        inputSchema: { type: 'object', properties: {} },
+      },
+      {
+        name: 'zedge_voice_config',
+        description:
+          'Configure voice mode: enable/disable, STT/TTS base URLs, voice, and capture mode.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            enabled: {
+              type: 'boolean',
+              description: 'Opt in or out of voice mode',
+            },
+            sttUrl: {
+              type: 'string',
+              description: 'Speech-to-text base URL (OpenAI-compatible station)',
+            },
+            ttsUrl: {
+              type: 'string',
+              description: 'Text-to-speech base URL (Moonshine station)',
+            },
+            voice: {
+              type: 'string',
+              description: 'Voice ID for the TTS route',
+            },
+            captureMode: {
+              type: 'string',
+              enum: ['push-to-talk', 'continuous'],
+              description: 'Capture mode; continuous uses an energy VAD',
+            },
+          },
+        },
+      },
+      {
+        name: 'zedge_voice_listen',
+        description:
+          'Record one bounded voice turn, transcribe it, and return the transcript with the tier used.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            seconds: {
+              type: 'integer',
+              description: 'Capture length in seconds (clamped to 1-30)',
+            },
+          },
+        },
+      },
+      {
+        name: 'zedge_voice_say',
+        description:
+          'Sanitize assistant text and speak it through the best available TTS route.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            input: {
+              type: 'string',
+              description: 'Text to speak',
+            },
+            voice: {
+              type: 'string',
+              description: 'Optional voice ID',
+            },
+          },
+          required: ['input'],
+        },
+      },
+      {
         name: 'zedge_search_codebase',
         description:
           'Semantic search across the workspace codebase. Returns the most relevant code blocks for a natural language query.',
@@ -2435,6 +2624,61 @@ export async function handleToolCall(
         return createToolResult(
           await fetchCompanionText('/tts/voices', {}, 10_000)
         );
+
+      case 'zedge_voice_status':
+        return createToolResult(
+          await fetchCompanionText('/voice/status', {}, 10_000)
+        );
+
+      case 'zedge_voice_capabilities':
+        return createToolResult(
+          await fetchCompanionText('/voice/capabilities', {}, 10_000)
+        );
+
+      case 'zedge_voice_config': {
+        const body: Record<string, unknown> = {};
+        if (typeof args.enabled === 'boolean') body.enabled = args.enabled;
+        const sttUrl = optionalString(args.sttUrl);
+        if (sttUrl) body.sttUrl = sttUrl;
+        const ttsUrl = optionalString(args.ttsUrl);
+        if (ttsUrl) body.ttsUrl = ttsUrl;
+        const voice = optionalString(args.voice);
+        if (voice) body.voice = voice;
+        const captureMode = optionalString(args.captureMode);
+        if (captureMode) body.captureMode = captureMode;
+        return createToolResult(
+          await postCompanionJson('/voice/config', body, 10_000)
+        );
+      }
+
+      case 'zedge_voice_listen': {
+        const seconds = optionalNumber(args.seconds);
+        const body = seconds ? { seconds } : {};
+        return createToolResult(
+          await postCompanionJson('/voice/listen', body, 120_000)
+        );
+      }
+
+      case 'zedge_voice_say': {
+        const input = optionalString(args.input) ?? optionalString(args.text);
+        if (!input) {
+          return {
+            content: [
+              {
+                type: 'text',
+                text: 'input is required',
+              },
+            ],
+            isError: true,
+          };
+        }
+        const body: Record<string, unknown> = { input };
+        const voice = optionalString(args.voice);
+        if (voice) body.voice = voice;
+        return createToolResult(
+          await postCompanionJson('/voice/say', body, 120_000)
+        );
+      }
 
       case 'zedge_search_codebase': {
         const query = String(args.query ?? '');

@@ -25,8 +25,14 @@ function getRustSlashCommandDispatches(): string[] {
     throw new Error('Could not locate run_slash_command dispatch block');
   }
 
-  return [...matchBlock[1].matchAll(/"([^"]+)"\s*=>/g)]
-    .map((match) => match[1])
+  // Capture every quoted alternative in a dispatch arm, not just the last:
+  // `"edge-model" | "edge-models" =>` must yield both names.
+  const arms =
+    matchBlock[1].match(/^\s*"(?:[^"]+)"\s*(?:\|\s*"[^"]+"\s*)*=>/gm) ?? [];
+  return arms
+    .flatMap((arm) =>
+      [...arm.matchAll(/"([^"]+)"/g)].map((match) => match[1])
+    )
     .sort();
 }
 

@@ -768,13 +768,6 @@ export async function dispatchRequest(req: JsonRpcRequest): Promise<unknown> {
       }
 
       const text = documents.get(uri) ?? '';
-      
-      // Intercept hover with Babelfish hooks if enabled
-      const config = configGetter();
-      if (config.babelfish.enabled) {
-        const babelHover = await provideBabelfishHover({ uri, position, sourceText: text });
-        if (babelHover) return babelHover;
-      }
 
       const sourceLine = text.split('\n')[position.line] ?? '';
       const token = tokenAt(sourceLine, position.character);
@@ -783,12 +776,30 @@ export async function dispatchRequest(req: JsonRpcRequest): Promise<unknown> {
       }
 
       const uppercaseToken = token.toUpperCase();
-      const parseResult = compiler.parse(text);
+      // Grammar keywords (FORK/RACE/VENT/...) keep their intrinsic hover even
+      // when Babelfish translation is enabled.
       const keywordHelp = keywordHoverMarkdown(uppercaseToken);
+      if (keywordHelp) {
+        return {
+          contents: {
+            kind: 'markdown',
+            value: keywordHelp,
+          },
+        };
+      }
+
+      // Intercept remaining hovers with Babelfish hooks if enabled
+      const config = configGetter();
+      if (config.babelfish.enabled) {
+        const babelHover = await provideBabelfishHover({ uri, position, sourceText: text });
+        if (babelHover) return babelHover;
+      }
+
+      const parseResult = compiler.parse(text);
       const nodeHelp = parseResult.ast
         ? nodeHoverMarkdown(token, parseResult.ast)
         : null;
-      const help = keywordHelp ?? nodeHelp;
+      const help = nodeHelp;
 
       if (!help) {
         return null;

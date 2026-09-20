@@ -138,6 +138,38 @@ const LOCAL_TOOL_ACTIVATIONS: Record<
     threshold: 0.95,
     tier: 1,
   },
+  zedge_voice_status: {
+    patterns: ['\\b(voice status|voice mode|voice state)\\b'],
+    keywords: ['voice status', 'voice mode', 'voice state'],
+    threshold: 0.95,
+    tier: 1,
+  },
+  zedge_voice_capabilities: {
+    patterns: ['\\b(voice capabilities|stt tier|tts tier|offline voice)\\b'],
+    keywords: ['voice capabilities', 'stt tier', 'tts tier', 'offline voice'],
+    threshold: 0.95,
+    tier: 1,
+  },
+  zedge_voice_config: {
+    patterns: ['\\b(enable voice|disable voice|configure voice|voice mode off)\\b'],
+    keywords: ['enable voice', 'disable voice', 'configure voice'],
+    threshold: 0.95,
+    tier: 1,
+  },
+  zedge_voice_listen: {
+    patterns: [
+      '\\b(listen|transcribe|speech to text|voice input|push to talk|continuous listening)\\b',
+    ],
+    keywords: ['listen', 'transcribe', 'speech to text', 'voice input'],
+    threshold: 0.95,
+    tier: 1,
+  },
+  zedge_voice_say: {
+    patterns: ['\\b(speak this|voice reply|read the reply|say it)\\b'],
+    keywords: ['speak this', 'voice reply', 'read the reply'],
+    threshold: 0.95,
+    tier: 1,
+  },
 };
 
 function toAgenticTool(tool: LocalMcpTool): AgenticToolDefinition {

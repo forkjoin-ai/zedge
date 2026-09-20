@@ -176,6 +176,7 @@ mock.module('../moonshine-docker.ts', () => ({
 }));
 
 mock.module('../prompt-budget.ts', () => ({
+  applyConversationPromptBudget: (_model: string, messages: unknown) => messages,
   applySystemPromptBudget: (_model: string, messages: unknown) => messages,
   shouldSkipHeavySystemContext: () => true,
 }));
@@ -544,6 +545,62 @@ mock.module('../tts-relay.ts', () => ({
     voices: [{ id: 'local', name: 'Moonshine Local', model: 'moonshine-tts' }],
   }),
 }));
+
+mock.module('../voice-relay.ts', () => {
+  const input = {
+    supported: true,
+    tier: 'device-local-wasm',
+    modelId: 'whisper',
+    streaming: false,
+    offline: true,
+    partial: false,
+  };
+  const output = {
+    supported: true,
+    tier: 'fleet-http',
+    modelId: 'local',
+    streaming: false,
+    offline: false,
+    partial: false,
+  };
+
+  return {
+    handleVoiceStatusRequest: () => ({
+      enabled: true,
+      input,
+      output,
+      offlineReady: false,
+      platform: 'darwin',
+      captureMode: 'push-to-talk',
+      activity: { state: 'idle', audioLevel: 0, connectionState: 'disconnected' },
+      recorder: { command: '/usr/bin/ffmpeg', name: 'ffmpeg', kind: 'ffmpeg' },
+    }),
+    handleVoiceCapabilitiesRequest: () => ({ input, output, offlineReady: false }),
+    handleVoiceConfigRequest: () => ({
+      status: 200,
+      result: { ok: true, enabled: true },
+    }),
+    handleVoiceListenRequest: async () => ({
+      status: 200,
+      result: {
+        ok: true,
+        text: 'hello voice',
+        tier: 'device-local-wasm',
+        modelId: 'whisper',
+      },
+    }),
+    handleVoiceSayRequest: async () => ({
+      status: 200,
+      result: {
+        ok: true,
+        tier: 'device-system',
+        modelId: 'say',
+        playback: 'say',
+        byteLength: 11,
+      },
+    }),
+  };
+});
 
 mock.module('../prefill-window.ts', () => ({
   extractPrefillWindowId: (headers: Headers, body: unknown) =>
@@ -1194,6 +1251,8 @@ const routeCases: RouteCase[] = [
     '/admin/commands',
     '/tts/status',
     '/tts/voices',
+    '/voice/status',
+    '/voice/capabilities',
     '/tools/preflight',
     '/vfs/tree',
     '/v1/models',
@@ -1313,10 +1372,12 @@ const routeCases: RouteCase[] = [
     '/agent-participant/undo',
     '/agent-participant/redo',
   ].map((path) => postCase(path, 400)),
+  // codestral is fallback-selectable (pinned in model-catalog.test.ts), so the
+  // 409 path needs a real candidate that still requires live runtime admission.
   postCase(
     '/zedge/model-selection',
     409,
-    { model: 'codestral', reconcile: true },
+    { model: 'qwen38', reconcile: true },
     async (response) => {
       const payload = (await response.clone().json()) as {
         ok?: boolean;
@@ -1327,9 +1388,9 @@ const routeCases: RouteCase[] = [
       };
       expect(payload.ok).toBe(false);
       expect(payload.reason).toBe('model_unavailable');
-      expect(payload.error).toContain('apps/edge-workers');
-      expect(payload.model).toBe('codestral-22b');
-      expect(payload.availableModels).not.toContain('codestral-22b');
+      expect(payload.error).toContain('reverification');
+      expect(payload.model).toBe('qwen-uncensored-27b');
+      expect(payload.availableModels).not.toContain('qwen-uncensored-27b');
       expect(state.selectedModel).toBe('tinyllama-1.1b');
       expect(state.moonshineEnsureCalls).toBe(0);
     }
@@ -1363,6 +1424,9 @@ const routeCases: RouteCase[] = [
   postCase('/tts/config', 200, { enabled: true, mode: 'host' }),
   postCase('/tts/speak', 200, { input: 'hello moonshine' }),
   postCase('/tts/preview', 200, { input: 'hello moonshine' }),
+  postCase('/voice/config', 200, { enabled: true, captureMode: 'push-to-talk' }),
+  postCase('/voice/listen', 200, { seconds: 2 }),
+  postCase('/voice/say', 200, { input: 'hello voice' }),
   postCase('/prefill/windows', 200, {
     model: 'tinyllama-1.1b',
     messages: [{ role: 'user', content: 'draft' }],
@@ -1567,7 +1631,7 @@ describe('server route audit', () => {
 
     expect(missing).toEqual([]);
     expect(extra).toEqual([]);
-    expect(inventory.size).toBe(226);
+    expect(inventory.size).toBe(231);
   });
 
   test('responds to CORS preflight before route dispatch', async () => {

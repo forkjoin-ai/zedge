@@ -25,6 +25,7 @@ import {
   getKnownZedgeModels,
   isForkjoinTierModel,
   isExactSkymeshModel,
+  isFallbackSelectableModel,
   isLiveModelVisible,
 } from './model-catalog.ts';
 import {
@@ -795,9 +796,13 @@ function resolveMoonshineMaxTokens(request: ChatCompletionRequest): number {
   const requested = Number.isInteger(request.max_tokens)
     ? request.max_tokens
     : MOONSHINE_DEFAULT_MAX_TOKENS;
-  const modelMaxTokens = request.model
-    ? getKnownZedgeModel(request.model)?.maxTokens
-    : undefined;
+  // Only ids that are actually selectable from the catalog impose their
+  // per-model cap. Hidden (candidate/legacy) ids fall back to the global
+  // Moonshine ceiling rather than a stale metadata value.
+  const modelMaxTokens =
+    request.model && isFallbackSelectableModel(request.model)
+      ? getKnownZedgeModel(request.model)?.maxTokens
+      : undefined;
   const hardCap = Math.min(modelMaxTokens ?? MOONSHINE_MAX_TOKENS, MOONSHINE_MAX_TOKENS);
   return Math.max(0, Math.min(requested ?? MOONSHINE_DEFAULT_MAX_TOKENS, hardCap));
 }
@@ -3074,6 +3079,14 @@ export async function inferFim(
 ): Promise<FimResult> {
   const t0 = performance.now();
   const attempts: TierAttempt[] = [];
+  // The remote edge tier is deprecated for FIM. Record it as skipped so the
+  // attempt chain explains the fast path instead of silently omitting it.
+  attempts.push({
+    tier: 'edge',
+    status: 'skipped',
+    ms: 0,
+    detail: 'FIM fast path: edge tier skipped',
+  });
   const fimPrompt = buildFimPrompt(prefix, suffix, model);
 
   logInference(
@@ -3382,14 +3395,14 @@ export async function infer(
       });
       logInference(`[cloudrun] error: ${String(err)}`);
     }
-  } else {
+  } else if (isCloudRunTierEnabled()) {
+    // Record a skip only for an enabled tier that has no coordinator. A
+    // disabled tier must not insert an attempt ahead of the real ladder.
     attempts.push({
       tier: 'cloudrun',
       status: 'skipped',
       ms: 0,
-      detail: !isCloudRunTierEnabled()
-        ? 'disabled'
-        : `no monofat coordinator for ${request.model}`,
+      detail: `no monofat coordinator for ${request.model}`,
     });
   }
 

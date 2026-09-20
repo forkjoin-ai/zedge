@@ -47,6 +47,10 @@ requires_argument = false
 description = "Control local Moonshine TTS relay: status, enable, disable, mode, or speak"
 requires_argument = false
 
+[slash_commands.edge-voice]
+description = "Adaptive sovereign voice mode: status, enable, disable, capabilities, listen, or say"
+requires_argument = false
+
 [slash_commands.edgework]
 description = "Run edgework commands — emotions, sentiment, entities, embeddings, usage, and more"
 requires_argument = true
@@ -57,6 +61,14 @@ requires_argument = true
 
 [slash_commands.edge-mesh]
 description = "Start, stop, or check P2P inference mesh status"
+requires_argument = true
+
+[slash_commands.edge-skymesh]
+description = "Global Skymesh bridge control: status, start, stop, or warm cache"
+requires_argument = true
+
+[slash_commands.edge-team]
+description = "Team-scoped shared inference and CRDT workspace: status, create, join, leave, invite"
 requires_argument = true
 
 [slash_commands.edge-crdt]

@@ -681,6 +681,165 @@ pub fn run_tts(args: &[String]) -> Result<SlashCommandOutput, String> {
     }
 }
 
+fn render_voice_status(value: &serde_json::Value) -> String {
+    let enabled = value["enabled"].as_bool().unwrap_or(false);
+    let offline_ready = value["offlineReady"].as_bool().unwrap_or(false);
+    let stt_tier = value["input"]["tier"].as_str().unwrap_or("unavailable");
+    let stt_model = value["input"]["modelId"].as_str().unwrap_or("?");
+    let tts_tier = value["output"]["tier"].as_str().unwrap_or("unavailable");
+    let tts_model = value["output"]["modelId"].as_str().unwrap_or("?");
+    let recorder = value["recorder"]["name"].as_str().unwrap_or("none");
+
+    [
+        "## Moonshine Voice".to_string(),
+        String::new(),
+        format!(
+            "**Voice mode**: {}",
+            if enabled { "enabled" } else { "disabled" }
+        ),
+        format!("**Offline ready**: {}", if offline_ready { "yes" } else { "no" }),
+        format!("**STT route**: `{stt_tier}` (model `{stt_model}`)"),
+        format!("**TTS route**: `{tts_tier}` (model `{tts_model}`)"),
+        format!("**Recorder**: `{recorder}`"),
+        String::new(),
+        "**Commands**: `/edge-voice status`, `/edge-voice enable`, `/edge-voice disable`, `/edge-voice capabilities`, `/edge-voice listen`, `/edge-voice say <text>`".to_string(),
+        String::new(),
+        "Voice mode is an opt-in front-end modality: the transcript enters the normal prompt pipeline and the normal reply is spoken. It never forks a second agent.".to_string(),
+    ]
+    .join("\n")
+}
+
+fn voice_status_from_body(body: String) -> SlashCommandOutput {
+    if let Ok(value) = serde_json::from_str::<serde_json::Value>(&body) {
+        output_with_section(render_voice_status(&value), "Voice")
+    } else {
+        output_with_section(format!("```json\n{body}\n```"), "Voice")
+    }
+}
+
+fn render_voice_turn_result(value: &serde_json::Value) -> String {
+    let ok = value["ok"].as_bool().unwrap_or(false);
+    let tier = value["tier"].as_str().unwrap_or("?");
+    let model = value["modelId"].as_str().unwrap_or("?");
+    let playback = value["playback"].as_str().unwrap_or("?");
+    let byte_length = value["byteLength"].as_u64().unwrap_or(0);
+
+    let mut parts = vec![
+        "## Moonshine Voice".to_string(),
+        String::new(),
+        format!("**Status**: {}", if ok { "ok" } else { "error" }),
+        format!("**Tier**: `{tier}`"),
+        format!("**Model**: `{model}`"),
+    ];
+    if let Some(text) = value["text"].as_str() {
+        parts.push(format!("**Transcript**: {text}"));
+    }
+    if value["playback"].is_string() {
+        parts.push(format!("**Playback**: `{playback}`"));
+        parts.push(format!("**Bytes**: {byte_length}"));
+    }
+    if let Some(fallback) = value["fallbackFrom"].as_str() {
+        parts.push(format!("**Fallback from**: `{fallback}`"));
+    }
+    if let Some(error) = value["error"].as_str() {
+        parts.push(format!("**Error**: {error}"));
+    }
+    if let Some(remediation) = value["remediation"].as_str() {
+        parts.push(format!("**Next action**: {remediation}"));
+    }
+    parts.join("\n")
+}
+
+/// /edge-voice — inspect, enable, disable, or drive sovereign STT/TTS turns
+pub fn run_voice(args: &[String]) -> Result<SlashCommandOutput, String> {
+    let subcommand = args.first().map(|value| value.as_str()).unwrap_or("status");
+
+    match subcommand {
+        "status" => match companion_get("/voice/status") {
+            Ok(body) => Ok(voice_status_from_body(body)),
+            Err(error) => Ok(output_with_section(
+                format!("**Companion offline**: {error}"),
+                "Voice",
+            )),
+        },
+        "capabilities" => match companion_get("/voice/capabilities") {
+            Ok(body) => {
+                if let Ok(value) = serde_json::from_str::<serde_json::Value>(&body) {
+                    Ok(output_with_section(render_voice_status(&value), "Voice"))
+                } else {
+                    Ok(output_with_section(format!("```json\n{body}\n```"), "Voice"))
+                }
+            }
+            Err(error) => Ok(output_with_section(format!("**Error**: {error}"), "Voice")),
+        },
+        "enable" | "on" => {
+            match companion_post_json("/voice/config", serde_json::json!({ "enabled": true })) {
+                Ok(body) => Ok(voice_status_from_body(body)),
+                Err(error) => Ok(output_with_section(format!("**Error**: {error}"), "Voice")),
+            }
+        }
+        "disable" | "off" => {
+            match companion_post_json("/voice/config", serde_json::json!({ "enabled": false })) {
+                Ok(body) => Ok(voice_status_from_body(body)),
+                Err(error) => Ok(output_with_section(format!("**Error**: {error}"), "Voice")),
+            }
+        }
+        "listen" => {
+            let seconds = args.get(1).and_then(|value| value.parse::<u64>().ok());
+            let payload = match seconds {
+                Some(value) => serde_json::json!({ "seconds": value }),
+                None => serde_json::json!({}),
+            };
+            match companion_post_json("/voice/listen", payload) {
+                Ok(body) => {
+                    if let Ok(value) = serde_json::from_str::<serde_json::Value>(&body) {
+                        Ok(output_with_section(
+                            render_voice_turn_result(&value),
+                            "Voice",
+                        ))
+                    } else {
+                        Ok(output_with_section(format!("```json\n{body}\n```"), "Voice"))
+                    }
+                }
+                Err(error) => Ok(output_with_section(format!("**Error**: {error}"), "Voice")),
+            }
+        }
+        "say" => {
+            let input = args
+                .iter()
+                .skip(1)
+                .map(|value| value.as_str())
+                .collect::<Vec<_>>()
+                .join(" ");
+            if input.trim().is_empty() {
+                return Ok(output_with_section(
+                    "Usage: `/edge-voice say <text>`".to_string(),
+                    "Voice",
+                ));
+            }
+
+            match companion_post_json("/voice/say", serde_json::json!({ "input": input })) {
+                Ok(body) => {
+                    if let Ok(value) = serde_json::from_str::<serde_json::Value>(&body) {
+                        Ok(output_with_section(
+                            render_voice_turn_result(&value),
+                            "Voice",
+                        ))
+                    } else {
+                        Ok(output_with_section(format!("```json\n{body}\n```"), "Voice"))
+                    }
+                }
+                Err(error) => Ok(output_with_section(format!("**Error**: {error}"), "Voice")),
+            }
+        }
+        _ => Ok(output_with_section(
+            "Usage: `/edge-voice [status|enable|disable|capabilities|listen|say <text>]`"
+                .to_string(),
+            "Voice",
+        )),
+    }
+}
+
 /// /zedgework — run edgework-cli commands (available to all users)
 pub fn run_edgework(args: &[String]) -> Result<SlashCommandOutput, String> {
     if args.is_empty() {

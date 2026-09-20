@@ -95,6 +95,7 @@ impl zed::Extension for EdgeAiExtension {
             "edge-restart" => slash_commands::run_restart(),
             "edge-selftest" => slash_commands::run_selftest(&_args),
             "edge-tts" => slash_commands::run_tts(&_args),
+            "edge-voice" => slash_commands::run_voice(&_args),
             "edgework" => slash_commands::run_edgework(&_args),
             "edge-admin" => slash_commands::run_admin(&_args),
             "edge-mesh" => slash_commands::run_mesh(&_args),
@@ -238,6 +239,38 @@ impl zed::Extension for EdgeAiExtension {
                 SlashCommandArgumentCompletion {
                     label: "speak — Speak text through Moonshine TTS".into(),
                     new_text: "speak ".into(),
+                    run_command: false,
+                },
+            ]),
+            "edge-voice" => Ok(vec![
+                SlashCommandArgumentCompletion {
+                    label: "status — Show voice mode and resolved routes".into(),
+                    new_text: "status".into(),
+                    run_command: true,
+                },
+                SlashCommandArgumentCompletion {
+                    label: "enable — Opt in to voice mode".into(),
+                    new_text: "enable".into(),
+                    run_command: true,
+                },
+                SlashCommandArgumentCompletion {
+                    label: "disable — Opt out of voice mode".into(),
+                    new_text: "disable".into(),
+                    run_command: true,
+                },
+                SlashCommandArgumentCompletion {
+                    label: "capabilities — Show STT/TTS capability tiers".into(),
+                    new_text: "capabilities".into(),
+                    run_command: true,
+                },
+                SlashCommandArgumentCompletion {
+                    label: "listen — Record and transcribe one turn".into(),
+                    new_text: "listen".into(),
+                    run_command: true,
+                },
+                SlashCommandArgumentCompletion {
+                    label: "say — Speak text through the best TTS route".into(),
+                    new_text: "say ".into(),
                     run_command: false,
                 },
             ]),

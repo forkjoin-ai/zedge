@@ -185,7 +185,7 @@ export function getTeamStatus(): TeamStatus {
   const bridgeStatus = getSkymeshBridgeStatus();
 
   return {
-    team: currentTeam,
+    team: currentTeam ?? null,
     bridgeStatus: {
       running: bridgeStatus.running,
       meshId: bridgeStatus.meshId,
@@ -200,8 +200,8 @@ export function getTeamStatus(): TeamStatus {
 /**
  * Handles the zedge get Current Team workflow.
  */
-export function getCurrentTeam(): Team | null {
-  return currentTeam;
+export function getCurrentTeam(): Team | undefined {
+  return currentTeam ?? undefined;
 }
 
 /**

@@ -46,19 +46,44 @@
     "test": {
       "executor": "a0:run-commands",
       "options": {
-        "command": "pnpm run monster -- test open-source/zedge/companion/src/__tests__/auth.test.ts open-source/zedge/companion/src/__tests__/config.test.ts open-source/zedge/companion/src/__tests__/edit-preview.test.ts open-source/zedge/companion/src/__tests__/fim-cache.test.ts open-source/zedge/companion/src/__tests__/latency-probe.test.ts open-source/zedge/companion/src/__tests__/mcp-babysitter.test.ts open-source/zedge/companion/src/__tests__/moonshine-busy.test.ts open-source/zedge/companion/src/__tests__/moonshine-demand.test.ts open-source/zedge/companion/src/__tests__/parse-code-blocks.test.ts open-source/zedge/companion/src/__tests__/prompt-budget.test.ts open-source/zedge/companion/src/__tests__/runtime-command.test.ts open-source/zedge/companion/src/__tests__/skymesh-relay.test.ts open-source/zedge/companion/src/__tests__/tts-relay.test.ts open-source/zedge/companion/src/__tests__/vfs-bridge.test.ts open-source/zedge/companion/src/__tests__/zed-settings.test.ts"
+        "command": "node open-source/zedge/scripts/run-companion-tests.mjs",
+        "monster": {
+          "nodeLeaf": {
+            "reason": "The companion suite is discovered from the checkout and each file is run by the sovereign Monster/gnode runner. The previous find/sort/xargs spelling is an opaque shell pipeline the native dispatcher refuses; this repository-owned script carries the same discovery with bounded argv.",
+            "args": [
+              "open-source/zedge/scripts/run-companion-tests.mjs"
+            ]
+          }
+        }
       }
     },
     "test:all": {
       "executor": "a0:run-commands",
       "options": {
-        "command": "find open-source/zedge/companion/src/__tests__ -name '*.test.ts' ! -name '*e2e.test.ts' -print | sort | xargs pnpm run monster -- test"
+        "command": "node open-source/zedge/scripts/run-companion-tests.mjs",
+        "monster": {
+          "nodeLeaf": {
+            "reason": "The companion suite is discovered from the checkout and each file is run by the sovereign Monster/gnode runner. The previous find/sort/xargs spelling is an opaque shell pipeline the native dispatcher refuses; this repository-owned script carries the same discovery with bounded argv.",
+            "args": [
+              "open-source/zedge/scripts/run-companion-tests.mjs"
+            ]
+          }
+        }
       }
     },
     "test:e2e": {
       "executor": "a0:run-commands",
       "options": {
-        "command": "find open-source/zedge/companion/src/__tests__ -name '*e2e.test.ts' -print | sort | xargs pnpm run monster -- test"
+        "command": "node open-source/zedge/scripts/run-companion-tests.mjs --e2e",
+        "monster": {
+          "nodeLeaf": {
+            "reason": "The companion suite is discovered from the checkout and each file is run by the sovereign Monster/gnode runner. The previous find/sort/xargs spelling is an opaque shell pipeline the native dispatcher refuses; this repository-owned script carries the same discovery with bounded argv.",
+            "args": [
+              "open-source/zedge/scripts/run-companion-tests.mjs",
+              "--e2e"
+            ]
+          }
+        }
       }
     },
     "typecheck": {

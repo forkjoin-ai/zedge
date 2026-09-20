@@ -153,6 +153,7 @@ export function startSkymeshBridge(opts: {
   bridgeState.admitted = false;
   bridgeState.reconnectCount = 0;
   bridgeState.reconnectDelay = BRIDGE_RECONNECT_DELAY_MS;
+  bridgeState.lanPeers = 0;
 
   connectBridge(opts.bridgeToken);
 }
@@ -167,6 +168,7 @@ export function stopSkymeshBridge(): void {
 
   bridgeState.running = false;
   bridgeState.admitted = false;
+  bridgeState.lanPeers = 0;
 
   if (bridgeState.ws) {
     bridgeState.ws.close();
@@ -216,16 +218,14 @@ export function getSkymeshBridgeStatus(): SkymeshBridgeStatus {
  * Handles the zedge notify Skymesh Bridge Of Lan Peer workflow.
  */
 export function notifySkymeshBridgeOfLanPeer(): void {
-  const status = getMeshStatus();
-  bridgeState.lanPeers = status.peers.length;
+  bridgeState.lanPeers += 1;
 }
 
 /**
  * Handles the zedge remove Lan Peer From Bridge workflow.
  */
 export function removeLanPeerFromBridge(): void {
-  const status = getMeshStatus();
-  bridgeState.lanPeers = status.peers.length;
+  bridgeState.lanPeers = Math.max(0, bridgeState.lanPeers - 1);
 }
 
 // --- Bridge Connection ---

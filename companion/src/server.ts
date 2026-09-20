@@ -103,6 +103,13 @@ import {
   handlePrefillWindowRequest,
   requestWithPrefillWindow,
 } from './prefill-window.ts';
+import {
+  handleVoiceCapabilitiesRequest,
+  handleVoiceConfigRequest,
+  handleVoiceListenRequest,
+  handleVoiceSayRequest,
+  handleVoiceStatusRequest,
+} from './voice-relay.ts';
 
 const READY_REQUIRED_TOOL_NAMES = [
   'zedge_workspace',
@@ -2574,6 +2581,53 @@ export async function handleWebRequest(req: Request): Promise<Response> {
     }
 
     const { status, result } = await handleTtsPreviewRequest(body);
+    return jsonResponse(result, status);
+  }
+
+  // Voice mode front-end relay. Voice mode is a prompt modality, not a second
+  // agent: transcripts enter the normal prompt pipeline and the normal reply is
+  // spoken. Every response reports the tier that served it.
+  if (path === '/voice/status' && req.method === 'GET') {
+    return jsonResponse(handleVoiceStatusRequest());
+  }
+
+  if (path === '/voice/capabilities' && req.method === 'GET') {
+    return jsonResponse(handleVoiceCapabilitiesRequest());
+  }
+
+  if (path === '/voice/config' && req.method === 'POST') {
+    let body: unknown;
+    try {
+      body = await req.json();
+    } catch {
+      return jsonResponse({ ok: false, error: 'invalid JSON' }, 400);
+    }
+
+    const { status, result } = handleVoiceConfigRequest(body);
+    return jsonResponse(result, status);
+  }
+
+  if (path === '/voice/listen' && req.method === 'POST') {
+    let body: unknown;
+    try {
+      body = await req.json();
+    } catch {
+      return jsonResponse({ ok: false, error: 'invalid JSON' }, 400);
+    }
+
+    const { status, result } = await handleVoiceListenRequest(body);
+    return jsonResponse(result, status);
+  }
+
+  if (path === '/voice/say' && req.method === 'POST') {
+    let body: unknown;
+    try {
+      body = await req.json();
+    } catch {
+      return jsonResponse({ ok: false, error: 'invalid JSON' }, 400);
+    }
+
+    const { status, result } = await handleVoiceSayRequest(body);
     return jsonResponse(result, status);
   }
 
