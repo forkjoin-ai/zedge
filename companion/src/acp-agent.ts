@@ -26,6 +26,7 @@ import {
 } from 'fs';
 import { join, relative } from 'path';
 import { execSync } from 'child_process';
+import { notifyDendronChanged } from './dendron-notify.ts';
 
 // --- Types ---
 
@@ -587,6 +588,7 @@ function executeTool(session: AgentSession, call: ToolCall): ToolResult {
           return { name, success: false, output: 'Path escapes workspace' };
         }
         writeFileSync(filePath, String(args.content ?? ''));
+        notifyDendronChanged(filePath);
         return { name, success: true, output: `Wrote ${filePath}` };
       }
 

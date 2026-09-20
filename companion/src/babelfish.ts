@@ -2,6 +2,7 @@ import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { getZedgeConfig } from './config.ts';
+import { notifyDendronChanged } from './dendron-notify.ts';
 import {
   analyzePolyglotSourceString,
   type PolyglotAnalysisResult,
@@ -557,6 +558,7 @@ async function writeGeneratedFiles(
   for (const file of files) {
     await mkdir(path.dirname(file.filePath), { recursive: true });
     await writeFile(file.filePath, file.content, 'utf8');
+    notifyDendronChanged(file.filePath);
     writtenFiles.push(file.filePath);
   }
   return writtenFiles;
@@ -695,6 +697,7 @@ export async function applyBabelfishCodePreview(
 
     const replacement = preview.generatedFiles[0];
     await writeFile(preview.sourceFilePath, replacement.content, 'utf8');
+    notifyDendronChanged(preview.sourceFilePath);
     writtenFiles = [preview.sourceFilePath];
     patchedFile = preview.sourceFilePath;
   } else {

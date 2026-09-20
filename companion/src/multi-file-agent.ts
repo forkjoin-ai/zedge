@@ -17,6 +17,7 @@ import { infer } from './inference-bridge.ts';
 import type { ChatCompletionRequest } from './inference-bridge.ts';
 import { getZedgeConfig } from './config.ts';
 import { parseCodeBlocks, type ParsedCodeBlock } from './acp-agent.ts';
+import { notifyDendronChanged } from './dendron-notify.ts';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -174,6 +175,7 @@ Rules:
       const updated = content.replace(edit.search, edit.replace);
       const { writeFileSync } = await import('fs');
       writeFileSync(fullPath, updated, 'utf-8');
+      notifyDendronChanged(fullPath);
       appliedCount++;
     } catch (err) {
       errors.push(

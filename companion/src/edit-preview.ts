@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { relative, resolve, sep } from 'node:path';
+import { notifyDendronChanged } from './dendron-notify.ts';
 
 export interface EditPosition {
   line: number;
@@ -215,6 +216,7 @@ export function applyEditPreview(previewId: string): EditPreview {
   }
   const after = replaceRange(before, preview.range, preview.replacementText);
   writeFileSync(preview.absolutePath, after, 'utf-8');
+  notifyDendronChanged(preview.absolutePath);
   preview.applied = true;
   return preview;
 }
