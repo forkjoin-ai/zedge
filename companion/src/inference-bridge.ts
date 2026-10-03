@@ -808,7 +808,16 @@ function resolveMoonshineMaxTokens(request: ChatCompletionRequest): number {
 }
 
 function isSlowMoonshineModel(model: string): boolean {
-  return model === 'loki-erotica-8b' || isExactSkymeshModel(model);
+  const normalized = model.toLowerCase();
+  return (
+    model === 'loki-erotica-8b' ||
+    isExactSkymeshModel(model) ||
+    // Local offline knots run on CPU, where prefill dominates a long agent
+    // prompt: `gnosis-local` is the product label and `deepseek-r1-1.5b` the
+    // cached offline knot. Both need the long budget, not the 90s default.
+    normalized === 'gnosis-local' ||
+    normalized.startsWith('deepseek')
+  );
 }
 
 /**
@@ -820,8 +829,23 @@ export function resolveMoonshineTimeoutMsForModel(model: string): number {
     : MOONSHINE_TIMEOUT_MS;
 }
 
+/** Rough prompt-token estimate; the companion has no tokenizer of its own. */
+function estimatePromptTokens(request: ChatCompletionRequest): number {
+  let chars = 0;
+  for (const message of request.messages) {
+    chars += typeof message.content === 'string' ? message.content.length : 0;
+  }
+  return Math.ceil(chars / 4) + request.messages.length * 8;
+}
+
 function resolveMoonshineTimeoutMs(request: ChatCompletionRequest): number {
-  return resolveMoonshineTimeoutMsForModel(request.model);
+  const base = resolveMoonshineTimeoutMsForModel(request.model);
+  // CPU prefill runs at roughly 20 tok/s under load (~50ms/token), so a
+  // 6.5k-token agent turn needs minutes. Budget for the prompt instead of
+  // aborting mid-prefill, bounded so a wedged station cannot pin a request
+  // forever.
+  const promptBudgetMs = estimatePromptTokens(request) * 60;
+  return Math.min(base + promptBudgetMs, 900_000);
 }
 
 const LOCAL_WASM_TOTAL_TIMEOUT_MS = 45_000;
@@ -3868,14 +3892,18 @@ export async function getModels(
   const remoteModels = cachedRemoteModels.filter((model) =>
     isLiveModelVisible(model.id)
   );
-  const sourceModels =
-    remoteModels.length > 0
-      ? remoteModels
-      : getKnownZedgeModels().map((model): ModelInfo => ({
-          id: model.id,
-          object: 'model',
-          owned_by: model.ownedBy,
-        }));
+  // The local Moonshine shim reports only the model it currently has loaded, so
+  // a non-empty remote list must UNION with the known catalog rather than
+  // replace it. Replacing meant that starting any local model collapsed Zed's
+  // picker to that one entry (and the settings sync then repinned the default).
+  const sourceModels = [
+    ...remoteModels,
+    ...getKnownZedgeModels().map((model): ModelInfo => ({
+      id: model.id,
+      object: 'model',
+      owned_by: model.ownedBy,
+    })),
+  ];
 
   for (const model of sourceModels) {
     if (!seen.has(model.id)) {

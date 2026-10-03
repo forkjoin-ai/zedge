@@ -924,7 +924,18 @@ function readWorkspaceFile(filePath: string): string {
     throw new Error(`Workspace file not found: ${filePath}`);
   }
 
-  return readFileSync(resolvedPath, 'utf8');
+  try {
+    return readFileSync(resolvedPath, 'utf8');
+  } catch (err) {
+    // `existsSync` is true for a directory, so the read reaches the OS and
+    // leaks a raw `EISDIR: illegal operation on a directory`. Name it in the
+    // same vocabulary as the sandbox-escape error above instead.
+    // (bug_muemqdcq56zl27)
+    if ((err as { code?: string }).code === 'EISDIR') {
+      throw new Error(`Is a directory: ${filePath}`);
+    }
+    throw err;
+  }
 }
 
 function readFirstWorkspaceFile(candidates: string[]): {
@@ -936,7 +947,10 @@ function readFirstWorkspaceFile(candidates: string[]): {
     if (existsSync(resolvedPath)) {
       return {
         filePath: candidate,
-        sourceText: readFileSync(resolvedPath, 'utf8'),
+        // Route through readWorkspaceFile so a directory candidate is named
+        // rather than surfacing EISDIR, and so both readers share one message
+        // vocabulary. (bug_muemqdcq56zl27)
+        sourceText: readWorkspaceFile(candidate),
       };
     }
   }

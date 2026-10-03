@@ -11,7 +11,8 @@
 
 import { existsSync, readFileSync } from 'node:fs';
 import { homedir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { getZedgeConfig } from './config.ts';
 import { infer } from './inference-bridge.ts';
 import {
@@ -33,6 +34,74 @@ const BRIDGE_RECONNECT_MAX_MS = 60_000;
 const BRIDGE_PING_INTERVAL_MS = 20_000;
 const PREFLIGHT_TIMEOUT_MS = 10_000;
 const QUERY_TIMEOUT_MS = 60_000;
+
+// companion/src → companion → zedge → open-source → repo root
+const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..', '..');
+
+/** Env keys the rest of the monorepo uses for the relay bridge credential. */
+const BRIDGE_TOKEN_ENV_KEYS = [
+  'ZEDGE_SKYMESH_BRIDGE_TOKEN',
+  'SKYMESH_BRIDGE_TOKEN',
+] as const;
+
+/** Read the first matching `KEY=value` from a dotenv-shaped file. */
+function readBridgeTokenFromEnvFile(path: string): string | null {
+  let text: string;
+  try {
+    text = readFileSync(path, 'utf8');
+  } catch {
+    return null;
+  }
+  for (const key of BRIDGE_TOKEN_ENV_KEYS) {
+    const match = new RegExp(
+      `^\\s*(?:export\\s+)?${key}\\s*=\\s*(.*)$`,
+      'm'
+    ).exec(text);
+    const value = match?.[1]?.trim().replace(/^["']|["']$/g, '');
+    if (value) return value;
+  }
+  return null;
+}
+
+/**
+ * Resolve the relay bridge token. Precedence mirrors a0's
+ * `resolveFleetCredential`: explicit argument, process env, `~/.edgework`
+ * (env-file entry then `zedge.json`), then `.env.local`/`.env` at the workspace
+ * root.
+ *
+ * The relay's `handleBridge` answers an unauthenticated upgrade with 401 and
+ * the client can only observe it as a close(1006). Returning null here is what
+ * lets the caller report that plainly instead of looping. See
+ * `apps/skymesh/AUTH_TOKENS.md`.
+ */
+export function resolveSkymeshBridgeToken(explicit?: string): string | null {
+  const direct = explicit?.trim();
+  if (direct) return direct;
+
+  for (const key of BRIDGE_TOKEN_ENV_KEYS) {
+    const fromEnv = process.env[key]?.trim();
+    if (fromEnv) return fromEnv;
+  }
+
+  const fromEdgeworkEnv = readBridgeTokenFromEnvFile(
+    join(homedir(), '.edgework', 'env')
+  );
+  if (fromEdgeworkEnv) return fromEdgeworkEnv;
+
+  try {
+    const fromConfig = getZedgeConfig().skyMeshBridgeToken?.trim();
+    if (fromConfig) return fromConfig;
+  } catch {
+    // zedge.json absent/unreadable — fall through to the dotenv files.
+  }
+
+  for (const file of ['.env.local', '.env']) {
+    const token = readBridgeTokenFromEnvFile(join(REPO_ROOT, file));
+    if (token) return token;
+  }
+
+  return null;
+}
 
 // --- Owner self-use ---
 
@@ -111,6 +180,10 @@ const bridgeState: {
   pendingPreflights: Map<string, PendingPreflight>;
   pingInterval: NodeJS.Timeout | null;
   reconnectTimeout: NodeJS.Timeout | null;
+  /** Resolved once at start; every reconnect reuses it. null = unauthenticated. */
+  bridgeToken: string | null;
+  /** Latches so a reconnect loop logs its cause once, not once per attempt. */
+  errorLogged: boolean;
 } = {
   ws: null,
   running: false,
@@ -126,6 +199,8 @@ const bridgeState: {
   pendingPreflights: new Map(),
   pingInterval: null,
   reconnectTimeout: null,
+  bridgeToken: null,
+  errorLogged: false,
 };
 
 // --- Public API ---
@@ -144,18 +219,33 @@ export function startSkymeshBridge(opts: {
     return;
   }
 
+  // Fail fast, do not loop: the relay 401s an unauthenticated upgrade, and a
+  // retry storm against a credential we do not have only buries the cause.
+  const token = resolveSkymeshBridgeToken(opts.bridgeToken);
+  if (!token) {
+    console.warn(
+      '[skymesh-bridge] no bridge token resolved; not joining the relay. ' +
+        'Set SKYMESH_BRIDGE_TOKEN (process env, .env.local, or ~/.edgework) ' +
+        'to the mesh BRIDGE_TOKEN. See apps/skymesh/AUTH_TOKENS.md.'
+    );
+    bridgeState.running = false;
+    return;
+  }
+
   bridgeState.meshId = opts.meshId ?? 'skymesh-global';
   if (opts.nodeId) {
     bridgeState.nodeId = opts.nodeId;
   }
   bridgeState.models = opts.models ?? [];
+  bridgeState.bridgeToken = token;
   bridgeState.running = true;
   bridgeState.admitted = false;
   bridgeState.reconnectCount = 0;
   bridgeState.reconnectDelay = BRIDGE_RECONNECT_DELAY_MS;
   bridgeState.lanPeers = 0;
+  bridgeState.errorLogged = false;
 
-  connectBridge(opts.bridgeToken);
+  connectBridge();
 }
 
 /**
@@ -230,7 +320,7 @@ export function removeLanPeerFromBridge(): void {
 
 // --- Bridge Connection ---
 
-function connectBridge(token?: string): void {
+function connectBridge(): void {
   if (bridgeState.ws) {
     return;
   }
@@ -239,8 +329,8 @@ function connectBridge(token?: string): void {
   const url = new URL(`${base}/monitor/bridge`);
   url.searchParams.set('mesh', bridgeState.meshId);
   url.searchParams.set('node', bridgeState.nodeId);
-  if (token) {
-    url.searchParams.set('token', token);
+  if (bridgeState.bridgeToken) {
+    url.searchParams.set('token', bridgeState.bridgeToken);
   }
 
   const wsUrl = url.toString().replace(/^http/, 'ws');
@@ -252,6 +342,7 @@ function connectBridge(token?: string): void {
       bridgeState.ws = ws;
       bridgeState.reconnectDelay = BRIDGE_RECONNECT_DELAY_MS;
       bridgeState.reconnectCount = 0;
+      bridgeState.errorLogged = false;
 
       sendHello();
       startPingInterval();
@@ -272,17 +363,35 @@ function connectBridge(token?: string): void {
       }
     });
 
-    ws.addEventListener('error', (ev) => {
-      console.error(`[skymesh-bridge] WS error:`, ev);
+    ws.addEventListener('error', () => {
       bridgeState.ws = null;
       stopPingInterval();
+
+      // A successful open clears the latch, so this is one line per outage, not
+      // one per connection attempt.
+      if (!bridgeState.errorLogged) {
+        bridgeState.errorLogged = true;
+        console.warn(
+          `[skymesh-bridge] relay ${wsUrl} unreachable; retrying with backoff ` +
+            `(max ${Math.round(BRIDGE_RECONNECT_MAX_MS / 1000)}s). The WebSocket ` +
+            `API hides the status, so a rejected token (401) and a network ` +
+            `fault look identical here — check SKYMESH_BRIDGE_TOKEN against ` +
+            `apps/skymesh/AUTH_TOKENS.md.`
+        );
+      }
 
       if (bridgeState.running) {
         scheduleReconnect();
       }
     });
   } catch (err) {
-    console.error(`[skymesh-bridge] Failed to create WebSocket:`, err);
+    if (!bridgeState.errorLogged) {
+      bridgeState.errorLogged = true;
+      console.warn(
+        `[skymesh-bridge] could not create WebSocket for ${wsUrl}: ` +
+          `${err instanceof Error ? err.message : String(err)}`
+      );
+    }
     if (bridgeState.running) {
       scheduleReconnect();
     }

@@ -221,6 +221,20 @@ write_plist() {
   WD_XML="$(escape_xml "${WORKSPACE_ROOT}")"
   NODE_XML="$(escape_xml "${NODE_BIN}")"
 
+  # Local Moonshine model pin. Do NOT default this to the SSM CF skymesh daily
+  # driver (rwkv7-mini): that id is not a local knot, so resolveStartupModelSpec
+  # returns null, the local runtime can never start, and every "Gnosis Local"
+  # request 400s `model_not_loaded` — while the Zed picker still advertises it.
+  # Leaving it unset lets the companion resolve the cached offline knot lazily
+  # (see DEFAULT_OFFLINE_MOONSHINE_MODEL). Pin deliberately by exporting
+  # ZEDGE_MOONSHINE_MODEL when installing.
+  MOONSHINE_MODEL_PIN="${ZEDGE_MOONSHINE_MODEL:-}"
+  MOONSHINE_MODEL_XML=""
+  if [ -n "${MOONSHINE_MODEL_PIN}" ]; then
+    MOONSHINE_MODEL_XML="    <key>ZEDGE_MOONSHINE_MODEL</key>
+    <string>$(escape_xml "${MOONSHINE_MODEL_PIN}")</string>"
+  fi
+
   mkdir -p "${LAUNCH_AGENT_DIR}"
   if [ "${USE_DIST}" -eq 1 ]; then
     SUPERVISOR_ENTRY_XML="$(escape_xml "${COMPANION_DIST}")"
@@ -269,8 +283,7 @@ write_plist() {
     <string>$(escape_xml "${LOCAL_ZED_API_KEY}")</string>
     <key>PATH</key>
     <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
-    <key>ZEDGE_MOONSHINE_MODEL</key>
-    <string>rwkv7-mini</string>
+${MOONSHINE_MODEL_XML}
     <key>ZEDGE_MOONSHINE_TIMEOUT_MS</key>
     <string>180000</string>
     <key>ZEDGE_GUARDED_SUBAGENT</key>
@@ -329,8 +342,7 @@ EOF
     <string>$(escape_xml "${LOCAL_ZED_API_KEY}")</string>
     <key>PATH</key>
     <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
-    <key>ZEDGE_MOONSHINE_MODEL</key>
-    <string>rwkv7-mini</string>
+${MOONSHINE_MODEL_XML}
     <key>ZEDGE_MOONSHINE_TIMEOUT_MS</key>
     <string>180000</string>
     <key>ZEDGE_GUARDED_SUBAGENT</key>

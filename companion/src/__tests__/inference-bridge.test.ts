@@ -66,7 +66,7 @@ describe('Inference Bridge', () => {
     }
   });
 
-  test('getModels uses live Moonshine models when the catalog responds', async () => {
+  test('getModels unions live Moonshine models with the known catalog', async () => {
     const originalFetch = global.fetch;
     global.fetch = (async (input: RequestInfo | URL) => {
       const url = String(input);
@@ -90,7 +90,13 @@ describe('Inference Bridge', () => {
 
     try {
       const models = await getModels({ refresh: true });
-      expect(models.map((model) => model.id)).toEqual(['gnosis-local']);
+      const ids = models.map((model) => model.id);
+      // The shim's list leads, but it must not erase the rest of the catalog —
+      // otherwise one local model collapses Zed's picker.
+      expect(ids[0]).toBe('gnosis-local');
+      expect(ids).toContain('tinyllama-1.1b');
+      expect(ids).toContain('qwen-coder-7b');
+      expect(new Set(ids).size).toBe(ids.length);
     } finally {
       global.fetch = originalFetch;
     }
@@ -153,11 +159,17 @@ describe('Inference Bridge', () => {
     expect(tiers.length).toBe(3);
   });
 
-  test('Loki uses the slow Moonshine timeout budget', () => {
-    expect(resolveMoonshineTimeoutMsForModel('gnosis-local')).toBe(90_000);
+  test('CPU-local and skymesh models use the slow Moonshine timeout budget', () => {
+    // The local runtime is CPU-only: gnosis-local resolves to a cached offline
+    // knot (deepseek) whose prefill dominates an agent-sized prompt, so both
+    // the product label and the knot id get the long budget.
+    expect(resolveMoonshineTimeoutMsForModel('gnosis-local')).toBe(300_000);
+    expect(resolveMoonshineTimeoutMsForModel('deepseek-r1-1.5b')).toBe(300_000);
     expect(resolveMoonshineTimeoutMsForModel('loki-erotica-8b')).toBe(300_000);
     expect(resolveMoonshineTimeoutMsForModel('qwen3-coder-next')).toBe(300_000);
     expect(resolveMoonshineTimeoutMsForModel('muse-glimmer-30b-3')).toBe(300_000);
+    // A non-local, non-skymesh id keeps the fast default.
+    expect(resolveMoonshineTimeoutMsForModel('qwen2.5-0.5b-instruct')).toBe(90_000);
   });
 
   test('infer preserves streaming and honors requested Moonshine token budgets', async () => {

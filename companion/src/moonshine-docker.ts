@@ -67,9 +67,41 @@ const GEMMA4_TOKENIZER_JSON_PATH = join(
   REPO_ROOT,
   'open-source/bitwise/datasets/gemma4-tokenizer.json'
 );
+// Qwen2 byte-level BPE vocabs live in ~/.edgework/tokenizers as a Hugging Face
+// tokenizer.json. fat-station's `Qwen2BpeEncoder::from_path` and
+// openai-server's `resolveQwenTokenizerPath` both dispatch on the extension, so
+// a `.json` is accepted wherever a tokenizer GGUF is. Prefer the local file —
+// that is what keeps the "offline" fallback actually offline.
+//
+// Per-model first: DeepSeek-R1-Distill reuses the Qwen2.5 *shape* but swaps the
+// reserved ids for its own tokens (`<think>`/`</think>` at 151648/151649,
+// `qwen2_bpe.rs`), so the generic Qwen2.5 vocab must not answer for it.
+const QWEN_TOKENIZER_CANDIDATES = [
+  join(homedir(), '.edgework', 'tokenizers', 'qwen2.5', 'tokenizer.json'),
+  join(homedir(), '.edgework', 'models', 'qwen-tokenizer.gguf'),
+  join(homedir(), '.edgework', 'models', 'Qwen2.5-0.5B-Instruct-Q4_K_M.gguf'),
+];
+function qwenTokenizerPathForKnot(knotPath: string): string | null {
+  const knotBaseName = basename(knotPath, '.knot');
+  const modelSpecific = join(
+    homedir(),
+    '.edgework',
+    'tokenizers',
+    knotBaseName,
+    'tokenizer.json'
+  );
+  if (existsSync(modelSpecific)) return modelSpecific;
+  for (const candidate of QWEN_TOKENIZER_CANDIDATES) {
+    if (existsSync(candidate)) return candidate;
+  }
+  return null;
+}
 const DEFAULT_MOONSHINE_MODEL = 'gnosis-local';
-/** Cached locally on most dev machines; avoids R2 when DNS/network is down. */
-export const DEFAULT_OFFLINE_MOONSHINE_MODEL = 'qwen2.5-0.5b-instruct';
+/**
+ * Cached locally and used whenever the Zed selection needs R2. DeepSeek-R1
+ * Distill-1.5B is a Qwen2-arch knot, so the on-disk Qwen2 tokenizer applies.
+ */
+export const DEFAULT_OFFLINE_MOONSHINE_MODEL = 'deepseek-r1-1.5b';
 /** Models that advertise on R2 but need a non-default fat-station pipeline. */
 const MOONSHINE_STARTUP_BLOCKLIST = new Set([
   'phi-3.5-mini', // requires Phi3Pipeline; NativeLlama panics on arch=phi3
@@ -125,6 +157,16 @@ const DOCKER_COMPOSE_BUILD_ENABLED =
   process.env.ZEDGE_MOONSHINE_DOCKER_BUILD === 'true';
 const GNOSIS_NUM_THREADS =
   process.env.ZEDGE_GNOSIS_NUM_THREADS ?? process.env.GNOSIS_NUM_THREADS ?? '8';
+// Shim-side long-prompt cap. The host defaults MOONSHINE_MAX_PROMPT_TOKENS to
+// its 512-token prefill-window size, so an editor/agent turn (thousands of
+// tokens of file context) is refused with `context_length_exceeded` before the
+// station ever sees it. The documented default is 8192, and the shim clamps to
+// the station's own max_seq_len, so this is safe for smaller-context knots.
+const MOONSHINE_MAX_PROMPT_TOKENS = (() => {
+  const configured = process.env.ZEDGE_MOONSHINE_MAX_PROMPT_TOKENS?.trim();
+  const parsed = configured ? positiveInteger(configured) : null;
+  return String(parsed ?? 8192);
+})();
 const FAT_STATION_EMBED_PROBE_MAX_MS = Number(
   process.env.ZEDGE_FAT_STATION_EMBED_PROBE_MAX_MS ?? 8_000
 );
@@ -468,6 +510,23 @@ function positiveInteger(value: unknown): number | null {
   return numberValue;
 }
 
+/** Knots whose vocab is the Qwen2 byte-level BPE (incl. DeepSeek-R1-Distill). */
+function isQwenFamilyKnotPath(knotPath: string): boolean {
+  const base = basename(knotPath).toLowerCase();
+  return base.startsWith('qwen') || base.startsWith('deepseek-r1');
+}
+
+/**
+ * Warn once per key. `resolveStartupConfig()` runs on every ensure/doctor/status
+ * call, so an unconditional `console.warn` repeats the same line per request.
+ */
+const startupWarningsEmitted = new Set<string>();
+function warnStartupOnce(key: string, message: string): void {
+  if (startupWarningsEmitted.has(key)) return;
+  startupWarningsEmitted.add(key);
+  console.warn(message);
+}
+
 function resolveZedLocalModelSpec(): LocalMoonshineModelSpec | null {
   const selection = readZedModelSelection();
   if (!selection) {
@@ -480,15 +539,23 @@ function resolveZedLocalModelSpec(): LocalMoonshineModelSpec | null {
     ...selection.availableModels,
   ].filter((modelId): modelId is string => typeof modelId === 'string');
 
+  let remoteCandidate: LocalMoonshineModelSpec | null = null;
   for (const rawModelId of candidates) {
     const modelId = normalizeMoonshineModelId(rawModelId);
     const spec = LOCAL_MOONSHINE_MODELS[modelId];
-    if (spec && canUseModelSpec(spec)) {
+    if (!spec || !canUseModelSpec(spec)) {
+      continue;
+    }
+    // Offline-first: a locally cached knot beats an R2-streamed one even when
+    // the remote candidate sits earlier in Zed's catalog, so the common case
+    // never reaches for the network.
+    if (localKnotAvailable(spec)) {
       return spec;
     }
+    remoteCandidate ??= spec;
   }
 
-  return null;
+  return remoteCandidate;
 }
 
 function localKnotAvailable(spec: LocalMoonshineModelSpec): boolean {
@@ -521,7 +588,8 @@ function resolveStartupModelSpec(): LocalMoonshineModelSpec | null {
     if (!envSpec || isExactSkymeshModel(configuredModel)) {
       return null;
     }
-    console.warn(
+    warnStartupOnce(
+      `configured-unrunnable:${configuredModel}`,
       `[moonshine] ZEDGE_MOONSHINE_MODEL=${configuredModel} is not runnable locally ` +
         `(missing knot or blocklisted); falling back to Zed settings`
     );
@@ -535,16 +603,26 @@ function resolveStartupModelSpec(): LocalMoonshineModelSpec | null {
     return zedSpec;
   }
 
+  const offlineSpec = LOCAL_MOONSHINE_MODELS[DEFAULT_OFFLINE_MOONSHINE_MODEL];
+  const offlineUsable = !!offlineSpec && localKnotAvailable(offlineSpec);
+
+  // Only announce a fallback that will actually be taken. The old form logged
+  // "trying offline fallback X" and then returned the R2 spec when X was not
+  // cached, so the log named a model the runtime never touched.
   if (zedSpec && denseSourceRequiresNetwork(zedSpec)) {
-    console.warn(
-      `[moonshine] Zed-selected ${zedSpec.modelName} requires R2/network; ` +
-        `trying offline fallback ${DEFAULT_OFFLINE_MOONSHINE_MODEL}`
+    warnStartupOnce(
+      `remote-selection:${zedSpec.modelName}`,
+      offlineUsable
+        ? `[moonshine] Zed-selected ${zedSpec.modelName} requires R2/network; ` +
+            `using cached offline fallback ${DEFAULT_OFFLINE_MOONSHINE_MODEL}`
+        : `[moonshine] Zed-selected ${zedSpec.modelName} requires R2/network and ` +
+            `offline fallback ${DEFAULT_OFFLINE_MOONSHINE_MODEL} is not cached; ` +
+            `streaming ${zedSpec.modelName} from R2`
     );
   }
 
-  const offlineSpec = LOCAL_MOONSHINE_MODELS[DEFAULT_OFFLINE_MOONSHINE_MODEL];
-  if (offlineSpec && localKnotAvailable(offlineSpec)) {
-    return offlineSpec;
+  if (offlineUsable) {
+    return offlineSpec as LocalMoonshineModelSpec;
   }
 
   return zedSpec;
@@ -652,15 +730,23 @@ function resolveTokenizerGgufPath(
   // in ~/.edgework/models while qwen-tokenizer.gguf sits beside the knot.
   // Returning undefined used to omit TOKENIZER_GGUF_PATH silently, so the
   // runtime fell back to the in-tree smoke tokenizer and answered with a 400
-  // from /tokenize, far from this cause. Probe the sibling Qwen tokenizer,
-  // qwen knots only: a non-Qwen model silently adopting a Qwen vocab is worse
-  // than the announced absence below.
-  if (basename(knotPath).toLowerCase().startsWith('qwen')) {
-    const siblingQwenTokenizer = join(dirname(knotPath), 'qwen-tokenizer.gguf');
-    if (existsSync(siblingQwenTokenizer)) return siblingQwenTokenizer;
+  // from /tokenize, far from this cause. Probe the private candidates below,
+  // Qwen-family knots only: a non-Qwen model silently adopting a Qwen vocab is
+  // worse than the announced absence.
+  if (isQwenFamilyKnotPath(knotPath)) {
+    if (!isHttpUrl(knotPath)) {
+      const siblingQwenTokenizer = join(
+        dirname(knotPath),
+        'qwen-tokenizer.gguf'
+      );
+      if (existsSync(siblingQwenTokenizer)) return siblingQwenTokenizer;
+    }
+    const qwenTokenizer = qwenTokenizerPathForKnot(knotPath);
+    if (qwenTokenizer) return qwenTokenizer;
   }
 
-  console.warn(
+  warnStartupOnce(
+    `tokenizer-absent:${knotPath}`,
     `[moonshine] no tokenizer GGUF resolved for ${knotPath}` +
       (spec?.tokenizerGgufPath
         ? ` (spec declares ${spec.tokenizerGgufPath}, absent on disk)`
@@ -1009,6 +1095,12 @@ function buildFatStationNodeEnv(
 ): NodeJS.ProcessEnv {
   return {
     GNOSIS_NUM_THREADS,
+    // The station's own /tokenize and /detokenize read this; without it the
+    // resolved tokenizer only reached the :8080 shim and the station answered
+    // ordinary text with a smoke-table 400.
+    ...(config.tokenizerGgufPath
+      ? { TOKENIZER_GGUF_PATH: config.tokenizerGgufPath }
+      : {}),
     ...(config.rknotPath ? { GNOSIS_RKNOT_DECODE_CACHE_BYTES } : {}),
     ...(GNOSIS_FFN_LEAKAGE_MODE ? { GNOSIS_FFN_LEAKAGE_MODE } : {}),
     ...(GNOSIS_FFN_GUARD_RMS_DELTA3_THRESHOLD
@@ -1505,11 +1597,20 @@ async function startLocalMoonshine(
       FAT_STATION_URL,
       PORT: '8080',
       MODEL_NAME: modelName,
+      // Zed (and other clients) address the local runtime by the product label
+      // `gnosis-local`, not by the knot that happens to be cached. The shim
+      // 400s `model_not_loaded` for any name outside its alias set, so without
+      // this every "Gnosis Local (Moonshine)" request failed even though the
+      // runtime IS the local model. An explicit MODEL_ALIASES still wins.
+      MODEL_ALIASES: process.env.MODEL_ALIASES ?? DEFAULT_MOONSHINE_MODEL,
       AGENTIC: '0',
       // fat-station-memo lacks /amplituhedron/* — disable coordinator overhead.
       GNOSIS_AMPLITUHEDRON_COORDINATOR: '0',
       // Single-window prefill can wedge under concurrent Zed requests.
       MOONSHINE_PREFILL_WINDOWS: '0',
+      // Without this the shim's prompt cap stays at the 512-token prefill
+      // window and every agent turn fails `context_length_exceeded`.
+      MOONSHINE_MAX_PROMPT_TOKENS,
       ...(isLokiEroticaModel(modelName) ? { THOTH_LIQUID_MEMORY: '0' } : {}),
       ...(isLokiEroticaModel(modelName)
         ? { MOONSHINE_SKYMESH_CACHE: '0' }

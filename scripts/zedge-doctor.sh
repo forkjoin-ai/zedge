@@ -8,9 +8,11 @@ LAUNCH_AGENT="${SCRIPT_DIR}/companion-launch-agent.sh"
 FAT_STATION_RELEASE="${WORKSPACE_ROOT}/open-source/gnosis/distributed-inference/target/release/fat-station-memo"
 FAT_STATION_DEBUG="${WORKSPACE_ROOT}/open-source/gnosis/distributed-inference/target/debug/fat-station-memo"
 DEFAULT_KNOT="${WORKSPACE_ROOT}/open-source/bitwise/datasets/llama1b_fixed.knot"
-OFFLINE_MODEL="qwen2.5-0.5b-instruct"
+OFFLINE_MODEL="deepseek-r1-1.5b"
 OFFLINE_KNOT="${HOME}/.edgework/models/${OFFLINE_MODEL}.knot"
-OFFLINE_GGUF="${HOME}/.edgework/models/Qwen2.5-0.5B-Instruct-Q4_K_M.gguf"
+# Qwen2-family tokenizer. fat-station dispatches on the extension, so the
+# Hugging Face tokenizer.json is accepted where a tokenizer GGUF would be.
+OFFLINE_GGUF="${HOME}/.edgework/tokenizers/${OFFLINE_MODEL}/tokenizer.json"
 MIN_FREE_MB=2048
 COMPANION_URL="http://127.0.0.1:7331"
 MOONSHINE_URL="http://127.0.0.1:8080"
@@ -140,11 +142,12 @@ if [ -f "${HOME}/Library/LaunchAgents/ai.forkjoin.zedge.sidecar.plist" ]; then
     if [ "${launch_model}" = "${OFFLINE_MODEL}" ]; then
       ok "${launch_model}"
     else
-      yellow "  ○ plist has ${launch_model} (recommended: ${OFFLINE_MODEL})"
+      yellow "  ○ plist has ${launch_model} (recommended: unset or ${OFFLINE_MODEL})"
+      yellow "      A non-local pin (e.g. rwkv7-mini) stops the local runtime from starting;"
       yellow "      Fix: pnpm run zedge:launch-agent:install"
     fi
   else
-    yellow "  ○ ZEDGE_MOONSHINE_MODEL not set in plist"
+    ok "unset (offline-first local model resolution)"
   fi
 else
   yellow "  ○ launch agent plist not installed"
@@ -196,12 +199,23 @@ fi
 echo
 
 echo "Local fat-station binary:"
-if [ -x "${FAT_STATION_RELEASE}" ]; then
-  ok "release binary present"
-elif [ -x "${FAT_STATION_DEBUG}" ]; then
-  ok "debug binary present"
+# Same precedence the companion uses (moonshine-docker.ts FAT_STATION_BIN):
+# the full fat-station exposes /decode-next, so it is preferred over -memo.
+FAT_STATION_FOUND=""
+for candidate in \
+  "${WORKSPACE_ROOT}/open-source/gnosis/distributed-inference/target/release/fat-station" \
+  "${WORKSPACE_ROOT}/open-source/gnosis/distributed-inference/target/debug/fat-station" \
+  "${FAT_STATION_RELEASE}" \
+  "${FAT_STATION_DEBUG}"; do
+  if [ -x "${candidate}" ]; then
+    FAT_STATION_FOUND="${candidate}"
+    break
+  fi
+done
+if [ -n "${FAT_STATION_FOUND}" ]; then
+  ok "$(basename "${FAT_STATION_FOUND}") present"
 else
-  add_issue "fat-station-memo not built"
+  add_issue "fat-station(-memo) not built"
   echo "      Fix: pnpm run a0 -- run distributed-inference:build"
 fi
 echo

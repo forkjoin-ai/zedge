@@ -69,4 +69,14 @@ describe('moonshine fat-station demand gate', () => {
     expect(isExactSkymeshModel('rwkv7-mini')).toBe(true);
     expect(isExactSkymeshModel('mistral-7b')).toBe(false);
   });
+
+  test('local shim accepts the gnosis-local product label as an alias', () => {
+    // Zed addresses the local runtime as `gnosis-local` even when a different
+    // offline knot is loaded; without the alias the shim 400s
+    // `model_not_loaded` and the agent retries forever.
+    const source = readFileSync(join(here, '..', 'moonshine-docker.ts'), 'utf8');
+    expect(source).toContain(
+      'MODEL_ALIASES: process.env.MODEL_ALIASES ?? DEFAULT_MOONSHINE_MODEL'
+    );
+  });
 });
