@@ -652,6 +652,69 @@ function isJsonRpcRequest(value: unknown): value is JsonRpcRequest {
 /**
  * Handles the zedge dispatch Request workflow.
  */
+/** Open (or re-open) a document so navigation methods can resolve it. */
+export async function openGnosisDocument(
+  uri: string,
+  languageId: string,
+  text: string
+): Promise<void> {
+  await dispatchRequest({
+    jsonrpc: '2.0',
+    method: 'textDocument/didOpen',
+    params: { textDocument: { uri, languageId, version: 1, text } },
+  });
+}
+
+/**
+ * Capture the diagnostics gnosis-lsp publishes for one document. The server
+ * pushes publishDiagnostics, so the MCP surface installs a temporary capture
+ * handler, opens the document, and returns what arrived.
+ */
+export async function collectGnosisDiagnostics(
+  uri: string,
+  languageId: string,
+  text: string
+): Promise<unknown[]> {
+  const captured: unknown[] = [];
+  const previous = sendHandler;
+  sendHandler = (message: unknown) => {
+    const m = message as {
+      method?: string;
+      params?: { uri?: string; diagnostics?: unknown[] };
+    };
+    if (
+      m?.method === 'textDocument/publishDiagnostics' &&
+      m.params?.uri === uri
+    ) {
+      captured.splice(0, captured.length, ...(m.params.diagnostics ?? []));
+    }
+    previous(message);
+  };
+  try {
+    await openGnosisDocument(uri, languageId, text);
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  } finally {
+    sendHandler = previous;
+  }
+  return captured;
+}
+
+/** One navigation query (hover/definition/references/documentSymbol). */
+export async function gnosisNavigation(
+  method: string,
+  uri: string,
+  languageId: string,
+  text: string,
+  position?: { line: number; character: number }
+): Promise<unknown> {
+  await openGnosisDocument(uri, languageId, text);
+  const params: Record<string, unknown> = { textDocument: { uri } };
+  if (position) {
+    params.position = position;
+  }
+  return dispatchRequest({ jsonrpc: '2.0', id: Date.now(), method, params });
+}
+
 export async function dispatchRequest(req: JsonRpcRequest): Promise<unknown> {
   switch (req.method) {
     case 'initialize':

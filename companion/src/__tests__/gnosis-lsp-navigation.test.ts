@@ -1,5 +1,9 @@
 import { describe, test, expect } from '@a0n/gnosis/test';
-import { dispatchRequest } from '../gnosis-lsp';
+import {
+  dispatchRequest,
+  collectGnosisDiagnostics,
+  gnosisNavigation,
+} from '../gnosis-lsp';
 
 const GG_SOURCE = `
 (start:Sensor | temperature)
@@ -141,5 +145,29 @@ describe('Gnosis LSP Navigation', () => {
       const hover = result as { contents: { value: string } };
       expect(hover.contents.value).toContain('FORK');
     }
+  });
+
+  test('the in-process helpers expose diagnostics and navigation to MCP', async () => {
+    const diagnostics = await collectGnosisDiagnostics(
+      'file:///test/topology.gg',
+      'gnosis',
+      GG_SOURCE
+    );
+    expect(Array.isArray(diagnostics)).toBe(true);
+    const symbols = await gnosisNavigation(
+      'textDocument/documentSymbol',
+      'file:///test/topology.gg',
+      'gnosis',
+      GG_SOURCE
+    );
+    expect(symbols === null || typeof symbols === 'object').toBe(true);
+    const definition = await gnosisNavigation(
+      'textDocument/definition',
+      'file:///test/topology.gg',
+      'gnosis',
+      GG_SOURCE,
+      { line: 5, character: 0 }
+    );
+    expect(definition === null || typeof definition === 'object').toBe(true);
   });
 });

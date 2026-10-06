@@ -27,11 +27,69 @@ import {
 } from './companion-restart-policy.ts';
 import { getOwnedCompanionActivity } from './companion-activity.ts';
 import { resolveTypeScriptEntrypointCommand } from './runtime-command.ts';
+import {
+  collectGnosisDiagnostics,
+  gnosisNavigation,
+} from './gnosis-lsp.ts';
 
 function getCompanionBase(): string {
   // Use IPv4 loopback explicitly — `localhost` can resolve to ::1 while the
   // listener may be IPv4-only, causing flaky "connection refused" for Zed Agent.
   return `http://127.0.0.1:${getCompanionPort()}`;
+}
+
+// ---------- LSP target resolution ----------
+
+function asString(value: unknown): string | undefined {
+  return typeof value === 'string' && value.trim().length > 0 ? value : undefined;
+}
+
+function lspLanguageId(filePath: string): string {
+  const lower = filePath.toLowerCase();
+  if (lower.endsWith('.gg')) return 'gnosis';
+  if (lower.endsWith('.gnot')) return 'gnot';
+  if (lower.endsWith('.ts') || lower.endsWith('.tsx')) return 'typescript';
+  if (lower.endsWith('.rs')) return 'rust';
+  return 'plaintext';
+}
+
+function fileUriToPath(uri: string): string {
+  return uri.startsWith('file://') ? uri.slice('file://'.length) : uri;
+}
+
+type LspTarget = {
+  uri: string;
+  languageId: string;
+  text: string;
+  position: { line: number; character: number };
+};
+
+type LspTargetError = {
+  error: { content: Array<{ type: 'text'; text: string }>; isError: true };
+};
+
+function resolveLspTarget(
+  args: Record<string, unknown>
+): LspTarget | LspTargetError {
+  const filePath = asString(args.path) ?? asString(args.file_path) ?? asString(args.filePath);
+  if (!filePath) {
+    return { error: { content: [{ type: 'text', text: 'path is required' }], isError: true } };
+  }
+  const absolute = resolve(process.cwd(), filePath);
+  if (!existsSync(absolute)) {
+    return { error: { content: [{ type: 'text', text: `no such file: ${filePath}` }], isError: true } };
+  }
+  const line = Number(args.line ?? 0);
+  const character = Number(args.character ?? 0);
+  return {
+    uri: `file://${absolute}`,
+    languageId: lspLanguageId(filePath),
+    text: readFileSync(absolute, 'utf8'),
+    position: {
+      line: Number.isFinite(line) ? line : 0,
+      character: Number.isFinite(character) ? character : 0,
+    },
+  };
 }
 
 // ---------- Companion babysitter ----------
@@ -1992,6 +2050,81 @@ export async function handleToolsList(): Promise<Record<string, unknown>> {
         },
       },
       {
+        name: 'zedge_lsp_diagnostics',
+        description:
+          'Ask gnosis-lsp for a document diagnostics. Opens the file, captures published diagnostics, and returns them with a count.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            path: { type: 'string', description: 'Workspace-relative file path' },
+          },
+          required: ['path'],
+        },
+      },
+      {
+        name: 'zedge_lsp_hover',
+        description: 'gnosis-lsp hover at a position (0-indexed line and character).',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            path: { type: 'string' },
+            line: { type: 'integer', minimum: 0 },
+            character: { type: 'integer', minimum: 0 },
+          },
+          required: ['path', 'line', 'character'],
+        },
+      },
+      {
+        name: 'zedge_lsp_definition',
+        description: 'gnosis-lsp definition lookup at a position.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            path: { type: 'string' },
+            line: { type: 'integer', minimum: 0 },
+            character: { type: 'integer', minimum: 0 },
+          },
+          required: ['path', 'line', 'character'],
+        },
+      },
+      {
+        name: 'zedge_lsp_references',
+        description: 'gnosis-lsp reference lookup at a position.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            path: { type: 'string' },
+            line: { type: 'integer', minimum: 0 },
+            character: { type: 'integer', minimum: 0 },
+          },
+          required: ['path', 'line', 'character'],
+        },
+      },
+      {
+        name: 'zedge_lsp_symbols',
+        description: 'gnosis-lsp document symbols for a file (no position needed).',
+        inputSchema: {
+          type: 'object',
+          properties: { path: { type: 'string' } },
+          required: ['path'],
+        },
+      },
+      {
+        name: 'zedge_lsp_rename',
+        description:
+          'Plan a rename: gather references for the symbol and return edit records shaped for zedge_preview_range_replace. Nothing is written; apply the returned edits through the preview/apply discipline.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            path: { type: 'string' },
+            line: { type: 'integer', minimum: 0 },
+            character: { type: 'integer', minimum: 0 },
+            newName: { type: 'string' },
+          },
+          required: ['path', 'line', 'character', 'newName'],
+        },
+      },
+      {
         name: 'zedge_tts_speak',
         description:
           'Speak text through the local Moonshine TTS relay and host/file playback mode.',
@@ -2610,6 +2743,90 @@ export async function handleToolCall(
             10_000
           )
         );
+      }
+
+      case 'zedge_lsp_diagnostics': {
+        const target = resolveLspTarget(args);
+        if ('error' in target) return target.error;
+        const diagnostics = await collectGnosisDiagnostics(
+          target.uri,
+          target.languageId,
+          target.text
+        );
+        return createToolResult({
+          uri: target.uri,
+          languageId: target.languageId,
+          count: diagnostics.length,
+          diagnostics,
+        });
+      }
+
+      case 'zedge_lsp_hover':
+      case 'zedge_lsp_definition':
+      case 'zedge_lsp_references': {
+        const target = resolveLspTarget(args);
+        if ('error' in target) return target.error;
+        const method =
+          name === 'zedge_lsp_hover'
+            ? 'textDocument/hover'
+            : name === 'zedge_lsp_definition'
+              ? 'textDocument/definition'
+              : 'textDocument/references';
+        return createToolResult(
+          await gnosisNavigation(
+            method,
+            target.uri,
+            target.languageId,
+            target.text,
+            target.position
+          )
+        );
+      }
+
+      case 'zedge_lsp_symbols': {
+        const target = resolveLspTarget(args);
+        if ('error' in target) return target.error;
+        return createToolResult(
+          await gnosisNavigation(
+            'textDocument/documentSymbol',
+            target.uri,
+            target.languageId,
+            target.text
+          )
+        );
+      }
+
+      case 'zedge_lsp_rename': {
+        const target = resolveLspTarget(args);
+        if ('error' in target) return target.error;
+        const newName = asString(args.newName) ?? asString(args.new_name);
+        if (!newName) {
+          return {
+            content: [{ type: 'text', text: 'newName is required' }],
+            isError: true,
+          };
+        }
+        const refs = await gnosisNavigation(
+          'textDocument/references',
+          target.uri,
+          target.languageId,
+          target.text,
+          target.position
+        );
+        const edits = Array.isArray(refs)
+          ? (refs as Array<{ uri?: unknown; range?: unknown }>).map((ref) => ({
+              file_path: fileUriToPath(String(ref.uri ?? target.uri)),
+              range: ref.range,
+              replacement_text: newName,
+            }))
+          : [];
+        return createToolResult({
+          plan: true,
+          count: edits.length,
+          edits,
+          apply:
+            'apply each edit through zedge_preview_range_replace, then zedge_apply_edit_preview',
+        });
       }
 
       case 'zedge_tts_speak':
