@@ -78,7 +78,7 @@ function printApiKeyComments(apiKey: string | null): void {
   }
 
   console.log(
-    '# No API key found. Run `edgework auth login` or create ~/.edgework/api-key'
+    '# No API key found. Run `edgework login` (device flow) or create ~/.edgework/api-key'
   );
   console.log(
     '# For anonymous access, leave the API key blank in Zed settings.'
