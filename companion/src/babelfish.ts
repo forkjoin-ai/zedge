@@ -136,6 +136,8 @@ export interface BabelfishGnarlyResponse {
   ggSource: string;
   diagnostics: GnarlyCompileResult['diagnostics'];
   speedDiagnostics: GnarlyCompileResult['speedDiagnostics'];
+  /** The conditions behind each chosen language, part of the artifact. */
+  selection: GnarlyCompileResult['selection'];
   generatedFiles: GnarlyCompileResult['generatedFiles'];
   topoRaceGg?: string;
   executionManifest: GnarlyCompileResult['executionManifest'];
@@ -860,6 +862,7 @@ function toGnarlyResponse(
     ggSource: result.ggSource,
     diagnostics: result.diagnostics,
     speedDiagnostics: result.speedDiagnostics,
+    selection: result.selection,
     generatedFiles: result.generatedFiles,
     executionManifest: result.executionManifest,
     multiLanguageManifest: summarizeGnarlyManifest(result),

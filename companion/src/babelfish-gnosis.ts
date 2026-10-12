@@ -20,5 +20,6 @@ export type {
   GnarlyDocument,
   GnarlyGeneratedFile,
   GnarlyImplementationBlock,
+  GnarlySelectionRecord,
   GnarlySpeedDiagnostic,
 } from '@a0n/gnosis/gnarly-compiler';
