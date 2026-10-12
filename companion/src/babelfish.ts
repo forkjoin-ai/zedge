@@ -942,6 +942,34 @@ function injectDefaultGnarlyCandidates(
   );
 }
 
+/**
+ * Render the selection conditions as .gnarly source comments, or nothing when
+ * the compile names no selection or cannot be run.
+ */
+async function formatGnarlySelectionComments(
+  sourceText: string,
+  filePath: string
+): Promise<string[]> {
+  try {
+    const compiled = await compileGnarly(sourceText, { filePath });
+    if (!compiled.selection || compiled.selection.length === 0) {
+      return [];
+    }
+    return [
+      '  // selection (the conditions the fastest choice was made under):',
+      ...compiled.selection.map((record) => {
+        const observations =
+          record.observations === undefined
+            ? ''
+            : `, ${record.observations} observation(s), ${record.weightedDurationMs?.toFixed(1)}ms`;
+        return `  //   ${record.nodeId} -> ${record.language} (${record.evidence}, score ${record.score.toFixed(3)}${observations})`;
+      }),
+    ];
+  } catch {
+    return [];
+  }
+}
+
 export async function createGnarlyFromBabelfishScope(
   request: BabelfishGnarlyFromRequest
 ): Promise<BabelfishGnarlyFromResponse> {
@@ -959,14 +987,20 @@ export async function createGnarlyFromBabelfishScope(
     ...(request.candidateLanguages ?? []),
   ].filter((language, index, values) => values.indexOf(language) === index);
   const ggSource = analysis.functions.map((func) => func.ggSource).join('\n\n');
-  const content = [
+  const header = [
     `gnarly "${name}" {`,
     `  languages = [${languages.map((language) => `"${language}"`).join(', ')}]`,
     `  entry = ${entry}`,
-    '}',
-    '',
-    ggSource,
-  ].join('\n');
+  ];
+  const baseContent = [...header, '}', '', ggSource].join('\n');
+  // The selection conditions belong to the artifact, so a generated .gnarly
+  // carries them as comments: which language was chosen for each node and what
+  // chose it. Comments are inert to the parser, so this cannot change meaning.
+  const selectionComments = await formatGnarlySelectionComments(
+    baseContent,
+    resolvedScope.filePath
+  );
+  const content = [...header, ...selectionComments, '}', '', ggSource].join('\n');
 
   return {
     fileName: `${name}.gnarly`,

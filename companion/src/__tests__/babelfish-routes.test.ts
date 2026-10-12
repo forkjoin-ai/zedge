@@ -128,6 +128,9 @@ mock.module('../babelfish-gnosis', () => ({
       nodeOverrides: new Map(),
     },
     generatedFiles: [],
+    selection: [
+      { nodeId: 'greet', language: 'rust', evidence: 'predicted', score: 0.9 },
+    ],
     topoRaceGg: '// Topo-race',
   }),
 }));
@@ -147,6 +150,22 @@ function jsonRequest(
 }
 
 describe('Babelfish HTTP routes', () => {
+  test('gnarly-from writes the selection conditions into the source', async () => {
+    const response = await handleBabelfishRequest(
+      jsonRequest('/babelfish/gnarly/from', {
+        scope: {
+          kind: 'file',
+          filePath: '/tmp/greet.ts',
+          sourceText: 'export function greet() { return 1; }',
+        },
+      })
+    );
+    expect(response.status).toBe(200);
+    const body = (await response.json()) as { content: string };
+    expect(body.content).toContain('// selection');
+    expect(body.content).toContain('greet -> rust (predicted, score 0.900)');
+  });
+
   beforeEach(() => {
     resetBabelfishStateForTest();
   });
