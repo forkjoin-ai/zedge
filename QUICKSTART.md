@@ -16,6 +16,7 @@ This also:
 - Auto-configures Zed `settings.json` (`api_url` + model catalog) at `~/.config/zed/settings.json`.
 - Stores the placeholder API key `zedge-local` in the macOS Keychain / `ZEDGE_API_KEY` (Zed ignores `settings.json` `api_key` for `openai_compatible` providers).
 - Defaults to `rwkv7-mini` (SSM on CF skymesh). Companion HTTP may autospawn; a local fat-station does not. Override with `ZEDGE_MOONSHINE_MODEL`.
+- **Sign in once for that default model.** `rwkv7-mini` is served by the mesh and billed through Edgework: run `a0 edgework login` (writes `~/.edgework/api-key`). With no credential the relay answers `429 Free-tier request cap reached` — that is the anonymous tier, not a missing model. The companion resolves the key per request, so a fresh login applies to the next completion without a restart.
 
 Lost inside Zed? Run the slash command **`/edge-setup`** for the same steps, copy-paste friendly.
 

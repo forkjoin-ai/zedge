@@ -1,0 +1,3916 @@
+#!/usr/bin/env bun
+/**
+ * Zedge MCP Stdio Bridge
+ *
+ * Thin MCP server that Zed launches as a context server.
+ * Speaks JSON-RPC over stdin/stdout (MCP protocol) and proxies
+ * requests to the companion HTTP sidecar at localhost:7331.
+ *
+ * Auto-spawns the companion sidecar (index.ts) if it's not already
+ * running, and babysits it with a periodic health check loop --
+ * restarting it automatically if it crashes or becomes unreachable.
+ */
+
+import { readFileSync, existsSync } from 'fs';
+import { spawn, type ChildProcess } from 'child_process';
+import { resolve, dirname, relative, sep } from 'path';
+import { fileURLToPath } from 'url';
+import { getCompanionPort } from './config.ts';
+import { callBabelfishMcpTool, getBabelfishMcpTools } from './babelfish-mcp.ts';
+import {
+  COMPANION_STOP_TIMEOUT_MS,
+  CONSECUTIVE_FAILURES_BEFORE_RESTART,
+  HEALTH_CHECK_INTERVAL_MS,
+  HEALTH_CHECK_TIMEOUT_MS,
+  RESTART_WINDOW_MS,
+  decideCompanionRestart,
+} from './companion-restart-policy.ts';
+import { getOwnedCompanionActivity } from './companion-activity.ts';
+import { resolveTypeScriptEntrypointCommand } from './runtime-command.ts';
+import {
+  collectGnosisDiagnostics,
+  gnosisNavigation,
+} from './gnosis-lsp.ts';
+
+function getCompanionBase(): string {
+  // Use IPv4 loopback explicitly — `localhost` can resolve to ::1 while the
+  // listener may be IPv4-only, causing flaky "connection refused" for Zed Agent.
+  return `http://127.0.0.1:${getCompanionPort()}`;
+}
+
+// ---------- LSP target resolution ----------
+
+function asString(value: unknown): string | undefined {
+  return typeof value === 'string' && value.trim().length > 0 ? value : undefined;
+}
+
+function lspLanguageId(filePath: string): string {
+  const lower = filePath.toLowerCase();
+  if (lower.endsWith('.gg')) return 'gnosis';
+  if (lower.endsWith('.gnot')) return 'gnot';
+  if (lower.endsWith('.ts') || lower.endsWith('.tsx')) return 'typescript';
+  if (lower.endsWith('.rs')) return 'rust';
+  return 'plaintext';
+}
+
+function fileUriToPath(uri: string): string {
+  return uri.startsWith('file://') ? uri.slice('file://'.length) : uri;
+}
+
+type LspTarget = {
+  uri: string;
+  languageId: string;
+  text: string;
+  position: { line: number; character: number };
+};
+
+type LspTargetError = {
+  error: { content: Array<{ type: 'text'; text: string }>; isError: true };
+};
+
+function resolveLspTarget(
+  args: Record<string, unknown>
+): LspTarget | LspTargetError {
+  const filePath = asString(args.path) ?? asString(args.file_path) ?? asString(args.filePath);
+  if (!filePath) {
+    return { error: { content: [{ type: 'text', text: 'path is required' }], isError: true } };
+  }
+  const absolute = resolve(process.cwd(), filePath);
+  if (!existsSync(absolute)) {
+    return { error: { content: [{ type: 'text', text: `no such file: ${filePath}` }], isError: true } };
+  }
+  const line = Number(args.line ?? 0);
+  const character = Number(args.character ?? 0);
+  return {
+    uri: `file://${absolute}`,
+    languageId: lspLanguageId(filePath),
+    text: readFileSync(absolute, 'utf8'),
+    position: {
+      line: Number.isFinite(line) ? line : 0,
+      character: Number.isFinite(character) ? character : 0,
+    },
+  };
+}
+
+// ---------- Companion babysitter ----------
+
+let companionProc: ChildProcess | null = null;
+let babysitterTimer: ReturnType<typeof setInterval> | null = null;
+let stdioLoggingConfigured = false;
+let companionSpawnedAt = 0;
+let consecutiveHealthFailures = 0;
+let recentRestartTimestamps: number[] = [];
+let babysitterCheckInFlight = false;
+let restartInFlight: Promise<boolean> | null = null;
+let suppressExitRestart = false;
+let shuttingDown = false;
+
+function getModuleDirectory(): string {
+  return dirname(fileURLToPath(import.meta.url));
+}
+
+function getWorkspaceRoot(): string {
+  return resolve(
+    process.env.AEON_ROOT ?? resolve(getModuleDirectory(), '../../../..')
+  );
+}
+
+function getCompanionEntry(): string {
+  return resolve(
+    getWorkspaceRoot(),
+    'open-source/zedge/companion/src/index.ts'
+  );
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function configureStdioLogging(): void {
+  if (stdioLoggingConfigured) {
+    return;
+  }
+
+  stdioLoggingConfigured = true;
+  console.log = (...args: unknown[]) => console.error('[zedge:mcp]', ...args);
+  console.warn = (...args: unknown[]) =>
+    process.stderr.write(`[zedge:mcp:warn] ${args.join(' ')}\n`);
+  console.info = (...args: unknown[]) =>
+    process.stderr.write(`[zedge:mcp:info] ${args.join(' ')}\n`);
+  console.debug = (...args: unknown[]) =>
+    process.stderr.write(`[zedge:mcp:debug] ${args.join(' ')}\n`);
+}
+
+/** Check if the current companion process is reachable. */
+async function isCompanionAlive(): Promise<boolean> {
+  try {
+    const resp = await fetch(`${getCompanionBase()}/health`, {
+      signal: AbortSignal.timeout(HEALTH_CHECK_TIMEOUT_MS),
+    });
+    return resp.ok;
+  } catch {
+    return false;
+  }
+}
+
+/** Spawn the companion sidecar as a child process via the current runtime */
+function spawnCompanion(): void {
+  if (
+    companionProc &&
+    companionProc.exitCode === null &&
+    companionProc.signalCode === null
+  ) {
+    console.warn(
+      '[zedge:babysitter] Refusing duplicate companion spawn while owned child is still active'
+    );
+    return;
+  }
+
+  const runtimeCommand = resolveTypeScriptEntrypointCommand(
+    getCompanionEntry()
+  );
+  console.log(
+    `[zedge:babysitter] Spawning companion: ${runtimeCommand.display}`
+  );
+  const child = spawn(runtimeCommand.command, [...runtimeCommand.args], {
+    stdio: ['ignore', 'inherit', 'inherit'],
+    env: { ...process.env },
+  });
+  companionProc = child;
+  companionSpawnedAt = Date.now();
+  consecutiveHealthFailures = 0;
+
+  child.on('error', (error) => {
+    console.warn(
+      `[zedge:babysitter] Failed to spawn companion: ${error.message}`
+    );
+    if (companionProc === child) {
+      companionProc = null;
+    }
+  });
+
+  child.on('exit', (code, signal) => {
+    console.log(
+      `[zedge:babysitter] Companion exited with code ${code} signal ${
+        signal ?? 'none'
+      }`
+    );
+    if (companionProc === child) {
+      companionProc = null;
+    }
+    if (!shuttingDown && !suppressExitRestart) {
+      void restartCompanion('owned child exited unexpectedly', {
+        force: true,
+      });
+    }
+  });
+}
+
+async function stopCompanion(): Promise<void> {
+  const child = companionProc;
+  if (!child) {
+    return;
+  }
+
+  suppressExitRestart = true;
+  const exitPromise = new Promise<void>((resolve) => {
+    if (child.exitCode !== null || child.signalCode !== null) {
+      resolve();
+      return;
+    }
+    child.once('exit', () => resolve());
+  });
+
+  try {
+    child.kill('SIGTERM');
+  } catch {
+    // Best-effort shutdown only.
+  }
+
+  const exitedGracefully = await Promise.race([
+    exitPromise.then(() => true),
+    sleep(COMPANION_STOP_TIMEOUT_MS).then(() => false),
+  ]);
+
+  if (
+    !exitedGracefully &&
+    child.exitCode === null &&
+    child.signalCode === null
+  ) {
+    try {
+      child.kill('SIGKILL');
+    } catch {
+      // Best-effort hard stop only.
+    }
+    await Promise.race([exitPromise, sleep(1_000)]);
+  }
+
+  if (companionProc === child) {
+    companionProc = null;
+  }
+  suppressExitRestart = false;
+}
+
+async function restartCompanion(
+  reason: string,
+  options: { force?: boolean } = {}
+): Promise<boolean> {
+  if (restartInFlight) {
+    return restartInFlight;
+  }
+
+  restartInFlight = (async () => {
+    const busyActivity = getOwnedCompanionActivity(companionProc?.pid);
+    const decision = decideCompanionRestart({
+      now: Date.now(),
+      activityBusyUntil: busyActivity?.busyUntil ?? null,
+      companionSpawnedAt,
+      consecutiveFailures: consecutiveHealthFailures,
+      restartTimestamps: recentRestartTimestamps,
+      force: options.force,
+    });
+    recentRestartTimestamps = decision.restartTimestamps;
+
+    if (!decision.shouldRestart) {
+      if (decision.reason === 'busy' && busyActivity) {
+        console.debug(
+          `[zedge:babysitter] Companion busy with ${
+            busyActivity.kind
+          }; skipping restart until ${new Date(
+            busyActivity.busyUntil
+          ).toISOString()}`
+        );
+      } else if (decision.reason === 'startup_grace') {
+        console.debug(
+          '[zedge:babysitter] Skipping restart during companion startup grace window'
+        );
+      } else if (decision.reason === 'rate_limited') {
+        console.warn(
+          `[zedge:babysitter] Restart suppressed after ${
+            recentRestartTimestamps.length
+          } restarts in the last ${Math.round(RESTART_WINDOW_MS / 1000)}s`
+        );
+      }
+      return false;
+    }
+
+    // console.log(`[zedge:babysitter] Restarting companion: ${reason}`);
+    await stopCompanion();
+    spawnCompanion();
+
+    const alive = await waitForCompanion();
+    if (!alive) {
+      console.warn(
+        '[zedge:babysitter] Companion did not become healthy after restart'
+      );
+      return false;
+    }
+
+    consecutiveHealthFailures = 0;
+    // console.log('[zedge:babysitter] Companion healthy after restart');
+    return true;
+  })().finally(() => {
+    restartInFlight = null;
+  });
+
+  return restartInFlight;
+}
+
+/** Start the babysitter loop: check health, restart if dead */
+function startBabysitter(): void {
+  if (babysitterTimer) return;
+
+  babysitterTimer = setInterval(async () => {
+    if (babysitterCheckInFlight || restartInFlight) {
+      return;
+    }
+
+    babysitterCheckInFlight = true;
+    try {
+      const alive = await isCompanionAlive();
+      if (alive) {
+        consecutiveHealthFailures = 0;
+        return;
+      }
+
+      consecutiveHealthFailures += 1;
+
+      const busyActivity = getOwnedCompanionActivity(companionProc?.pid);
+      if (busyActivity) {
+        console.debug(
+          `[zedge:babysitter] Health check failed during ${busyActivity.kind} (${consecutiveHealthFailures}/${CONSECUTIVE_FAILURES_BEFORE_RESTART})`
+        );
+      }
+
+      console.warn(
+        `[zedge:babysitter] Companion health check failed (${consecutiveHealthFailures}/${CONSECUTIVE_FAILURES_BEFORE_RESTART})`
+      );
+      await restartCompanion(
+        `health check failed ${consecutiveHealthFailures} consecutive times`
+      );
+    } finally {
+      babysitterCheckInFlight = false;
+    }
+  }, HEALTH_CHECK_INTERVAL_MS);
+
+  // Clean up on exit
+  process.on('exit', () => {
+    shuttingDown = true;
+    if (babysitterTimer) clearInterval(babysitterTimer);
+    if (companionProc && !companionProc.killed) {
+      try {
+        companionProc.kill('SIGTERM');
+      } catch {
+        /* Process may already be terminated */
+      }
+    }
+  });
+}
+
+// ---------- MCP JSON-RPC types ----------
+
+export interface JsonRpcRequest {
+  jsonrpc: '2.0';
+  id?: string | number;
+  method: string;
+  params?: Record<string, unknown>;
+}
+
+export interface JsonRpcResponse {
+  jsonrpc: '2.0';
+  id: string | number | null;
+  result?: unknown;
+  error?: { code: number; message: string; data?: unknown };
+}
+
+interface McpPromptArgument {
+  name: string;
+  description: string;
+  required?: boolean;
+}
+
+interface McpPromptDefinition {
+  name: string;
+  description: string;
+  arguments?: McpPromptArgument[];
+  instructions: string;
+  toolName?: string;
+  payload?: (args: string | null) => Record<string, unknown>;
+}
+
+// ---------- Companion health check ----------
+
+async function waitForCompanion(maxAttempts = 240): Promise<boolean> {
+  for (let i = 0; i < maxAttempts; i++) {
+    try {
+      const resp = await fetch(`${getCompanionBase()}/probe/ready`, {
+        signal: AbortSignal.timeout(HEALTH_CHECK_TIMEOUT_MS),
+      });
+      if (resp.ok) return true;
+    } catch {
+      // not ready yet
+    }
+    await new Promise((r) => setTimeout(r, 500));
+  }
+  return false;
+}
+
+async function recoverCompanionAfterFetchFailure(reason: string): Promise<void> {
+  await restartCompanion(reason, { force: true });
+  const ok = await waitForCompanion();
+  if (!ok) {
+    throw new Error(
+      `Companion still unreachable at ${getCompanionBase()} after recovery attempt`
+    );
+  }
+}
+
+/**
+ * Fetch the companion HTTP API; on connection failure, force-restart the owned
+ * sidecar (or spawn it) and retry once. Does not retry on HTTP 4xx/5xx.
+ */
+async function fetchCompanion(
+  path: string,
+  init: RequestInit = {},
+  timeoutMs = 10_000
+): Promise<Response> {
+  const url = `${getCompanionBase()}${path}`;
+  const doFetch = (): Promise<Response> =>
+    fetch(url, {
+      ...init,
+      signal: init.signal ?? AbortSignal.timeout(timeoutMs),
+    });
+
+  try {
+    return await doFetch();
+  } catch (err) {
+    if (err instanceof Error && err.name === 'AbortError') {
+      throw err;
+    }
+    console.warn(
+      `[zedge:mcp] Companion fetch failed, attempting recovery: ${
+        err instanceof Error ? err.message : String(err)
+      }`
+    );
+    await recoverCompanionAfterFetchFailure('companion unreachable');
+    return await doFetch();
+  }
+}
+
+// ---------- MCP message handlers ----------
+
+const slashArgsPrompt: McpPromptArgument[] = [
+  {
+    name: 'args',
+    description:
+      'The raw argument text after the slash command, matching the extension command surface',
+  },
+];
+
+function parsePromptArgs(args: string | null): string[] {
+  return tokenizeArgs(args);
+}
+
+function buildSwarmPromptPayload(args: string | null): Record<string, unknown> {
+  if (!args) {
+    return { action: 'roles' };
+  }
+
+  return {
+    action: 'start',
+    task: args,
+  };
+}
+
+function normalizeGnotAction(
+  value: string | null
+): 'files' | 'lint' | 'format' | 'doctor' | 'next' | 'status' {
+  switch (value) {
+    case 'lint':
+    case 'format':
+    case 'doctor':
+    case 'next':
+    case 'status':
+      return value;
+    case 'next-action':
+    case 'next_action':
+      return 'next';
+    case 'release-status':
+    case 'release_status':
+      return 'status';
+    default:
+      return 'files';
+  }
+}
+
+function buildGnotCommandPayload(
+  argsText: string | null,
+  overrides: Record<string, unknown> = {}
+): Record<string, unknown> {
+  const parts = tokenizeArgs(argsText);
+  const action = normalizeGnotAction(
+    optionalString(overrides.action) ?? optionalString(parts[0])
+  );
+  const payload: Record<string, unknown> = { action };
+
+  if (action === 'lint' || action === 'format') {
+    const filePath =
+      optionalString(overrides.filePath) ?? optionalString(parts[1]);
+    const sourceText = optionalString(overrides.sourceText);
+    const write = overrides.write === true;
+
+    if (filePath) {
+      payload.filePath = filePath;
+    }
+    if (sourceText) {
+      payload.sourceText = sourceText;
+    }
+    if (write) {
+      payload.write = true;
+    }
+    return payload;
+  }
+
+  if (action === 'doctor' || action === 'next' || action === 'status') {
+    const app = optionalString(overrides.app) ?? optionalString(parts[1]);
+    const environment =
+      optionalString(overrides.environment) ?? optionalString(parts[2]);
+    if (app) {
+      payload.app = app;
+    }
+    if (environment) {
+      payload.environment = environment;
+    }
+    return payload;
+  }
+
+  return payload;
+}
+
+const ZEDGE_PROMPTS: McpPromptDefinition[] = [
+  {
+    name: 'zedge-setup',
+    description:
+      'One-time setup: install the local sidecar (macOS) and launch agent support',
+    instructions:
+      'Run the Zedge setup flow. Use the `zedge_command` tool with `command: "zedge-setup"` and summarize the install or launch-agent steps it returns.',
+  },
+  {
+    name: 'zedge-status',
+    description:
+      'Show inference chain health, compute pool stats, and token balance',
+    instructions:
+      'Inspect the Zedge companion status. Use the `zedge_command` tool with `command: "zedge-status"` and summarize health, preferred model, mesh, compute pool, workspace bridges, and inference-tier availability.',
+  },
+  {
+    name: 'zedge-models',
+    description: 'List available models with latency tier and readiness',
+    instructions:
+      'List the current Zedge models. Use the `zedge_command` tool with `command: "zedge-models"` and summarize which model IDs are available.',
+  },
+  {
+    name: 'zedge-model',
+    description: 'Show or switch the active sovereign Moonshine model',
+    arguments: slashArgsPrompt,
+    instructions:
+      'Inspect or switch the active sovereign model. Use `zedge_command` with `command: "zedge-model"` and `args: "status"` or `args: "use <model-id>"` once the model is admitted.',
+  },
+  {
+    name: 'zedge-pool',
+    description: 'Show or change compute pool participation and earnings',
+    arguments: slashArgsPrompt,
+    instructions:
+      'Inspect or change compute-pool participation. Use the `zedge_command` tool with `command: "zedge-pool"`. Pass `args` as `status`, `join`, or `leave`.',
+  },
+  {
+    name: 'zedge-logs',
+    description: 'Show recent inference logs from the companion',
+    arguments: slashArgsPrompt,
+    instructions:
+      'Fetch recent Zedge inference logs. Use the `zedge_command` tool with `command: "zedge-logs"`. If the user supplied an argument, treat it as the line count to request.',
+  },
+  {
+    name: 'zedge-clear',
+    description: 'Clear inference logs',
+    instructions:
+      'Clear the Zedge inference log buffer. Use the `zedge_command` tool with `command: "zedge-clear"` and report that the logs were cleared.',
+  },
+  {
+    name: 'zedge-restart',
+    description: 'Restart the companion sidecar',
+    instructions:
+      'Restart the Zedge companion sidecar. Use the `zedge_command` tool with `command: "zedge-restart"` and report that the sidecar is restarting.',
+  },
+  {
+    name: 'zedge-selftest',
+    description: 'Run a live inference self-test for health and SSE progress',
+    arguments: slashArgsPrompt,
+    instructions:
+      'Run the live Zedge inference self-test. Use the `zedge_command` tool with `command: "zedge-selftest"`. If the user supplied an argument, treat it as the model ID. Report edge-model readiness, Cloud Run health, and whether companion/direct SSE emitted prefill, heartbeat, data, and done events.',
+  },
+  {
+    name: 'zedge-tts',
+    description: 'Control local Moonshine TTS relay and host playback mode',
+    arguments: slashArgsPrompt,
+    instructions:
+      'Inspect or change local TTS relay state. Use the `zedge_command` tool with `command: "zedge-tts"`. Pass `args` as `status`, `enable`, `disable`, `host`, `file`, `pulse`, `alsa`, `auto`, or `speak <text>`.',
+  },
+  {
+    name: 'zedge-voice',
+    description: 'Adaptive sovereign voice mode — STT/TTS tiers and listen/say turns',
+    arguments: slashArgsPrompt,
+    instructions:
+      'Inspect or drive sovereign voice mode. Use the `zedge_command` tool with `command: "zedge-voice"`. Pass `args` as `status`, `enable`, `disable`, `capabilities`, `listen`, or `say <text>`. Voice mode is a prompt modality, not a second agent; every turn reports the tier that served it.',
+  },
+  {
+    name: 'zedgework',
+    description: 'Run edgework commands for analysis and account operations',
+    arguments: slashArgsPrompt,
+    instructions:
+      'Run an edgework CLI command through the Zedge companion. Use the `zedge_command` tool with `command: "zedgework"`. If no argument was supplied, list the available edgework commands instead of executing one.',
+  },
+  {
+    name: 'zedge-admin',
+    description: 'Run aeon-cli admin commands',
+    arguments: slashArgsPrompt,
+    instructions:
+      'Run an aeon admin command through the Zedge companion. Use the `zedge_command` tool with `command: "zedge-admin"`. If no argument was supplied, list the available admin commands instead of executing one.',
+  },
+  {
+    name: 'zedge-mesh',
+    description: 'Start, stop, or inspect the P2P inference mesh',
+    arguments: slashArgsPrompt,
+    instructions:
+      'Control or inspect the P2P inference mesh. Use the `zedge_command` tool with `command: "zedge-mesh"`. The argument should be `status`, `start`, or `stop`.',
+  },
+  {
+    name: 'zedge-skymesh',
+    description: 'Control or inspect the global Skymesh bridge',
+    arguments: slashArgsPrompt,
+    instructions:
+      'Control or inspect the global Skymesh bridge. Use the `zedge_command` tool with `command: "zedge-skymesh"`. The argument may be `status`, `start`, `stop`, or `warm <prompt>`.',
+  },
+  {
+    name: 'zedge-team',
+    description: 'Inspect or manage a team-scoped shared inference workspace',
+    arguments: slashArgsPrompt,
+    instructions:
+      'Inspect or manage the team workspace. Use the `zedge_command` tool with `command: "zedge-team"`. The argument may be `status`, `create <name>`, `join <teamId> [token]`, `leave`, or `invite`.',
+  },
+  {
+    name: 'zedge-crdt',
+    description: 'Inspect Ghostwriter CRDT status and collaboration state',
+    arguments: slashArgsPrompt,
+    instructions:
+      'Inspect Ghostwriter CRDT state. Use the `zedge_command` tool with `command: "zedge-crdt"`. The argument may be `status`, `files`, `cursors`, `participants`, `ledger`, or `diagnostics`.',
+  },
+  {
+    name: 'zedge-forge',
+    description: 'Inspect or trigger Forge deployment work',
+    arguments: slashArgsPrompt,
+    instructions:
+      'Inspect Forge status or trigger a deployment. Use the `zedge_command` tool with `command: "zedge-forge"`. The argument may be `status`, `projects`, or `deploy <project-name>`.',
+  },
+  {
+    name: 'zedge-kernel',
+    description: 'Inspect kernel daemons, plugins, commands, and flight logs',
+    arguments: slashArgsPrompt,
+    instructions:
+      'Inspect kernel runtime surfaces. Use the `zedge_command` tool with `command: "zedge-kernel"`. The argument may be `status`, `daemons`, `plugins`, `commands`, or `flight-log`.',
+  },
+  {
+    name: 'zedge-scaffold',
+    description: 'Create a new project from a scaffold template',
+    arguments: slashArgsPrompt,
+    instructions:
+      'Create or inspect scaffolds through the companion. Use the `zedge_command` tool with `command: "zedge-scaffold"`. With no argument, list templates. To create a project, pass `<template> <project-name>`.',
+  },
+  {
+    name: 'zedge-gnot',
+    description:
+      'Inspect workspace gnot apps and run gnot authoring or deploy-shell diagnostics',
+    arguments: slashArgsPrompt,
+    instructions:
+      'Inspect or operate on gnot surfaces through the companion. Use the `zedge_gnot` tool. With no argument or `files`, list workspace `.gnot` files. Supported argument forms mirror the extension slash command: `files`, `lint <file-path>`, `format <file-path>`, `doctor <app> [environment]`, `next <app> [environment]`, and `status <app> [environment]`.',
+    toolName: 'zedge_gnot',
+    payload: (args) => buildGnotCommandPayload(args),
+  },
+  {
+    name: 'zedge-gnosis',
+    description: 'Analyze a Gnosis topological graph string',
+    arguments: slashArgsPrompt,
+    instructions:
+      'Evaluate a Gnosis topology string. Use the `zedge_command` tool with `command: "zedge-gnosis"` and pass the topology source as the raw argument text.',
+  },
+  {
+    name: 'zedge-gnosis-run',
+    description: 'Run a Gnosis file from the workspace',
+    arguments: slashArgsPrompt,
+    instructions:
+      'Run a workspace Gnosis file. Use the `zedge_command` tool with `command: "zedge-gnosis-run"`. With no argument, fall back to `main.gg` or `example.gg` from the workspace root.',
+  },
+  {
+    name: 'zedge-gnosis-viz',
+    description: 'Open the Gnosis topology visualization URL',
+    arguments: slashArgsPrompt,
+    instructions:
+      'Return the Gnosis visualization URL. Use the `zedge_command` tool with `command: "zedge-gnosis-viz"`. Optionally pass a file path argument to preselect a workspace file.',
+  },
+  {
+    name: 'zedge-test',
+    description: 'Run the Gnosis isolation test graph',
+    arguments: slashArgsPrompt,
+    instructions:
+      'Run the Zedge isolation test surface. Use the `zedge_command` tool with `command: "zedge-test"`. If the user supplied an argument, treat it as the Gnosis file path; otherwise use the built-in isolation runner.',
+  },
+  {
+    name: 'zedge-feedback',
+    description: 'Submit or inspect local RLHF feedback for Zedge responses',
+    instructions:
+      'Submit or inspect local Zedge feedback. Use the `zedge_command` tool with `command: "zedge-feedback"`. With no arguments, inspect recent feedback entries. To submit feedback, pass `args` as `<rating 1-5> [comment]` or use the structured `rating`, `comment`, and optional `model` fields.',
+  },
+  {
+    name: 'zedge-babelfish',
+    description:
+      'Babelfish over Gnosis: capabilities, Gnarly, explain, translate, generate, and apply',
+    arguments: slashArgsPrompt,
+    instructions:
+      'Run a Babelfish operation. Use the `zedge_command` tool with `command: "zedge-babelfish"`. With no argument, list capabilities. Supported argument forms mirror the extension slash command: `capabilities`, `fastest <file.gnarly> [candidate-language,...]`, `compile-gnarly <file.gnarly>`, `gnarly-from <file-path> [candidate-language,...]`, `explain <file-path> [audience-language]`, `translate-code <target-language> <file-path>`, `translate-text <target-language> <file-path>`, `generate <target-language> <file-path>`, `rewrite-preview <target-language> <file-path>`, and `apply <preview-id> [rewrite_in_place|generate_files]`.',
+  },
+  {
+    name: 'zedge-babelfish-native',
+    description: 'Run the native WASM 0-latency Babelfish translation path',
+    arguments: slashArgsPrompt,
+    instructions:
+      'Run the native Babelfish translation path. Use the `zedge_command` tool with `command: "zedge-babelfish-native"`. Supported argument form mirrors the extension slash command: `translate-code <target-language> <file-path>`.',
+  },
+  {
+    name: 'zedge-review',
+    description:
+      'Consensus code review over the current diff via constructive superinference',
+    instructions:
+      'Run a consensus review of the current git diff. Use the `zedge_command` tool with `command: "zedge-review"` and summarize the highest-signal findings and disagreements between reviewers.',
+  },
+  {
+    name: 'zedge-void',
+    description:
+      'Void map — persistent rejection memory, steering vectors, and export surfaces',
+    arguments: slashArgsPrompt,
+    instructions:
+      'Inspect the void map or export rejection-memory signals. Use the `zedge_void_map` tool. With no argument, request `action: "status"`. To query or steer by file/category, translate the slash argument into the tool fields `action`, `file_path`, and `category`.',
+    toolName: 'zedge_void_map',
+    payload: (args) => {
+      const parts = parsePromptArgs(args);
+      const action = parts[0] ?? 'status';
+      const payload: Record<string, unknown> = { action };
+      if (parts[1]) payload.file_path = parts[1];
+      if (parts[2]) payload.category = parts[2];
+      return payload;
+    },
+  },
+  {
+    name: 'zedge-swarm',
+    description:
+      'Launch a swarm of specialized agents or inspect the available swarm roles',
+    arguments: slashArgsPrompt,
+    instructions:
+      'Launch or inspect the agent swarm. Use the `zedge_swarm` tool. With no argument, request `action: "roles"`. If the user supplied a task, request `action: "start"` and pass the task text through as `task`.',
+    toolName: 'zedge_swarm',
+    payload: buildSwarmPromptPayload,
+  },
+  {
+    name: 'zedge-engram',
+    description:
+      'Persistent agent memory — inspect status, recall context, remember patterns, or forget entries',
+    arguments: slashArgsPrompt,
+    instructions:
+      'Inspect or mutate the persistent engram store. Use the `zedge_engram` tool. With no argument, request `action: "status"`. Otherwise translate the slash arguments into the structured tool fields such as `action`, `query`, `type`, and `id`.',
+    toolName: 'zedge_engram',
+    payload: (args) => {
+      const parts = parsePromptArgs(args);
+      const action = parts[0] ?? 'status';
+      const payload: Record<string, unknown> = { action };
+      if (action === 'forget' && parts[1]) {
+        payload.id = parts[1];
+      } else if (parts.length > 1) {
+        payload.query = parts.slice(1).join(' ');
+      }
+      return payload;
+    },
+  },
+  {
+    name: 'zedge-emotion',
+    description:
+      'Analyze the emotional profile of the active file or a user-specified file',
+    arguments: slashArgsPrompt,
+    instructions:
+      'Analyze the emotional profile of a file. Use the `zedge_emotion` tool. If the user supplied a file path, pass it as `file_path`. Otherwise use the active file when it is available in context, or ask the user which file to inspect.',
+    toolName: 'zedge_emotion',
+    payload: (args) => {
+      const payload: Record<string, unknown> = {};
+      if (args) {
+        payload.file_path = args;
+      }
+      return payload;
+    },
+  },
+  {
+    name: 'zedge-agent',
+    description:
+      'GG agent management — list, trigger, or inspect topology-driven Forge agents',
+    arguments: slashArgsPrompt,
+    instructions:
+      'Manage GG agents through the Forge-backed MCP surface. Use the `zedge_gg_agent` tool. With no argument, request `action: "list"`. Otherwise translate the slash arguments into the structured fields `action`, `agent_name`, and optional `payload`.',
+    toolName: 'zedge_gg_agent',
+    payload: (args) => {
+      const parts = parsePromptArgs(args);
+      const action = parts[0] ?? 'list';
+      const payload: Record<string, unknown> = { action };
+      if (parts[1]) {
+        payload.agent_name = parts[1];
+      }
+      return payload;
+    },
+  },
+];
+
+function extensionPromptName(name: string): string {
+  if (name === 'zedgework') return 'edgework';
+  return name.startsWith('zedge-') ? name.replace(/^zedge-/, 'edge-') : name;
+}
+
+function canonicalZedgeCommandName(name: string): string {
+  if (name === 'edgework') return 'zedgework';
+  return name.startsWith('edge-') ? `z${name}` : name;
+}
+
+function optionalString(value: unknown): string | null {
+  if (typeof value !== 'string') {
+    return null;
+  }
+
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : null;
+}
+
+function optionalNumber(value: unknown): number | null {
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return Math.trunc(value);
+  }
+
+  if (typeof value === 'string') {
+    const parsed = Number.parseInt(value, 10);
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+
+  return null;
+}
+
+function asRecord(value: unknown): Record<string, unknown> {
+  if (value && typeof value === 'object' && !Array.isArray(value)) {
+    return value as Record<string, unknown>;
+  }
+
+  return {};
+}
+
+function tokenizeArgs(value: string | null): string[] {
+  if (!value) {
+    return [];
+  }
+
+  const tokens: string[] = [];
+  let current = '';
+  let quote: '"' | "'" | null = null;
+  let escaped = false;
+
+  for (const char of value) {
+    if (escaped) {
+      current += char;
+      escaped = false;
+      continue;
+    }
+
+    if (char === '\\') {
+      escaped = true;
+      continue;
+    }
+
+    if (quote) {
+      if (char === quote) {
+        quote = null;
+      } else {
+        current += char;
+      }
+      continue;
+    }
+
+    if (char === '"' || char === "'") {
+      quote = char;
+      continue;
+    }
+
+    if (/\s/.test(char)) {
+      if (current.length > 0) {
+        tokens.push(current);
+        current = '';
+      }
+      continue;
+    }
+
+    current += char;
+  }
+
+  if (escaped) {
+    current += '\\';
+  }
+
+  if (current.length > 0) {
+    tokens.push(current);
+  }
+
+  return tokens;
+}
+
+function createToolResult(
+  text: string,
+  isError = false
+): Record<string, unknown> {
+  const result: Record<string, unknown> = {
+    content: [{ type: 'text', text }],
+  };
+  if (isError) {
+    result.isError = true;
+  }
+  return result;
+}
+
+function renderPromptText(
+  prompt: McpPromptDefinition,
+  args: string | null
+): string {
+  const payload =
+    prompt.payload?.(args) ??
+    (() => {
+      const toolPayload: Record<string, unknown> = { command: prompt.name };
+      if (args) {
+        toolPayload.args = args;
+      }
+      return toolPayload;
+    })();
+  const toolName = prompt.toolName ?? 'zedge_command';
+
+  const invocation = JSON.stringify(payload, null, 2);
+  return `${prompt.instructions}\n\nUse the \`${toolName}\` MCP tool with this payload:\n\`\`\`json\n${invocation}\n\`\`\``;
+}
+
+function resolveWorkspacePath(filePath: string): string {
+  const workspaceRoot = getWorkspaceRoot();
+  const resolvedPath = resolve(workspaceRoot, filePath);
+  const relativePath = relative(workspaceRoot, resolvedPath);
+
+  if (relativePath === '..' || relativePath.startsWith(`..${sep}`)) {
+    throw new Error(`Path escapes workspace root: ${filePath}`);
+  }
+
+  return resolvedPath;
+}
+
+function readWorkspaceFile(filePath: string): string {
+  const resolvedPath = resolveWorkspacePath(filePath);
+  if (!existsSync(resolvedPath)) {
+    throw new Error(`Workspace file not found: ${filePath}`);
+  }
+
+  try {
+    return readFileSync(resolvedPath, 'utf8');
+  } catch (err) {
+    // `existsSync` is true for a directory, so the read reaches the OS and
+    // leaks a raw `EISDIR: illegal operation on a directory`. Name it in the
+    // same vocabulary as the sandbox-escape error above instead.
+    // (bug_muemqdcq56zl27)
+    if ((err as { code?: string }).code === 'EISDIR') {
+      throw new Error(`Is a directory: ${filePath}`);
+    }
+    throw err;
+  }
+}
+
+function readFirstWorkspaceFile(candidates: string[]): {
+  filePath: string;
+  sourceText: string;
+} {
+  for (const candidate of candidates) {
+    const resolvedPath = resolveWorkspacePath(candidate);
+    if (existsSync(resolvedPath)) {
+      return {
+        filePath: candidate,
+        // Route through readWorkspaceFile so a directory candidate is named
+        // rather than surfacing EISDIR, and so both readers share one message
+        // vocabulary. (bug_muemqdcq56zl27)
+        sourceText: readWorkspaceFile(candidate),
+      };
+    }
+  }
+
+  throw new Error(`Could not find any of: ${candidates.join(', ')}`);
+}
+
+async function responseToText(response: Response): Promise<string> {
+  const contentType = response.headers.get('content-type') ?? '';
+  if (contentType.includes('application/json')) {
+    return JSON.stringify(await response.json(), null, 2);
+  }
+
+  const body = await response.text();
+  return body.length > 0 ? body : `${response.status} ${response.statusText}`;
+}
+
+async function fetchCompanionText(
+  path: string,
+  init: RequestInit = {},
+  timeoutMs = 10_000
+): Promise<string> {
+  const response = await fetchCompanion(path, init, timeoutMs);
+  const body = await responseToText(response);
+  if (!response.ok) {
+    throw new Error(`HTTP ${response.status}: ${body}`);
+  }
+
+  return body;
+}
+
+async function postCompanionJson(
+  path: string,
+  body?: Record<string, unknown>,
+  timeoutMs = 30_000
+): Promise<string> {
+  if (body) {
+    return fetchCompanionText(
+      path,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      },
+      timeoutMs
+    );
+  }
+
+  return fetchCompanionText(path, { method: 'POST' }, timeoutMs);
+}
+
+function createBabelfishScope(filePath: string): Record<string, unknown> {
+  return {
+    kind: 'file',
+    filePath,
+    sourceText: readWorkspaceFile(filePath),
+  };
+}
+
+async function handleBabelfishSlashCommand(
+  argsText: string | null
+): Promise<string> {
+  const parts = tokenizeArgs(argsText);
+  const subcommand = parts[0] ?? 'capabilities';
+
+  switch (subcommand) {
+    case 'capabilities':
+      return callBabelfishMcpTool(
+        getCompanionBase(),
+        'zedge_babelfish_capabilities',
+        {}
+      );
+    case 'apply': {
+      const previewId = optionalString(parts[1]);
+      if (!previewId) {
+        throw new Error(
+          'Usage: /zedge-babelfish apply <preview-id> [rewrite_in_place|generate_files]'
+        );
+      }
+
+      const applyMode = parts[2] ?? 'rewrite_in_place';
+      return callBabelfishMcpTool(getCompanionBase(), 'zedge_babelfish_apply', {
+        previewId,
+        applyMode,
+      });
+    }
+    case 'fastest':
+    case 'compile-gnarly': {
+      const filePath = optionalString(parts[1]);
+      if (!filePath) {
+        throw new Error(
+          'Usage: /zedge-babelfish <fastest|compile-gnarly> <file.gnarly> [candidate-language,...]'
+        );
+      }
+      const candidateLanguages = optionalString(parts[2])
+        ?.split(',')
+        .map((language) => language.trim())
+        .filter((language) => language.length > 0);
+      const args: Record<string, unknown> = {
+        action: subcommand === 'fastest' ? 'fastest' : 'compile',
+        scope: createBabelfishScope(filePath),
+      };
+      if (candidateLanguages !== undefined) {
+        args.candidateLanguages = candidateLanguages;
+      }
+      return callBabelfishMcpTool(
+        getCompanionBase(),
+        'zedge_babelfish_gnarly',
+        args
+      );
+    }
+    case 'gnarly-from': {
+      const filePath = optionalString(parts[1]);
+      if (!filePath) {
+        throw new Error(
+          'Usage: /zedge-babelfish gnarly-from <file-path> [candidate-language,...]'
+        );
+      }
+      const candidateLanguages = optionalString(parts[2])
+        ?.split(',')
+        .map((language) => language.trim())
+        .filter((language) => language.length > 0);
+      const args: Record<string, unknown> = {
+        action: 'from',
+        scope: createBabelfishScope(filePath),
+      };
+      if (candidateLanguages !== undefined) {
+        args.candidateLanguages = candidateLanguages;
+      }
+      return callBabelfishMcpTool(
+        getCompanionBase(),
+        'zedge_babelfish_gnarly',
+        args
+      );
+    }
+    case 'translate-code':
+    case 'generate':
+    case 'rewrite-preview': {
+      const targetLanguage = optionalString(parts[1]);
+      const filePath = optionalString(parts[2]);
+      if (!targetLanguage || !filePath) {
+        throw new Error(
+          'Usage: /zedge-babelfish <translate-code|generate|rewrite-preview> <target-language> <file-path>'
+        );
+      }
+
+      const outputMode =
+        subcommand === 'generate'
+          ? 'generate_files'
+          : subcommand === 'rewrite-preview'
+          ? 'rewrite_in_place_requested'
+          : 'preview';
+
+      return callBabelfishMcpTool(getCompanionBase(), 'zedge_babelfish_code', {
+        scope: createBabelfishScope(filePath),
+        targetLanguage,
+        mode: subcommand,
+        outputMode,
+      });
+    }
+    case 'translate-text': {
+      const targetHumanLanguage = optionalString(parts[1]);
+      const filePath = optionalString(parts[2]);
+      if (!targetHumanLanguage || !filePath) {
+        throw new Error(
+          'Usage: /zedge-babelfish translate-text <target-language> <file-path>'
+        );
+      }
+
+      return callBabelfishMcpTool(getCompanionBase(), 'zedge_babelfish_text', {
+        scope: createBabelfishScope(filePath),
+        targetHumanLanguage,
+        includeComments: true,
+        includeDiagnostics: true,
+        includeMarkdown: true,
+      });
+    }
+    case 'explain': {
+      const filePath = optionalString(parts[1]);
+      if (!filePath) {
+        throw new Error(
+          'Usage: /zedge-babelfish explain <file-path> [audience-language]'
+        );
+      }
+
+      const audienceLanguage = parts[2] ?? 'en';
+      return callBabelfishMcpTool(
+        getCompanionBase(),
+        'zedge_babelfish_explain',
+        {
+          scope: createBabelfishScope(filePath),
+          audienceLanguage,
+          includeGg: true,
+        }
+      );
+    }
+    default:
+      return [
+        'Usage:',
+        '- /zedge-babelfish capabilities',
+        '- /zedge-babelfish fastest <file.gnarly> [candidate-language,...]',
+        '- /zedge-babelfish compile-gnarly <file.gnarly>',
+        '- /zedge-babelfish gnarly-from <file-path> [candidate-language,...]',
+        '- /zedge-babelfish explain <file-path> [audience-language]',
+        '- /zedge-babelfish translate-code <target-language> <file-path>',
+        '- /zedge-babelfish translate-text <target-language> <file-path>',
+        '- /zedge-babelfish generate <target-language> <file-path>',
+        '- /zedge-babelfish rewrite-preview <target-language> <file-path>',
+        '- /zedge-babelfish apply <preview-id> [rewrite_in_place|generate_files]',
+      ].join('\n');
+  }
+}
+
+async function callGnotCommand(payload: Record<string, unknown>): Promise<string> {
+  if (
+    payload.action === 'files' &&
+    Object.keys(payload).length === 1
+  ) {
+    return fetchCompanionText('/gnot/files');
+  }
+
+  return postCompanionJson('/gnot/command', payload, 120_000);
+}
+
+async function executeZedgeCommandTool(
+  args: Record<string, unknown>
+): Promise<Record<string, unknown>> {
+  const rawCommand = optionalString(args.command);
+  if (!rawCommand) {
+    return createToolResult('Missing required `command` argument.', true);
+  }
+
+  const command = canonicalZedgeCommandName(rawCommand);
+  const argsText = optionalString(args.args);
+  const parts = tokenizeArgs(argsText);
+
+  try {
+    switch (command) {
+      case 'zedge-status':
+        return createToolResult(await fetchCompanionText('/health'));
+      case 'zedge-models':
+        return createToolResult(await fetchCompanionText('/v1/models'));
+      case 'zedge-model': {
+        const subcommand = parts[0] ?? 'status';
+        if (subcommand === 'status') {
+          return createToolResult(
+            await fetchCompanionText('/zedge/model-selection')
+          );
+        }
+        if (subcommand === 'use') {
+          const model = parts[1];
+          if (!model) {
+            return createToolResult('Usage: zedge-model use <model_id>', true);
+          }
+          return createToolResult(
+            await postCompanionJson(
+              '/zedge/model-selection',
+              { model, reconcile: true },
+              120_000
+            )
+          );
+        }
+        return createToolResult('Usage: zedge-model [status|use <model_id>]', true);
+      }
+      case 'zedge-pool': {
+        const subcommand = parts[0] ?? 'status';
+        if (subcommand === 'join') {
+          return createToolResult(
+            await postCompanionJson('/compute-pool/join', undefined, 30_000)
+          );
+        }
+        if (subcommand === 'leave') {
+          return createToolResult(
+            await postCompanionJson('/compute-pool/leave', undefined, 30_000)
+          );
+        }
+        return createToolResult(
+          await fetchCompanionText('/compute-pool/status', {}, 10_000)
+        );
+      }
+      case 'zedge-logs': {
+        const requestedLimit =
+          optionalNumber(args.limit) ?? optionalNumber(argsText);
+        const limit = Math.max(1, Math.min(requestedLimit ?? 100, 1000));
+        return createToolResult(await fetchCompanionText(`/logs?n=${limit}`));
+      }
+      case 'zedge-clear':
+        return createToolResult(
+          await fetchCompanionText('/logs', { method: 'DELETE' }, 10_000)
+        );
+      case 'zedge-restart':
+        return createToolResult(
+          await postCompanionJson('/restart', undefined, 10_000)
+        );
+      case 'zedge-selftest': {
+        const model = optionalString(args.model) ?? argsText;
+        const path = model
+          ? `/selftest/inference?model=${encodeURIComponent(model)}`
+          : '/selftest/inference';
+        return createToolResult(await fetchCompanionText(path, {}, 120_000));
+      }
+      case 'zedge-tts':
+      case 'edge-tts': {
+        const subcommand = parts[0] ?? 'status';
+        if (subcommand === 'enable' || subcommand === 'on') {
+          return createToolResult(
+            await postCompanionJson('/tts/config', { enabled: true }, 10_000)
+          );
+        }
+        if (subcommand === 'disable' || subcommand === 'off') {
+          return createToolResult(
+            await postCompanionJson('/tts/config', { enabled: false }, 10_000)
+          );
+        }
+        if (['auto', 'host', 'file', 'pulse', 'alsa'].includes(subcommand)) {
+          return createToolResult(
+            await postCompanionJson(
+              '/tts/config',
+              { enabled: true, mode: subcommand },
+              10_000
+            )
+          );
+        }
+        if (subcommand === 'speak') {
+          const input = parts.slice(1).join(' ');
+          if (!input.trim()) {
+            return createToolResult(
+              'Usage: zedge-tts speak <text>',
+              true
+            );
+          }
+          return createToolResult(
+            await postCompanionJson('/tts/speak', { input }, 60_000)
+          );
+        }
+        return createToolResult(await fetchCompanionText('/tts/status'));
+      }
+      case 'zedge-voice':
+      case 'edge-voice': {
+        const subcommand = parts[0] ?? 'status';
+        if (subcommand === 'enable' || subcommand === 'on') {
+          return createToolResult(
+            await postCompanionJson('/voice/config', { enabled: true }, 10_000)
+          );
+        }
+        if (subcommand === 'disable' || subcommand === 'off') {
+          return createToolResult(
+            await postCompanionJson('/voice/config', { enabled: false }, 10_000)
+          );
+        }
+        if (subcommand === 'capabilities') {
+          return createToolResult(
+            await fetchCompanionText('/voice/capabilities')
+          );
+        }
+        if (subcommand === 'listen') {
+          const seconds = Number.parseInt(parts[1] ?? '', 10);
+          const body = Number.isFinite(seconds) ? { seconds } : {};
+          return createToolResult(
+            await postCompanionJson('/voice/listen', body, 120_000)
+          );
+        }
+        if (subcommand === 'say') {
+          const input = parts.slice(1).join(' ');
+          if (!input.trim()) {
+            return createToolResult('Usage: zedge-voice say <text>', true);
+          }
+          return createToolResult(
+            await postCompanionJson('/voice/say', { input }, 120_000)
+          );
+        }
+        return createToolResult(await fetchCompanionText('/voice/status'));
+      }
+      case 'zedgework': {
+        if (!argsText) {
+          return createToolResult(
+            await fetchCompanionText('/edgework/commands')
+          );
+        }
+
+        const commandText = argsText.startsWith('edgework ')
+          ? argsText
+          : `edgework ${argsText}`;
+        return createToolResult(
+          await postCompanionJson(
+            '/edgework/exec',
+            { command: commandText },
+            30_000
+          )
+        );
+      }
+      case 'zedge-admin': {
+        if (!argsText) {
+          return createToolResult(await fetchCompanionText('/admin/commands'));
+        }
+
+        const commandText = argsText.startsWith('aeon ')
+          ? argsText
+          : `aeon ${argsText}`;
+        return createToolResult(
+          await postCompanionJson(
+            '/admin/exec',
+            { command: commandText },
+            30_000
+          )
+        );
+      }
+      case 'zedge-mesh': {
+        const subcommand = parts[0] ?? 'status';
+        if (subcommand === 'start') {
+          return createToolResult(await postCompanionJson('/mesh/start'));
+        }
+        if (subcommand === 'stop') {
+          return createToolResult(await postCompanionJson('/mesh/stop'));
+        }
+        return createToolResult(await fetchCompanionText('/mesh/status'));
+      }
+      case 'zedge-skymesh': {
+        const subcommand = parts[0] ?? 'status';
+        if (subcommand === 'start') {
+          return createToolResult(await postCompanionJson('/skymesh/bridge/start'));
+        }
+        if (subcommand === 'stop') {
+          return createToolResult(await postCompanionJson('/skymesh/bridge/stop'));
+        }
+        if (subcommand === 'warm') {
+          const prompt = parts.slice(1).join(' ').trim();
+          if (!prompt) {
+            return createToolResult('Usage: zedge-skymesh warm <prompt>', true);
+          }
+          return createToolResult(
+            await postCompanionJson('/skymesh/warm', {
+              prompt,
+              model: 'qwen2-0.5b-instruct',
+            })
+          );
+        }
+        return createToolResult(
+          await fetchCompanionText('/skymesh/bridge/status')
+        );
+      }
+      case 'zedge-team': {
+        const subcommand = parts[0] ?? 'status';
+        if (subcommand === 'create') {
+          const name = parts.slice(1).join(' ').trim();
+          if (!name) {
+            return createToolResult('Usage: zedge-team create <name>', true);
+          }
+          return createToolResult(await postCompanionJson('/teams/create', { name }));
+        }
+        if (subcommand === 'join') {
+          const teamId = parts[1];
+          if (!teamId) {
+            return createToolResult(
+              'Usage: zedge-team join <teamId> [token]',
+              true
+            );
+          }
+          return createToolResult(
+            await postCompanionJson('/teams/join', {
+              teamId,
+              ...(parts[2] ? { token: parts[2] } : {}),
+            })
+          );
+        }
+        if (subcommand === 'leave') {
+          return createToolResult(await postCompanionJson('/teams/leave'));
+        }
+        if (subcommand === 'invite') {
+          return createToolResult(await fetchCompanionText('/teams/invite'));
+        }
+        return createToolResult(await fetchCompanionText('/teams/status'));
+      }
+      case 'zedge-crdt': {
+        const subcommand = parts[0] ?? 'status';
+        const path =
+          subcommand === 'files'
+            ? '/crdt/files'
+            : subcommand === 'cursors'
+            ? '/crdt/cursors'
+            : subcommand === 'participants'
+            ? '/crdt/participants'
+            : subcommand === 'ledger'
+            ? '/crdt/ledger'
+            : subcommand === 'diagnostics'
+            ? '/crdt/diagnostics'
+            : '/crdt/status';
+        return createToolResult(await fetchCompanionText(path));
+      }
+      case 'zedge-forge': {
+        const subcommand = parts[0] ?? 'status';
+        if (subcommand === 'projects') {
+          return createToolResult(await fetchCompanionText('/forge/projects'));
+        }
+        if (subcommand === 'deploy') {
+          const project =
+            optionalString(args.projectName) ??
+            optionalString(parts.slice(1).join(' '));
+          if (!project) {
+            return createToolResult(
+              'Usage: /zedge-forge deploy <project-name>',
+              true
+            );
+          }
+          return createToolResult(
+            await postCompanionJson('/forge/deploy', { project }, 60_000)
+          );
+        }
+        return createToolResult(await fetchCompanionText('/forge/status'));
+      }
+      case 'zedge-kernel': {
+        const subcommand = parts[0] ?? 'status';
+        if (subcommand === 'daemons') {
+          return createToolResult(await fetchCompanionText('/kernel/daemons'));
+        }
+        if (subcommand === 'plugins') {
+          return createToolResult(await fetchCompanionText('/kernel/plugins'));
+        }
+        if (subcommand === 'commands') {
+          return createToolResult(await fetchCompanionText('/kernel/commands'));
+        }
+        if (subcommand === 'flight-log') {
+          return createToolResult(
+            await fetchCompanionText('/kernel/flight-log')
+          );
+        }
+
+        const [daemons, plugins] = await Promise.all([
+          fetchCompanionText('/kernel/daemons'),
+          fetchCompanionText('/kernel/plugins'),
+        ]);
+        return createToolResult(
+          `## Kernel Status\n\n### Daemons\n\`\`\`json\n${daemons}\n\`\`\`\n\n### Plugins\n\`\`\`json\n${plugins}\n\`\`\``
+        );
+      }
+      case 'zedge-scaffold': {
+        if (!argsText && !optionalString(args.template)) {
+          return createToolResult(
+            await fetchCompanionText('/scaffold/templates')
+          );
+        }
+
+        const template =
+          optionalString(args.template) ?? optionalString(parts[0]);
+        const projectName =
+          optionalString(args.projectName) ?? optionalString(parts[1]);
+        const targetDir = optionalString(args.targetDir);
+        if (!template || !projectName) {
+          return createToolResult(
+            'Usage: /zedge-scaffold <template> <project-name>',
+            true
+          );
+        }
+        const body: Record<string, unknown> = {
+          template,
+          name: projectName,
+        };
+        if (targetDir) {
+          body.targetDir = targetDir;
+        }
+        return createToolResult(
+          await postCompanionJson('/scaffold/create', body, 60_000)
+        );
+      }
+      case 'zedge-gnot': {
+        const payload = buildGnotCommandPayload(argsText, args);
+        const action = String(payload.action ?? 'files');
+        if ((action === 'lint' || action === 'format') && !payload.filePath) {
+          return createToolResult(
+            `Usage: /zedge-gnot ${action} <file-path>`,
+            true
+          );
+        }
+        if (
+          (action === 'doctor' || action === 'next' || action === 'status') &&
+          !payload.app
+        ) {
+          return createToolResult(
+            `Usage: /zedge-gnot ${action} <app> [environment]`,
+            true
+          );
+        }
+        return createToolResult(await callGnotCommand(payload));
+      }
+      case 'zedge-gnosis': {
+        const code = optionalString(args.code) ?? argsText;
+        if (!code) {
+          return createToolResult(
+            'Usage: /zedge-gnosis <topological-graph-string>',
+            true
+          );
+        }
+        return createToolResult(
+          await postCompanionJson('/gnosis/eval', { code }, 30_000)
+        );
+      }
+      case 'zedge-gnosis-run': {
+        const requestedFilePath = optionalString(args.filePath) ?? argsText;
+        const filePath = requestedFilePath || 'main.gg';
+        const resp = await fetch(`${getCompanionBase()}/gnosis/run`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ file_path: filePath }),
+          signal: AbortSignal.timeout(60_000),
+        });
+        const result = (await resp.json()) as Record<string, unknown>;
+        const success = result.success ? 'OK' : 'FAILED';
+        const metrics = (result.metrics as Record<string, unknown>) ?? {};
+        return createToolResult(
+          `## Topology Run: ${filePath} [${success}]\n\nbeta1: ${
+            metrics.beta1 ?? '?'
+          } | nodes: ${metrics.nodeCount ?? '?'} | edges: ${
+            metrics.edgeCount ?? '?'
+          }\n\n${result.logs ?? ''}\n\n${
+            result.error ? `Error: ${result.error}` : ''
+          }`
+        );
+      }
+      case 'zedge-gnosis-viz': {
+        const filePath = optionalString(args.filePath) ?? argsText;
+        const query = filePath ? `?file=${encodeURIComponent(filePath)}` : '';
+        return createToolResult(`${getCompanionBase()}/gnosis/viz${query}`);
+      }
+      case 'zedge-test': {
+        const filePath =
+          optionalString(args.filePath) ??
+          argsText ??
+          'open-source/gnosis/topologies/services/isolation-tests.gg';
+        const code = readWorkspaceFile(filePath);
+        const result = await postCompanionJson(
+          '/gnosis/eval',
+          { code },
+          30_000
+        );
+        return createToolResult(`Ran ${filePath}\n\n${result}`);
+      }
+      case 'zedge-feedback':
+        if (args.rating !== undefined || argsText) {
+          const rating =
+            optionalNumber(args.rating) ?? optionalNumber(parts[0]);
+          if (rating === null || rating < 1 || rating > 5) {
+            return createToolResult(
+              'Usage: /zedge-feedback <rating 1-5> [comment]',
+              true
+            );
+          }
+
+          const comment =
+            optionalString(args.comment) ??
+            optionalString(parts.slice(1).join(' '));
+          const model = optionalString(args.model);
+          return createToolResult(
+            await postCompanionJson(
+              '/feedback',
+              {
+                rating,
+                model: model ?? undefined,
+                comment: comment ?? undefined,
+                source: 'zed-agent',
+              },
+              10_000
+            )
+          );
+        }
+
+        return createToolResult(await fetchCompanionText('/feedback?n=10'));
+      case 'zedge-babelfish':
+        return createToolResult(await handleBabelfishSlashCommand(argsText));
+      case 'zedge-review': {
+        const { execSync } = await import('child_process');
+        let diff: string;
+        try {
+          diff = execSync('git diff HEAD', {
+            cwd: getWorkspaceRoot(),
+            encoding: 'utf-8',
+            timeout: 10_000,
+          }).slice(0, 8000);
+        } catch {
+          return createToolResult('Could not read git diff.');
+        }
+        if (!diff.trim()) {
+          return createToolResult('No changes in current diff.');
+        }
+        const { superinfer } = await import('./superinference.ts');
+        const { voidMapStore } = await import('./void-map-store.ts');
+        const steering = voidMapStore.getSteeringVector();
+        const result = await superinfer({
+          request: {
+            model: 'qwen-2.5-coder-7b',
+            messages: [
+              {
+                role: 'system',
+                content:
+                  'You are a code reviewer. Review the following git diff. For each issue, cite the file and line. Separate agreements (high confidence) from disagreements (flagged for human review).',
+              },
+              { role: 'user', content: diff },
+            ],
+            temperature: 0.3,
+            max_tokens: 2048,
+          },
+          models: ['qwen-2.5-coder-7b', 'gemma3-4b-it', 'tinyllama-1.1b'],
+          strategy: 'constructive',
+          steeringOverrides: steering.negativePrompt || undefined,
+          timeoutMs: 60_000,
+        });
+        return createToolResult(
+          `## Consensus Review (confidence: ${result.confidence.toFixed(
+            2
+          )})\n\n${result.content}\n\n---\nModels: ${result.modelResults
+            .map((m) => m.model)
+            .join(', ')} | Strategy: ${result.strategy} | ${
+            result.durationMs
+          }ms`
+        );
+      }
+      case 'zedge-void': {
+        const resp = await fetch(`${getCompanionBase()}/void-map/status`, {
+          signal: AbortSignal.timeout(10_000),
+        });
+        return createToolResult(JSON.stringify(await resp.json(), null, 2));
+      }
+      case 'zedge-swarm': {
+        if (!argsText?.trim()) {
+          const { AgentSwarm } = await import('./agent-swarm.ts');
+          return createToolResult(
+            `Available roles: ${AgentSwarm.listRoles().join(
+              ', '
+            )}\n\nUsage: /zedge-swarm role1,role2 [task description]`
+          );
+        }
+        const parts = argsText.trim().split(/\s+/);
+        const roles = parts[0].split(',');
+        const task =
+          parts.slice(1).join(' ') || 'Review and improve the current file';
+        const resp = await fetch(`${getCompanionBase()}/agent/swarm/start`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ task, roles }),
+          signal: AbortSignal.timeout(120_000),
+        });
+        return createToolResult(JSON.stringify(await resp.json(), null, 2));
+      }
+      case 'zedge-engram': {
+        const resp = await fetch(`${getCompanionBase()}/engram/status`, {
+          signal: AbortSignal.timeout(10_000),
+        });
+        return createToolResult(JSON.stringify(await resp.json(), null, 2));
+      }
+      case 'zedge-emotion': {
+        return createToolResult(
+          'Use the zedge_emotion MCP tool with a file_path to analyze emotional profile.'
+        );
+      }
+      case 'zedge-agent': {
+        if (!argsText?.trim()) {
+          const resp = await fetch(`${getCompanionBase()}/forge/projects`, {
+            signal: AbortSignal.timeout(10_000),
+          });
+          return createToolResult(JSON.stringify(await resp.json(), null, 2));
+        }
+        const resp = await fetch(`${getCompanionBase()}/forge/deploy`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ project: argsText.trim(), trigger: 'manual' }),
+          signal: AbortSignal.timeout(120_000),
+        });
+        return createToolResult(JSON.stringify(await resp.json(), null, 2));
+      }
+      default:
+        return createToolResult(`Unknown Zedge command: ${command}`, true);
+    }
+  } catch (error) {
+    return createToolResult(
+      error instanceof Error ? error.message : String(error),
+      true
+    );
+  }
+}
+
+/**
+ * Handles the Initialize request flow.
+ */
+export function handleInitialize(
+  params: Record<string, unknown>
+): Record<string, unknown> {
+  return {
+    protocolVersion: '2024-11-05',
+    capabilities: {
+      tools: { listChanged: false },
+      prompts: { listChanged: false },
+      resources: { subscribe: false, listChanged: false },
+    },
+    serverInfo: {
+      name: 'zedge-companion',
+      version: '2.0.0',
+    },
+  };
+}
+
+/**
+ * Handles the Tools List request flow.
+ */
+export async function handleToolsList(): Promise<Record<string, unknown>> {
+  return {
+    tools: [
+      {
+        name: 'zedge_infer',
+        description:
+          'Send a chat completion request through the Zedge inference chain (mesh → edge → cloud → WASM)',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            prompt: {
+              type: 'string',
+              description: 'The user prompt to send',
+            },
+            model: {
+              type: 'string',
+              description:
+                'Model ID (e.g. tinyllama-1.1b, mistral-7b, qwen-2.5-coder-7b)',
+            },
+            system: {
+              type: 'string',
+              description: 'Optional system prompt',
+            },
+          },
+          required: ['prompt'],
+        },
+      },
+      {
+        name: 'zedge_models',
+        description: 'List available models and their readiness status',
+        inputSchema: { type: 'object', properties: {} },
+      },
+      {
+        name: 'zedge_status',
+        description:
+          'Get companion status including mesh peers, compute pool, and tier health',
+        inputSchema: { type: 'object', properties: {} },
+      },
+      {
+        name: 'zedge_workspace',
+        description:
+          'Get workspace file tree and git changes from the VFS bridge',
+        inputSchema: { type: 'object', properties: {} },
+      },
+      {
+        name: 'zedge_command',
+        description:
+          'Invoke the Zedge slash-command surface through the companion so Zed Agent and the extension expose the same commands',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            command: {
+              type: 'string',
+              enum: Array.from(
+                new Set(
+                  ZEDGE_PROMPTS.flatMap((prompt) => [
+                    prompt.name,
+                    extensionPromptName(prompt.name),
+                  ])
+                )
+              ),
+              description: 'The Zedge slash command to run',
+            },
+            args: {
+              type: 'string',
+              description:
+                'The raw argument text after the slash command, matching the extension surface',
+            },
+            limit: {
+              type: 'integer',
+              description:
+                'Optional log line count for zedge-logs or other commands that accept a numeric limit',
+            },
+            model: {
+              type: 'string',
+              description:
+                'Optional explicit model ID for zedge-selftest when you do not want to pass it through args',
+            },
+            code: {
+              type: 'string',
+              description:
+                'Optional explicit Gnosis source text for zedge-gnosis',
+            },
+            filePath: {
+              type: 'string',
+              description:
+                'Optional workspace-relative file path for file-backed commands',
+            },
+            template: {
+              type: 'string',
+              description:
+                'Optional explicit scaffold template name for zedge-scaffold',
+            },
+            projectName: {
+              type: 'string',
+              description:
+                'Optional explicit project name for zedge-scaffold or zedge-forge deploy',
+            },
+            rating: {
+              type: 'integer',
+              description:
+                'Optional feedback rating for zedge-feedback when you do not want to pass it through args',
+            },
+            comment: {
+              type: 'string',
+              description:
+                'Optional feedback comment for zedge-feedback or other commands that accept freeform text',
+            },
+            targetDir: {
+              type: 'string',
+              description:
+                'Optional target directory override for zedge-scaffold',
+            },
+          },
+          required: ['command'],
+        },
+      },
+      {
+        name: 'zedge_gnot',
+        description:
+          'Inspect workspace gnot apps and run gnot authoring or deploy-shell diagnostics',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            action: {
+              type: 'string',
+              enum: ['files', 'lint', 'format', 'doctor', 'next', 'status'],
+              description: 'The gnot action to run',
+            },
+            filePath: {
+              type: 'string',
+              description:
+                'Workspace-relative `.gnot` file path for lint or format actions',
+            },
+            sourceText: {
+              type: 'string',
+              description:
+                'Optional inline gnot source text for format or lint actions',
+            },
+            write: {
+              type: 'boolean',
+              description:
+                'When true, write the formatted result back to filePath',
+            },
+            app: {
+              type: 'string',
+              description:
+                'Gnot app selector for doctor, next, or status actions',
+            },
+            environment: {
+              type: 'string',
+              enum: ['development', 'staging', 'production'],
+              description: 'Optional deploy environment for gnot shell actions',
+            },
+          },
+        },
+      },
+      {
+        name: 'zedge_apply_code',
+        description:
+          'Create a preview token for a code change. The search string must match exactly; call zedge_apply_edit_preview with the returned previewId to write it.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            file_path: {
+              type: 'string',
+              description: 'Workspace-relative path to the file to modify',
+            },
+            search: {
+              type: 'string',
+              description: 'The exact text to find and replace in the file',
+            },
+            replace: {
+              type: 'string',
+              description: 'The replacement text',
+            },
+          },
+          required: ['file_path', 'search', 'replace'],
+        },
+      },
+      {
+        name: 'zedge_preview_range_replace',
+        description:
+          'Create a preview token for a range replacement. No file is mutated until zedge_apply_edit_preview applies the returned previewId.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            file_path: {
+              type: 'string',
+              description: 'Workspace-relative path to the file to modify',
+            },
+            range: {
+              type: 'object',
+              description:
+                'Zero-based range with start/end line and character positions',
+              properties: {
+                start: {
+                  type: 'object',
+                  properties: {
+                    line: { type: 'integer' },
+                    character: { type: 'integer' },
+                  },
+                  required: ['line', 'character'],
+                },
+                end: {
+                  type: 'object',
+                  properties: {
+                    line: { type: 'integer' },
+                    character: { type: 'integer' },
+                  },
+                  required: ['line', 'character'],
+                },
+              },
+              required: ['start', 'end'],
+            },
+            replacement_text: {
+              type: 'string',
+              description: 'Text to insert in place of the range',
+            },
+          },
+          required: ['file_path', 'range', 'replacement_text'],
+        },
+      },
+      {
+        name: 'zedge_apply_edit_preview',
+        description:
+          'Apply a single-use edit preview token after validating path, old hash, expiry, and apply status.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            preview_id: {
+              type: 'string',
+              description: 'Preview ID returned by zedge_apply_code or zedge_preview_range_replace',
+            },
+          },
+          required: ['preview_id'],
+        },
+      },
+      {
+        name: 'zedge_lsp_diagnostics',
+        description:
+          'Ask gnosis-lsp for a document diagnostics. Opens the file, captures published diagnostics, and returns them with a count.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            path: { type: 'string', description: 'Workspace-relative file path' },
+          },
+          required: ['path'],
+        },
+      },
+      {
+        name: 'zedge_lsp_hover',
+        description: 'gnosis-lsp hover at a position (0-indexed line and character).',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            path: { type: 'string' },
+            line: { type: 'integer', minimum: 0 },
+            character: { type: 'integer', minimum: 0 },
+          },
+          required: ['path', 'line', 'character'],
+        },
+      },
+      {
+        name: 'zedge_lsp_definition',
+        description: 'gnosis-lsp definition lookup at a position.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            path: { type: 'string' },
+            line: { type: 'integer', minimum: 0 },
+            character: { type: 'integer', minimum: 0 },
+          },
+          required: ['path', 'line', 'character'],
+        },
+      },
+      {
+        name: 'zedge_lsp_references',
+        description: 'gnosis-lsp reference lookup at a position.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            path: { type: 'string' },
+            line: { type: 'integer', minimum: 0 },
+            character: { type: 'integer', minimum: 0 },
+          },
+          required: ['path', 'line', 'character'],
+        },
+      },
+      {
+        name: 'zedge_lsp_symbols',
+        description: 'gnosis-lsp document symbols for a file (no position needed).',
+        inputSchema: {
+          type: 'object',
+          properties: { path: { type: 'string' } },
+          required: ['path'],
+        },
+      },
+      {
+        name: 'zedge_lsp_rename',
+        description:
+          'Plan a rename: gather references for the symbol and return edit records shaped for zedge_preview_range_replace. Nothing is written; apply the returned edits through the preview/apply discipline.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            path: { type: 'string' },
+            line: { type: 'integer', minimum: 0 },
+            character: { type: 'integer', minimum: 0 },
+            newName: { type: 'string' },
+          },
+          required: ['path', 'line', 'character', 'newName'],
+        },
+      },
+      {
+        name: 'zedge_tts_speak',
+        description:
+          'Speak text through the local Moonshine TTS relay and host/file playback mode.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            input: {
+              type: 'string',
+              description: 'Text to synthesize',
+            },
+            voice: {
+              type: 'string',
+              description: 'Voice ID from zedge_tts_voices',
+            },
+          },
+          required: ['input'],
+        },
+      },
+      {
+        name: 'zedge_tts_preview',
+        description:
+          'Synthesize text through Moonshine TTS and return the generated file without host playback.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            input: {
+              type: 'string',
+              description: 'Text to synthesize',
+            },
+            voice: {
+              type: 'string',
+              description: 'Voice ID from zedge_tts_voices',
+            },
+          },
+          required: ['input'],
+        },
+      },
+      {
+        name: 'zedge_tts_voices',
+        description: 'List local Moonshine TTS voices known to the companion.',
+        inputSchema: { type: 'object', properties: {} },
+      },
+      {
+        name: 'zedge_voice_status',
+        description:
+          'Show adaptive sovereign voice mode state and the resolved STT/TTS routes.',
+        inputSchema: { type: 'object', properties: {} },
+      },
+      {
+        name: 'zedge_voice_capabilities',
+        description:
+          'Return the voice capability tiers for speech-to-text and text-to-speech.',
+        inputSchema: { type: 'object', properties: {} },
+      },
+      {
+        name: 'zedge_voice_config',
+        description:
+          'Configure voice mode: enable/disable, STT/TTS base URLs, voice, and capture mode.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            enabled: {
+              type: 'boolean',
+              description: 'Opt in or out of voice mode',
+            },
+            sttUrl: {
+              type: 'string',
+              description: 'Speech-to-text base URL (OpenAI-compatible station)',
+            },
+            ttsUrl: {
+              type: 'string',
+              description: 'Text-to-speech base URL (Moonshine station)',
+            },
+            voice: {
+              type: 'string',
+              description: 'Voice ID for the TTS route',
+            },
+            captureMode: {
+              type: 'string',
+              enum: ['push-to-talk', 'continuous'],
+              description: 'Capture mode; continuous uses an energy VAD',
+            },
+          },
+        },
+      },
+      {
+        name: 'zedge_voice_listen',
+        description:
+          'Record one bounded voice turn, transcribe it, and return the transcript with the tier used.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            seconds: {
+              type: 'integer',
+              description: 'Capture length in seconds (clamped to 1-30)',
+            },
+          },
+        },
+      },
+      {
+        name: 'zedge_voice_say',
+        description:
+          'Sanitize assistant text and speak it through the best available TTS route.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            input: {
+              type: 'string',
+              description: 'Text to speak',
+            },
+            voice: {
+              type: 'string',
+              description: 'Optional voice ID',
+            },
+          },
+          required: ['input'],
+        },
+      },
+      {
+        name: 'zedge_search_codebase',
+        description:
+          'Semantic search across the workspace codebase. Returns the most relevant code blocks for a natural language query.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            query: {
+              type: 'string',
+              description:
+                'Natural language query describing what you are looking for',
+            },
+            top_k: {
+              type: 'integer',
+              description: 'Number of results to return (default 5)',
+            },
+          },
+          required: ['query'],
+        },
+      },
+      {
+        name: 'zedge_related_context',
+        description:
+          'Get code blocks from other files that are semantically related to a given file. Useful for understanding dependencies and related functionality.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            file_path: {
+              type: 'string',
+              description:
+                'Workspace-relative path to find related context for',
+            },
+          },
+          required: ['file_path'],
+        },
+      },
+      {
+        name: 'zedge_daydream',
+        description:
+          'Get proactive code improvement suggestions from the CERA daydream engine. Trigger a dream cycle on a file, or list cached candidates.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            action: {
+              type: 'string',
+              enum: ['status', 'candidates', 'dream', 'accept', 'reject'],
+              description: 'Action to perform (default: candidates)',
+            },
+            file_path: {
+              type: 'string',
+              description: 'File path for dream action',
+            },
+            id: {
+              type: 'string',
+              description: 'Candidate ID for accept/reject actions',
+            },
+          },
+        },
+      },
+      {
+        name: 'zedge_multi_file_edit',
+        description:
+          'Apply a high-level code change across one or more files using the multi-file agent. Describe what you want changed in natural language.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            instruction: {
+              type: 'string',
+              description: 'Natural language description of the change to make',
+            },
+            target_files: {
+              type: 'array',
+              items: { type: 'string' },
+              description: 'Optional list of file paths to limit the edit to',
+            },
+            model: {
+              type: 'string',
+              description: 'Optional model override',
+            },
+          },
+          required: ['instruction'],
+        },
+      },
+      {
+        name: 'zedge_void_map',
+        description:
+          'Inspect the void map (persistent rejection memory). Shows what the developer consistently rejects, steering vectors, and can export rejection data for buleyean-rl training.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            action: {
+              type: 'string',
+              enum: ['status', 'query', 'steering', 'export', 'compact'],
+              description: 'Action to perform (default: status)',
+            },
+            file_path: {
+              type: 'string',
+              description: 'Filter by file path',
+            },
+            category: {
+              type: 'string',
+              description: 'Filter by category',
+            },
+          },
+        },
+      },
+      {
+        name: 'zedge_engram',
+        description:
+          'Persistent agent memory across sessions. Remember patterns, recall relevant context, or forget entries.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            action: {
+              type: 'string',
+              enum: ['status', 'recall', 'remember', 'forget'],
+              description: 'Action to perform (default: status)',
+            },
+            query: {
+              type: 'string',
+              description: 'Query for recall, or content for remember',
+            },
+            type: {
+              type: 'string',
+              enum: [
+                'conversation-summary',
+                'code-pattern',
+                'user-preference',
+                'file-relationship',
+              ],
+              description: 'Engram type for remember action',
+            },
+            id: {
+              type: 'string',
+              description: 'Engram ID for forget action',
+            },
+          },
+        },
+      },
+      {
+        name: 'zedge_emotion',
+        description:
+          'Analyze the emotional profile of a file. Returns dominant emotion, valence, arousal, and routing decision.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            file_path: {
+              type: 'string',
+              description: 'File to analyze',
+            },
+          },
+          required: ['file_path'],
+        },
+      },
+      {
+        name: 'zedge_gg_agent',
+        description:
+          'Trigger, monitor, or list GG agents deployed through Aeon Forge. Agents are topology-driven reasoning packages.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            action: {
+              type: 'string',
+              enum: ['list', 'trigger', 'status', 'health'],
+              description: 'Action to perform (default: list)',
+            },
+            agent_name: {
+              type: 'string',
+              description: 'Agent name for trigger/status/health actions',
+            },
+            payload: {
+              type: 'object',
+              description: 'Payload for trigger action',
+            },
+          },
+        },
+      },
+      {
+        name: 'zedge_swarm',
+        description:
+          'List swarm roles or launch a swarm of specialized agents against a task.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            action: {
+              type: 'string',
+              enum: ['roles', 'start'],
+              description: 'Action to perform (default: roles)',
+            },
+            task: {
+              type: 'string',
+              description: 'Task description for start action',
+            },
+            roles: {
+              type: 'array',
+              items: { type: 'string' },
+              description:
+                'Optional explicit role IDs for start action (defaults to reviewer/refactorer/tester)',
+            },
+            target_files: {
+              type: 'array',
+              items: { type: 'string' },
+              description: 'Optional file paths to constrain the swarm task',
+            },
+          },
+        },
+      },
+      {
+        name: 'zedge_cloud_agent',
+        description:
+          'Start a cloud CERA agent that operates on your codebase through the VFS. The agent runs a GG topology in the cloud and streams results back.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            action: {
+              type: 'string',
+              enum: ['start', 'sessions', 'status', 'cancel'],
+              description: 'Action to perform (default: sessions)',
+            },
+            agent_name: {
+              type: 'string',
+              description:
+                'Agent name for start action (e.g. cera-agent, polyglot-scanner-agent)',
+            },
+            task: {
+              type: 'string',
+              description: 'Task description for start action',
+            },
+            target_files: {
+              type: 'array',
+              items: { type: 'string' },
+              description: 'Files for the agent to operate on',
+            },
+            session_id: {
+              type: 'string',
+              description: 'Session ID for status/cancel actions',
+            },
+          },
+        },
+      },
+      {
+        name: 'zedge_topology_run',
+        description:
+          'Execute a Gnosis .gg topology file and return execution results including beta1 metrics, node/edge counts, and diagnostics.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            file_path: {
+              type: 'string',
+              description: 'Path to the .gg file to execute',
+            },
+            input: {
+              type: 'object',
+              description: 'Optional input payload for the topology',
+            },
+            strategy: {
+              type: 'string',
+              enum: ['cannon', 'linear'],
+              description: 'Execution strategy (default: cannon)',
+            },
+          },
+          required: ['file_path'],
+        },
+      },
+      ...getBabelfishMcpTools(),
+    ],
+  };
+}
+
+/**
+ * Handles the Prompts List request flow.
+ */
+export async function handlePromptsList(): Promise<Record<string, unknown>> {
+  return {
+    prompts: ZEDGE_PROMPTS.map((prompt) => ({
+      name: extensionPromptName(prompt.name),
+      description: prompt.description,
+      arguments: prompt.arguments ?? [],
+    })),
+  };
+}
+
+/**
+ * Handles the Prompt Get request flow.
+ */
+export async function handlePromptGet(
+  params: Record<string, unknown>
+): Promise<Record<string, unknown>> {
+  const name = optionalString(params.name);
+  if (!name) {
+    throw new Error('Prompt name is required');
+  }
+
+  const prompt = ZEDGE_PROMPTS.find(
+    (candidate) => candidate.name === canonicalZedgeCommandName(name)
+  );
+  if (!prompt) {
+    throw new Error(`Unknown prompt: ${name}`);
+  }
+
+  const providedArguments = asRecord(params.arguments);
+  const argsText = optionalString(providedArguments.args);
+
+  return {
+    description: prompt.description,
+    messages: [
+      {
+        role: 'user',
+        content: {
+          type: 'text',
+          text: renderPromptText(prompt, argsText),
+        },
+      },
+    ],
+  };
+}
+
+/**
+ * Dispatches a zedge tool call to its registered handler.
+ */
+export async function handleToolCall(
+  params: Record<string, unknown>
+): Promise<Record<string, unknown>> {
+  const name = String(params.name ?? '');
+  const args = asRecord(params.arguments);
+
+  try {
+    if (name.startsWith('zedge_babelfish_')) {
+      const text = await callBabelfishMcpTool(getCompanionBase(), name, args);
+      return {
+        content: [{ type: 'text', text }],
+      };
+    }
+
+    switch (name) {
+      case 'zedge_command':
+        return executeZedgeCommandTool(args);
+
+      case 'zedge_infer': {
+        const messages: Array<{ role: string; content: string }> = [];
+        if (args.system) {
+          messages.push({ role: 'system', content: String(args.system) });
+        }
+        messages.push({ role: 'user', content: String(args.prompt ?? '') });
+
+        const resp = await fetchCompanion(
+          '/v1/chat/completions',
+          {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              model: args.model ?? 'tinyllama-1.1b',
+              messages,
+              stream: false,
+            }),
+          },
+          120_000
+        );
+        const data = (await resp.json()) as {
+          choices?: Array<{ message?: { content?: string } }>;
+        };
+        const content =
+          data.choices?.[0]?.message?.content ?? JSON.stringify(data);
+        return {
+          content: [{ type: 'text', text: content }],
+        };
+      }
+
+      case 'zedge_models': {
+        const resp = await fetchCompanion('/v1/models', {}, 10_000);
+        const data = await resp.json();
+        return {
+          content: [{ type: 'text', text: JSON.stringify(data, null, 2) }],
+        };
+      }
+
+      case 'zedge_status': {
+        const resp = await fetchCompanion('/health', {}, 10_000);
+        const data = await resp.json();
+        return {
+          content: [{ type: 'text', text: JSON.stringify(data, null, 2) }],
+        };
+      }
+
+      case 'zedge_gnot': {
+        const payload = buildGnotCommandPayload(null, args);
+        const action = String(payload.action ?? 'files');
+        if ((action === 'lint' || action === 'format') && !payload.filePath) {
+          return {
+            content: [
+              {
+                type: 'text',
+                text: `filePath is required for ${action}`,
+              },
+            ],
+            isError: true,
+          };
+        }
+        if (
+          (action === 'doctor' || action === 'next' || action === 'status') &&
+          !payload.app
+        ) {
+          return {
+            content: [
+              {
+                type: 'text',
+                text: `app is required for ${action}`,
+              },
+            ],
+            isError: true,
+          };
+        }
+        return createToolResult(await callGnotCommand(payload));
+      }
+
+      case 'zedge_apply_code': {
+        const filePath =
+          optionalString(args.file_path) ?? optionalString(args.filePath);
+        const search = optionalString(args.search);
+        const replace =
+          typeof args.replace === 'string'
+            ? args.replace
+            : String(args.replace ?? '');
+        if (!filePath || !search) {
+          return {
+            content: [
+              { type: 'text', text: 'file_path and search are required' },
+            ],
+            isError: true,
+          };
+        }
+
+        return createToolResult(
+          await postCompanionJson(
+            '/edit/range/preview',
+            { file_path: filePath, search, replace },
+            10_000
+          )
+        );
+      }
+
+      case 'zedge_preview_range_replace': {
+        const filePath =
+          optionalString(args.file_path) ?? optionalString(args.filePath);
+        const range = args.range;
+        const replacementText =
+          typeof args.replacement_text === 'string'
+            ? args.replacement_text
+            : typeof args.replacementText === 'string'
+            ? args.replacementText
+            : typeof args.replace === 'string'
+            ? args.replace
+            : '';
+        if (!filePath || !range) {
+          return {
+            content: [
+              {
+                type: 'text',
+                text: 'file_path and range are required',
+              },
+            ],
+            isError: true,
+          };
+        }
+
+        return createToolResult(
+          await postCompanionJson(
+            '/edit/range/preview',
+            {
+              file_path: filePath,
+              range,
+              replacement_text: replacementText,
+            },
+            10_000
+          )
+        );
+      }
+
+      case 'zedge_apply_edit_preview': {
+        const previewId =
+          optionalString(args.preview_id) ?? optionalString(args.previewId);
+        if (!previewId) {
+          return {
+            content: [
+              {
+                type: 'text',
+                text: 'preview_id is required',
+              },
+            ],
+            isError: true,
+          };
+        }
+
+        return createToolResult(
+          await postCompanionJson(
+            '/edit/range/apply',
+            { previewId },
+            10_000
+          )
+        );
+      }
+
+      case 'zedge_lsp_diagnostics': {
+        const target = resolveLspTarget(args);
+        if ('error' in target) return target.error;
+        const diagnostics = await collectGnosisDiagnostics(
+          target.uri,
+          target.languageId,
+          target.text
+        );
+        return createToolResult({
+          uri: target.uri,
+          languageId: target.languageId,
+          count: diagnostics.length,
+          diagnostics,
+        });
+      }
+
+      case 'zedge_lsp_hover':
+      case 'zedge_lsp_definition':
+      case 'zedge_lsp_references': {
+        const target = resolveLspTarget(args);
+        if ('error' in target) return target.error;
+        const method =
+          name === 'zedge_lsp_hover'
+            ? 'textDocument/hover'
+            : name === 'zedge_lsp_definition'
+              ? 'textDocument/definition'
+              : 'textDocument/references';
+        return createToolResult(
+          await gnosisNavigation(
+            method,
+            target.uri,
+            target.languageId,
+            target.text,
+            target.position
+          )
+        );
+      }
+
+      case 'zedge_lsp_symbols': {
+        const target = resolveLspTarget(args);
+        if ('error' in target) return target.error;
+        return createToolResult(
+          await gnosisNavigation(
+            'textDocument/documentSymbol',
+            target.uri,
+            target.languageId,
+            target.text
+          )
+        );
+      }
+
+      case 'zedge_lsp_rename': {
+        const target = resolveLspTarget(args);
+        if ('error' in target) return target.error;
+        const newName = asString(args.newName) ?? asString(args.new_name);
+        if (!newName) {
+          return {
+            content: [{ type: 'text', text: 'newName is required' }],
+            isError: true,
+          };
+        }
+        const refs = await gnosisNavigation(
+          'textDocument/references',
+          target.uri,
+          target.languageId,
+          target.text,
+          target.position
+        );
+        const edits = Array.isArray(refs)
+          ? (refs as Array<{ uri?: unknown; range?: unknown }>).map((ref) => ({
+              file_path: fileUriToPath(String(ref.uri ?? target.uri)),
+              range: ref.range,
+              replacement_text: newName,
+            }))
+          : [];
+        return createToolResult({
+          plan: true,
+          count: edits.length,
+          edits,
+          apply:
+            'apply each edit through zedge_preview_range_replace, then zedge_apply_edit_preview',
+        });
+      }
+
+      case 'zedge_tts_speak':
+      case 'zedge_tts_preview': {
+        const input = optionalString(args.input) ?? optionalString(args.text);
+        if (!input) {
+          return {
+            content: [
+              {
+                type: 'text',
+                text: 'input is required',
+              },
+            ],
+            isError: true,
+          };
+        }
+
+        const body: Record<string, unknown> = { input };
+        const voice = optionalString(args.voice);
+        if (voice) body.voice = voice;
+        const path = name === 'zedge_tts_speak' ? '/tts/speak' : '/tts/preview';
+        return createToolResult(await postCompanionJson(path, body, 120_000));
+      }
+
+      case 'zedge_tts_voices':
+        return createToolResult(
+          await fetchCompanionText('/tts/voices', {}, 10_000)
+        );
+
+      case 'zedge_voice_status':
+        return createToolResult(
+          await fetchCompanionText('/voice/status', {}, 10_000)
+        );
+
+      case 'zedge_voice_capabilities':
+        return createToolResult(
+          await fetchCompanionText('/voice/capabilities', {}, 10_000)
+        );
+
+      case 'zedge_voice_config': {
+        const body: Record<string, unknown> = {};
+        if (typeof args.enabled === 'boolean') body.enabled = args.enabled;
+        const sttUrl = optionalString(args.sttUrl);
+        if (sttUrl) body.sttUrl = sttUrl;
+        const ttsUrl = optionalString(args.ttsUrl);
+        if (ttsUrl) body.ttsUrl = ttsUrl;
+        const voice = optionalString(args.voice);
+        if (voice) body.voice = voice;
+        const captureMode = optionalString(args.captureMode);
+        if (captureMode) body.captureMode = captureMode;
+        return createToolResult(
+          await postCompanionJson('/voice/config', body, 10_000)
+        );
+      }
+
+      case 'zedge_voice_listen': {
+        const seconds = optionalNumber(args.seconds);
+        const body = seconds ? { seconds } : {};
+        return createToolResult(
+          await postCompanionJson('/voice/listen', body, 120_000)
+        );
+      }
+
+      case 'zedge_voice_say': {
+        const input = optionalString(args.input) ?? optionalString(args.text);
+        if (!input) {
+          return {
+            content: [
+              {
+                type: 'text',
+                text: 'input is required',
+              },
+            ],
+            isError: true,
+          };
+        }
+        const body: Record<string, unknown> = { input };
+        const voice = optionalString(args.voice);
+        if (voice) body.voice = voice;
+        return createToolResult(
+          await postCompanionJson('/voice/say', body, 120_000)
+        );
+      }
+
+      case 'zedge_search_codebase': {
+        const query = String(args.query ?? '');
+        const topK = typeof args.top_k === 'number' ? args.top_k : 5;
+        const resp = await fetch(`${getCompanionBase()}/code-index/search`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ query, topK }),
+          signal: AbortSignal.timeout(30_000),
+        });
+        const data = await resp.json();
+        return {
+          content: [{ type: 'text', text: JSON.stringify(data, null, 2) }],
+        };
+      }
+
+      case 'zedge_related_context': {
+        const file = String(args.file_path ?? '');
+        const fullFilePath = resolve(getWorkspaceRoot(), file);
+        const resp = await fetch(
+          `${getCompanionBase()}/code-index/related?file=${encodeURIComponent(
+            fullFilePath
+          )}`,
+          { signal: AbortSignal.timeout(10_000) }
+        );
+        const data = await resp.json();
+        return {
+          content: [{ type: 'text', text: JSON.stringify(data, null, 2) }],
+        };
+      }
+
+      case 'zedge_workspace': {
+        const [treeResp, changesResp] = await Promise.all([
+          fetch(`${getCompanionBase()}/vfs/tree`, {
+            signal: AbortSignal.timeout(10_000),
+          }).catch(() => null),
+          fetch(`${getCompanionBase()}/vfs/changes`, {
+            signal: AbortSignal.timeout(10_000),
+          }).catch(() => null),
+        ]);
+        const tree = treeResp ? await treeResp.text() : '(unavailable)';
+        const changes = changesResp
+          ? await changesResp.text()
+          : '(unavailable)';
+        return {
+          content: [
+            {
+              type: 'text',
+              text: `## File Tree\n${tree}\n\n## Git Changes\n${changes}`,
+            },
+          ],
+        };
+      }
+
+      case 'zedge_void_map': {
+        const action = String(args.action ?? 'status');
+        const base = getCompanionBase();
+        let voidResp: Response;
+        switch (action) {
+          case 'status':
+            voidResp = await fetch(`${base}/void-map/status`, {
+              signal: AbortSignal.timeout(10_000),
+            });
+            break;
+          case 'query': {
+            const params = new URLSearchParams();
+            if (args.file_path) params.set('file', String(args.file_path));
+            if (args.category) params.set('category', String(args.category));
+            voidResp = await fetch(`${base}/void-map/query?${params}`, {
+              signal: AbortSignal.timeout(10_000),
+            });
+            break;
+          }
+          case 'steering': {
+            const sp = new URLSearchParams();
+            if (args.file_path) sp.set('file', String(args.file_path));
+            voidResp = await fetch(`${base}/void-map/steering?${sp}`, {
+              signal: AbortSignal.timeout(10_000),
+            });
+            break;
+          }
+          case 'export': {
+            const { exportRecords } = await import('./void-map-export.ts');
+            const records = exportRecords({
+              filePath: args.file_path ? String(args.file_path) : undefined,
+              category: args.category ? String(args.category) : undefined,
+            });
+            return {
+              content: [
+                {
+                  type: 'text',
+                  text: JSON.stringify(
+                    { records, count: records.length },
+                    null,
+                    2
+                  ),
+                },
+              ],
+            };
+          }
+          case 'compact':
+            voidResp = await fetch(`${base}/void-map/compact`, {
+              method: 'POST',
+              signal: AbortSignal.timeout(10_000),
+            });
+            break;
+          default:
+            return {
+              content: [
+                { type: 'text', text: `Unknown void map action: ${action}` },
+              ],
+              isError: true,
+            };
+        }
+        return {
+          content: [
+            {
+              type: 'text',
+              text: JSON.stringify(await voidResp.json(), null, 2),
+            },
+          ],
+        };
+      }
+
+      case 'zedge_engram': {
+        const action = String(args.action ?? 'status');
+        const { getEngramStore } = await import('./engram-store.ts');
+        const store = getEngramStore();
+        switch (action) {
+          case 'status':
+            return {
+              content: [
+                {
+                  type: 'text',
+                  text: JSON.stringify(store.getStatus(), null, 2),
+                },
+              ],
+            };
+          case 'recall': {
+            const query = String(args.query ?? '');
+            if (!query)
+              return {
+                content: [
+                  { type: 'text', text: 'query is required for recall' },
+                ],
+                isError: true,
+              };
+            const results = await store.recall(query, 5);
+            return {
+              content: [
+                {
+                  type: 'text',
+                  text: JSON.stringify(
+                    results.map((r) => ({
+                      score: r.score,
+                      type: r.engram.type,
+                      content: r.engram.content,
+                      createdAt: r.engram.createdAt,
+                    })),
+                    null,
+                    2
+                  ),
+                },
+              ],
+            };
+          }
+          case 'remember': {
+            const content = String(args.query ?? '');
+            const type = String(args.type ?? 'code-pattern') as
+              | 'conversation-summary'
+              | 'code-pattern'
+              | 'user-preference'
+              | 'file-relationship';
+            if (!content)
+              return {
+                content: [
+                  {
+                    type: 'text',
+                    text: 'query (content) is required for remember',
+                  },
+                ],
+                isError: true,
+              };
+            const engram = await store.remember({ type, content });
+            return {
+              content: [
+                {
+                  type: 'text',
+                  text: JSON.stringify(
+                    { remembered: true, id: engram.id, type: engram.type },
+                    null,
+                    2
+                  ),
+                },
+              ],
+            };
+          }
+          case 'forget': {
+            const id = String(args.id ?? '');
+            if (!id)
+              return {
+                content: [{ type: 'text', text: 'id is required for forget' }],
+                isError: true,
+              };
+            const removed = store.forget(id);
+            return {
+              content: [
+                {
+                  type: 'text',
+                  text: JSON.stringify({ forgotten: removed, id }, null, 2),
+                },
+              ],
+            };
+          }
+          default:
+            return {
+              content: [
+                { type: 'text', text: `Unknown engram action: ${action}` },
+              ],
+              isError: true,
+            };
+        }
+      }
+
+      case 'zedge_emotion': {
+        const filePath = String(args.file_path ?? '');
+        if (!filePath)
+          return {
+            content: [{ type: 'text', text: 'file_path is required' }],
+            isError: true,
+          };
+        const { readFileSync } = await import('fs');
+        const { resolve } = await import('path');
+        const { analyzeCodeEmotion, routeByEmotion } = await import(
+          './emotion-router.ts'
+        );
+        try {
+          const fullPath = resolve(
+            process.env.AEON_ROOT || process.cwd(),
+            filePath
+          );
+          const content = readFileSync(fullPath, 'utf-8');
+          const profile = analyzeCodeEmotion(content);
+          const route = routeByEmotion(profile);
+          return {
+            content: [
+              {
+                type: 'text',
+                text: JSON.stringify({ profile, route }, null, 2),
+              },
+            ],
+          };
+        } catch (err) {
+          return {
+            content: [
+              {
+                type: 'text',
+                text: `Failed to analyze: ${
+                  err instanceof Error ? err.message : String(err)
+                }`,
+              },
+            ],
+            isError: true,
+          };
+        }
+      }
+
+      case 'zedge_gg_agent': {
+        const action = String(args.action ?? 'list');
+        const base = getCompanionBase();
+        switch (action) {
+          case 'list': {
+            const resp = await fetch(`${base}/forge/projects`, {
+              signal: AbortSignal.timeout(10_000),
+            });
+            const data = (await resp.json()) as {
+              projects?: Array<{ name: string; kind: string }>;
+            };
+            const agents = (data.projects ?? []).filter(
+              (p: { kind: string }) => p.kind === 'agent'
+            );
+            return {
+              content: [
+                {
+                  type: 'text',
+                  text: JSON.stringify(
+                    { agents, count: agents.length },
+                    null,
+                    2
+                  ),
+                },
+              ],
+            };
+          }
+          case 'trigger': {
+            const agentName = String(args.agent_name ?? '');
+            if (!agentName)
+              return {
+                content: [{ type: 'text', text: 'agent_name is required' }],
+                isError: true,
+              };
+            const resp = await fetch(`${base}/forge/deploy`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                project: agentName,
+                trigger: 'manual',
+                payload: args.payload,
+              }),
+              signal: AbortSignal.timeout(120_000),
+            });
+            return {
+              content: [
+                {
+                  type: 'text',
+                  text: JSON.stringify(await resp.json(), null, 2),
+                },
+              ],
+            };
+          }
+          case 'status': {
+            const resp = await fetch(`${base}/forge/status`, {
+              signal: AbortSignal.timeout(10_000),
+            });
+            return {
+              content: [
+                {
+                  type: 'text',
+                  text: JSON.stringify(await resp.json(), null, 2),
+                },
+              ],
+            };
+          }
+          case 'health': {
+            const agentName = String(args.agent_name ?? '');
+            if (!agentName)
+              return {
+                content: [{ type: 'text', text: 'agent_name is required' }],
+                isError: true,
+              };
+            const resp = await fetch(
+              `${base}/forge/status?project=${encodeURIComponent(agentName)}`,
+              { signal: AbortSignal.timeout(10_000) }
+            );
+            return {
+              content: [
+                {
+                  type: 'text',
+                  text: JSON.stringify(await resp.json(), null, 2),
+                },
+              ],
+            };
+          }
+          default:
+            return {
+              content: [
+                { type: 'text', text: `Unknown agent action: ${action}` },
+              ],
+              isError: true,
+            };
+        }
+      }
+
+      case 'zedge_swarm': {
+        const action = String(args.action ?? 'roles');
+        const base = getCompanionBase();
+        if (action === 'start') {
+          const task = String(args.task ?? '');
+          if (!task) {
+            return {
+              content: [{ type: 'text', text: 'task is required for start' }],
+              isError: true,
+            };
+          }
+
+          const roles = Array.isArray(args.roles)
+            ? args.roles.filter(
+                (value): value is string => typeof value === 'string'
+              )
+            : ['reviewer', 'refactorer', 'tester'];
+          const targetFiles = Array.isArray(args.target_files)
+            ? args.target_files.filter(
+                (value): value is string => typeof value === 'string'
+              )
+            : undefined;
+
+          const resp = await fetch(`${base}/agent/swarm/start`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              task,
+              roles,
+              target_files: targetFiles,
+            }),
+            signal: AbortSignal.timeout(120_000),
+          });
+          return {
+            content: [
+              {
+                type: 'text',
+                text: JSON.stringify(await resp.json(), null, 2),
+              },
+            ],
+            isError: !resp.ok,
+          };
+        }
+
+        const resp = await fetch(`${base}/agent/swarm/roles`, {
+          signal: AbortSignal.timeout(10_000),
+        });
+        return {
+          content: [
+            { type: 'text', text: JSON.stringify(await resp.json(), null, 2) },
+          ],
+          isError: !resp.ok,
+        };
+      }
+
+      case 'zedge_cloud_agent': {
+        const action = String(args.action ?? 'sessions');
+        const base = getCompanionBase();
+        switch (action) {
+          case 'start': {
+            const agentName = String(args.agent_name ?? '');
+            const task = String(args.task ?? '');
+            if (!agentName || !task) {
+              return {
+                content: [
+                  {
+                    type: 'text',
+                    text: 'agent_name and task are required for start',
+                  },
+                ],
+                isError: true,
+              };
+            }
+            const targetFiles = Array.isArray(args.target_files)
+              ? args.target_files.filter(
+                  (v): v is string => typeof v === 'string'
+                )
+              : undefined;
+            const resp = await fetch(`${base}/cloud-agent/start`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                agent_name: agentName,
+                task,
+                target_files: targetFiles,
+              }),
+              signal: AbortSignal.timeout(120_000),
+            });
+            return {
+              content: [
+                {
+                  type: 'text',
+                  text: JSON.stringify(await resp.json(), null, 2),
+                },
+              ],
+            };
+          }
+          case 'sessions': {
+            const resp = await fetch(`${base}/cloud-agent/sessions`, {
+              signal: AbortSignal.timeout(10_000),
+            });
+            return {
+              content: [
+                {
+                  type: 'text',
+                  text: JSON.stringify(await resp.json(), null, 2),
+                },
+              ],
+            };
+          }
+          case 'status': {
+            const sessionId = String(args.session_id ?? '');
+            if (!sessionId)
+              return {
+                content: [{ type: 'text', text: 'session_id required' }],
+                isError: true,
+              };
+            const resp = await fetch(
+              `${base}/cloud-agent/session/${sessionId}`,
+              { signal: AbortSignal.timeout(10_000) }
+            );
+            return {
+              content: [
+                {
+                  type: 'text',
+                  text: JSON.stringify(await resp.json(), null, 2),
+                },
+              ],
+            };
+          }
+          case 'cancel': {
+            const sid = String(args.session_id ?? '');
+            if (!sid)
+              return {
+                content: [{ type: 'text', text: 'session_id required' }],
+                isError: true,
+              };
+            const resp = await fetch(`${base}/cloud-agent/cancel/${sid}`, {
+              method: 'POST',
+              signal: AbortSignal.timeout(10_000),
+            });
+            return {
+              content: [
+                {
+                  type: 'text',
+                  text: JSON.stringify(await resp.json(), null, 2),
+                },
+              ],
+            };
+          }
+          default:
+            return {
+              content: [
+                { type: 'text', text: `Unknown cloud agent action: ${action}` },
+              ],
+              isError: true,
+            };
+        }
+      }
+
+      case 'zedge_topology_run': {
+        const filePath = String(args.file_path ?? '');
+        if (!filePath)
+          return {
+            content: [{ type: 'text', text: 'file_path is required' }],
+            isError: true,
+          };
+        const resp = await fetch(`${getCompanionBase()}/gnosis/run`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            file_path: filePath,
+            input: args.input,
+            strategy: args.strategy,
+          }),
+          signal: AbortSignal.timeout(60_000),
+        });
+        const result = (await resp.json()) as Record<string, unknown>;
+        const metrics = (result.metrics as Record<string, unknown>) ?? {};
+        return {
+          content: [
+            {
+              type: 'text',
+              text: `## Topology: ${filePath} [${
+                result.success ? 'OK' : 'FAILED'
+              }]\n\nbeta1: ${metrics.beta1 ?? '?'} | nodes: ${
+                metrics.nodeCount ?? '?'
+              } | edges: ${metrics.edgeCount ?? '?'}\n\n${
+                result.logs ?? ''
+              }\n\n${result.error ? `Error: ${result.error}` : ''}`,
+            },
+          ],
+        };
+      }
+
+      case 'zedge_multi_file_edit': {
+        const instruction = String(args.instruction ?? '');
+        if (!instruction) {
+          return {
+            content: [{ type: 'text', text: 'instruction is required' }],
+            isError: true,
+          };
+        }
+        const resp = await fetch(`${getCompanionBase()}/agent/multi-file`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            instruction,
+            target_files: args.target_files,
+            model: args.model,
+          }),
+          signal: AbortSignal.timeout(120_000),
+        });
+        const data = await resp.json();
+        return {
+          content: [{ type: 'text', text: JSON.stringify(data, null, 2) }],
+        };
+      }
+
+      case 'zedge_daydream': {
+        const action = String(args.action ?? 'candidates');
+        const resp = await (async () => {
+          switch (action) {
+            case 'status':
+              return fetch(`${getCompanionBase()}/cera/daydream/status`, {
+                signal: AbortSignal.timeout(10_000),
+              });
+            case 'candidates':
+              return fetch(`${getCompanionBase()}/cera/daydream/candidates`, {
+                signal: AbortSignal.timeout(10_000),
+              });
+            case 'dream':
+              return fetch(`${getCompanionBase()}/cera/daydream/dream`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ file_path: args.file_path }),
+                signal: AbortSignal.timeout(120_000),
+              });
+            case 'accept':
+              return fetch(`${getCompanionBase()}/cera/daydream/accept`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ id: args.id, apply: true }),
+                signal: AbortSignal.timeout(120_000),
+              });
+            case 'reject':
+              return fetch(`${getCompanionBase()}/cera/daydream/reject`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ id: args.id }),
+                signal: AbortSignal.timeout(10_000),
+              });
+            default:
+              return new Response(
+                JSON.stringify({ error: `Unknown action: ${action}` }),
+                { status: 400 }
+              );
+          }
+        })();
+        const data = await resp.json();
+        return {
+          content: [{ type: 'text', text: JSON.stringify(data, null, 2) }],
+        };
+      }
+
+      default:
+        return {
+          content: [{ type: 'text', text: `Unknown tool: ${name}` }],
+          isError: true,
+        };
+    }
+  } catch (err) {
+    return {
+      content: [
+        {
+          type: 'text',
+          text: `Error calling ${name}: ${
+            err instanceof Error ? err.message : String(err)
+          }`,
+        },
+      ],
+      isError: true,
+    };
+  }
+}
+
+async function handleResourcesList(): Promise<Record<string, unknown>> {
+  return {
+    resources: [
+      {
+        uri: 'zedge://observatory',
+        name: 'Inference Quality Observatory',
+        description:
+          'Real-time dashboard of the self-improving loop: void map, engrams, emotions, agents, breeding',
+        mimeType: 'application/json',
+      },
+      {
+        uri: 'zedge://void-sync',
+        name: 'Federated Void Sync Status',
+        description: 'Team-wide rejection learning via UCAN mutual delegation',
+        mimeType: 'application/json',
+      },
+      {
+        uri: 'zedge://breeding',
+        name: 'Agent Breeding Status',
+        description: 'METACOG c0-c3 agent evolution loop',
+        mimeType: 'application/json',
+      },
+    ],
+  };
+}
+
+// ---------- MCP message dispatch ----------
+
+/**
+ * Handles the zedge dispatch workflow.
+ */
+export async function dispatch(
+  msg: JsonRpcRequest
+): Promise<JsonRpcResponse | null> {
+  const { id, method, params } = msg;
+
+  // Notifications (no id) — just acknowledge
+  if (id === undefined) {
+    // notifications/initialized, etc. — no response needed
+    return null;
+  }
+
+  try {
+    let result: unknown;
+
+    switch (method) {
+      case 'initialize':
+        result = handleInitialize(params ?? {});
+        break;
+      case 'tools/list':
+        result = await handleToolsList();
+        break;
+      case 'prompts/list':
+        result = await handlePromptsList();
+        break;
+      case 'prompts/get':
+        result = await handlePromptGet(params ?? {});
+        break;
+      case 'tools/call':
+        result = await handleToolCall(params ?? {});
+        break;
+      case 'resources/list':
+        result = await handleResourcesList();
+        break;
+      case 'resources/read': {
+        const uri = (params as Record<string, unknown>)?.uri as string;
+        if (uri === 'zedge://observatory') {
+          const { getObservatorySnapshot } = await import('./observatory.ts');
+          result = {
+            contents: [
+              {
+                uri,
+                mimeType: 'application/json',
+                text: JSON.stringify(await getObservatorySnapshot(), null, 2),
+              },
+            ],
+          };
+        } else if (uri === 'zedge://void-sync') {
+          const { federatedVoidSync } = await import(
+            './federated-void-sync.ts'
+          );
+          result = {
+            contents: [
+              {
+                uri,
+                mimeType: 'application/json',
+                text: JSON.stringify(federatedVoidSync.getStatus(), null, 2),
+              },
+            ],
+          };
+        } else if (uri === 'zedge://breeding') {
+          const { agentBreeding } = await import('./agent-breeding.ts');
+          result = {
+            contents: [
+              {
+                uri,
+                mimeType: 'application/json',
+                text: JSON.stringify(agentBreeding.getStatus(), null, 2),
+              },
+            ],
+          };
+        } else {
+          result = { contents: [] };
+        }
+        break;
+      }
+      case 'ping':
+        result = {};
+        break;
+      default:
+        return {
+          jsonrpc: '2.0',
+          id,
+          error: { code: -32601, message: `Method not found: ${method}` },
+        };
+    }
+
+    return { jsonrpc: '2.0', id, result };
+  } catch (err) {
+    return {
+      jsonrpc: '2.0',
+      id,
+      error: {
+        code: -32603,
+        message: err instanceof Error ? err.message : String(err),
+      },
+    };
+  }
+}
+
+// ---------- Stdio transport ----------
+
+/** Wire format: Grok/Claude use NDJSON; Zed/legacy use Content-Length framing. */
+type StdioWireFormat = 'ndjson' | 'framed';
+
+let stdioWireFormat: StdioWireFormat = 'framed';
+
+function send(response: JsonRpcResponse): void {
+  const json = JSON.stringify(response);
+  if (stdioWireFormat === 'ndjson') {
+    process.stdout.write(`${json}\n`);
+    return;
+  }
+  const header = `Content-Length: ${Buffer.byteLength(json)}\r\n\r\n`;
+  process.stdout.write(header + json);
+}
+
+/**
+ * Handshake and catalog methods must not wait on the companion sidecar —
+ * Grok `mcp doctor` / session startup time out if initialize is blocked
+ * behind companion spawn (often >90s cold).
+ */
+function methodNeedsCompanion(method: string): boolean {
+  if (
+    method === 'initialize' ||
+    method === 'notifications/initialized' ||
+    method === 'ping' ||
+    method === 'tools/list' ||
+    method === 'resources/list' ||
+    method === 'prompts/list'
+  ) {
+    return false;
+  }
+  return true;
+}
+
+/**
+ * Extract one or more JSON-RPC messages from the stdin buffer.
+ * Supports Content-Length framing and newline-delimited JSON (NDJSON).
+ */
+function extractStdioMessages(input: string): {
+  messages: Array<{ msg: JsonRpcRequest; format: StdioWireFormat }>;
+  rest: string;
+} {
+  const messages: Array<{ msg: JsonRpcRequest; format: StdioWireFormat }> = [];
+  let rest = input;
+
+  while (rest.length > 0) {
+    const trimmedStart = rest.replace(/^\s+/, '');
+    // Content-Length framed (LSP-style)
+    if (/^Content-Length:\s*\d+/i.test(trimmedStart)) {
+      // Preserve leading whitespace only if it was part of framed stream after prior message
+      const frameOffset = rest.length - trimmedStart.length;
+      const frameBuf = rest.slice(frameOffset);
+      const headerEnd = frameBuf.indexOf('\r\n\r\n');
+      if (headerEnd === -1) {
+        break;
+      }
+      const headerBlock = frameBuf.slice(0, headerEnd);
+      const match = headerBlock.match(/Content-Length:\s*(\d+)/i);
+      if (!match) {
+        rest = frameBuf.slice(headerEnd + 4);
+        continue;
+      }
+      const contentLength = parseInt(match[1]!, 10);
+      const bodyStart = headerEnd + 4;
+      if (frameBuf.length < bodyStart + contentLength) {
+        break;
+      }
+      const body = frameBuf.slice(bodyStart, bodyStart + contentLength);
+      rest = frameBuf.slice(bodyStart + contentLength);
+      try {
+        messages.push({
+          msg: JSON.parse(body) as JsonRpcRequest,
+          format: 'framed',
+        });
+      } catch {
+        // skip bad frame
+      }
+      continue;
+    }
+
+    // NDJSON: one JSON object per line
+    const nl = rest.indexOf('\n');
+    if (nl === -1) {
+      break;
+    }
+    const line = rest.slice(0, nl).replace(/\r$/, '').trim();
+    rest = rest.slice(nl + 1);
+    if (!line) {
+      continue;
+    }
+    if (!line.startsWith('{')) {
+      continue;
+    }
+    try {
+      messages.push({
+        msg: JSON.parse(line) as JsonRpcRequest,
+        format: 'ndjson',
+      });
+    } catch {
+      // incomplete or garbage line
+    }
+  }
+
+  return { messages, rest };
+}
+
+/**
+ * Runs the zedge command-line workflow.
+ */
+export async function main(): Promise<void> {
+  configureStdioLogging();
+  // console.log('Starting MCP stdio bridge...');
+  await runMcpBridge();
+  return;
+}
+
+async function runMcpBridge(): Promise<void> {
+  const companionStartup = (async () => {
+    const alreadyRunning = await isCompanionAlive();
+    if (!alreadyRunning) {
+      // console.log('Companion not running, spawning it...');
+      spawnCompanion();
+    }
+
+    const alive = await waitForCompanion();
+    if (!alive) {
+      console.warn(
+        'Companion sidecar not reachable at ' +
+          getCompanionBase() +
+          ' after spawn. Tools will fail until it starts.'
+      );
+    } else {
+      // console.log('Companion sidecar is ready');
+    }
+
+    startBabysitter();
+  })();
+
+  // Kick companion spawn immediately; do not await before handshake.
+  void companionStartup;
+
+  let buffer = '';
+  let stdinClosed = false;
+  let pendingMessages = 0;
+
+  await new Promise<void>((resolve) => {
+    function exitIfIdle(): void {
+      if (!stdinClosed || pendingMessages > 0) {
+        return;
+      }
+
+      if (babysitterTimer) {
+        clearInterval(babysitterTimer);
+        babysitterTimer = null;
+      }
+      shuttingDown = true;
+      // console.log('stdin closed, exiting');
+      resolve();
+    }
+
+    process.stdin.setEncoding('utf-8');
+    // Pipe-backed launches need stdin resumed explicitly or Node can exit before
+    // the first MCP request arrives.
+    process.stdin.resume();
+    process.stdin.on('data', async (chunk: string) => {
+      buffer += chunk;
+      const extracted = extractStdioMessages(buffer);
+      buffer = extracted.rest;
+
+      for (const { msg, format } of extracted.messages) {
+        stdioWireFormat = format;
+        pendingMessages += 1;
+        try {
+          if (methodNeedsCompanion(msg.method)) {
+            await companionStartup;
+          }
+          const response = await dispatch(msg);
+          if (response) {
+            send(response);
+          }
+        } catch (err) {
+          console.warn('Failed to handle MCP message:', err);
+          send({
+            jsonrpc: '2.0',
+            id: msg.id ?? null,
+            error: {
+              code: -32603,
+              message: err instanceof Error ? err.message : String(err),
+            },
+          });
+        } finally {
+          pendingMessages -= 1;
+          exitIfIdle();
+        }
+      }
+    });
+
+    process.stdin.on('end', () => {
+      stdinClosed = true;
+      exitIfIdle();
+    });
+  });
+}
+
+function isExecutedDirectly(importMetaUrl: string): boolean {
+  if (process.env.GNODE_RUNTIME === '1') {
+    return false;
+  }
+
+  const entryPath = process.argv[1];
+  if (!entryPath) {
+    return false;
+  }
+
+  return resolve(fileURLToPath(importMetaUrl)) === resolve(entryPath);
+}
+
+if (isExecutedDirectly(import.meta.url)) {
+  main().catch((err) => {
+    console.error('Fatal error:', err);
+    process.exit(1);
+  });
+}

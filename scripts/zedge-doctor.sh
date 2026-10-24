@@ -260,6 +260,25 @@ else
 fi
 echo
 
+echo "Edgework capability (mesh/SSM-lane billing):"
+EDGEWORK_KEY_SOURCE=""
+if [ -n "${ZEDGE_SKYMESH_AUTHORIZATION:-}" ]; then
+  EDGEWORK_KEY_SOURCE="ZEDGE_SKYMESH_AUTHORIZATION env"
+elif [ -n "${EDGEWORK_API_KEY:-}" ]; then
+  EDGEWORK_KEY_SOURCE="EDGEWORK_API_KEY env"
+elif [ -n "${EDGEWORK_API_TOKEN:-}" ]; then
+  EDGEWORK_KEY_SOURCE="EDGEWORK_API_TOKEN env"
+elif [ -s "${HOME}/.edgework/api-key" ]; then
+  EDGEWORK_KEY_SOURCE="${HOME}/.edgework/api-key"
+fi
+if [ -n "${EDGEWORK_KEY_SOURCE}" ]; then
+  ok "credential found (${EDGEWORK_KEY_SOURCE}) — the relay is billed, not rate-capped"
+else
+  yellow "  ○ no Edgework credential: the SSM lane (rwkv7-mini) answers 429 'Free-tier request cap reached'"
+  echo "      Fix: a0 edgework login   (writes ~/.edgework/api-key; no restart needed)"
+fi
+echo
+
 if [ -f "${ERR_LOG}" ]; then
   echo "Recent sidecar errors:"
   if grep -E 'fell to ECHO|fat-station not responsive|runtime degraded' "${ERR_LOG}" 2>/dev/null | tail -3 | sed 's/^/  /'; then

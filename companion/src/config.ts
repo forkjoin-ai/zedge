@@ -478,8 +478,15 @@ export function saveZedgeConfig(config: PartialZedgeConfig): ZedgeConfig {
  * Handles the zedge get Api Key workflow.
  */
 export function getApiKey(): string | null {
-  // Prefer env var — check both EDGEWORK_API_TOKEN and ZEDGE_API_KEY
-  const envKey = process.env.EDGEWORK_API_TOKEN ?? process.env.ZEDGE_API_KEY;
+  // Prefer env var. `EDGEWORK_API_TOKEN`/`ZEDGE_API_KEY` are the companion's own
+  // spellings; `EDGEWORK_API_KEY`/`EW_API_KEY` are what @a0n/edgework-sdk and a0
+  // export — honour both families rather than ignoring a key the rest of the
+  // monorepo already treats as authoritative.
+  const envKey =
+    process.env.EDGEWORK_API_TOKEN ??
+    process.env.EDGEWORK_API_KEY ??
+    process.env.EW_API_KEY ??
+    process.env.ZEDGE_API_KEY;
   if (envKey && envKey !== LOCAL_ZED_PLACEHOLDER_API_KEY) return envKey;
   try {
     if (!existsSync(API_KEY_FILE)) return null;

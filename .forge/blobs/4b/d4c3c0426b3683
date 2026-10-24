@@ -1,0 +1,61 @@
+{
+  "name": "@affectively/zedge-companion",
+  "sourceRoot": "open-source/zedge/companion/src",
+  "projectType": "library",
+  "tags": [
+    "npm:public"
+  ],
+  "targets": {
+    "build": {
+      "executor": "a0:run-commands",
+      "dependsOn": [
+        "^build"
+      ],
+      "options": {
+        "cwd": "open-source/zedge/companion",
+        "command": "node scripts/build-companion-dist.mjs"
+      }
+    },
+    "dev": {
+      "executor": "a0:run-commands",
+      "options": {
+        "cwd": "open-source/zedge/companion",
+        "command": "../scripts/run-ts-entry.sh src/index.ts"
+      }
+    },
+    "start": {
+      "executor": "a0:run-commands",
+      "dependsOn": [
+        "build"
+      ],
+      "options": {
+        "cwd": "open-source/zedge/companion",
+        "command": "node dist/companion-supervisor.mjs"
+      }
+    },
+    "mcp": {
+      "executor": "a0:run-commands",
+      "options": {
+        "cwd": ".",
+        "command": "open-source/gnosis/bin/monster open-source/zedge/companion/src/mcp-stdio.ts"
+      }
+    },
+    "lint": {
+      "executor": "a0:run-commands",
+      "options": {
+        "command": "pnpm exec eslint open-source/zedge/companion/src --ext .ts",
+        "cwd": "."
+      }
+    },
+    "typecheck": {
+      "executor": "a0:run-commands",
+      "dependsOn": [
+        "^typecheck"
+      ],
+      "options": {
+        "command": "node open-source/gnosis/bin/gnode.js x tsc -p open-source/zedge/companion/tsconfig.typecheck.json --noEmit",
+        "cwd": "."
+      }
+    }
+  }
+}

@@ -1,0 +1,481 @@
+[
+  {
+    "type": "array",
+    "named": true,
+    "fields": {},
+    "children": {
+      "multiple": true,
+      "required": false,
+      "types": [
+        {
+          "type": "array",
+          "named": true
+        },
+        {
+          "type": "identifier",
+          "named": true
+        },
+        {
+          "type": "number",
+          "named": true
+        },
+        {
+          "type": "string",
+          "named": true
+        }
+      ]
+    }
+  },
+  {
+    "type": "comment",
+    "named": true,
+    "extra": true,
+    "fields": {}
+  },
+  {
+    "type": "edge_connector",
+    "named": true,
+    "fields": {},
+    "children": {
+      "multiple": true,
+      "required": true,
+      "types": [
+        {
+          "type": "edge_type",
+          "named": true
+        },
+        {
+          "type": "property_block",
+          "named": true
+        }
+      ]
+    }
+  },
+  {
+    "type": "edge_declaration",
+    "named": true,
+    "fields": {},
+    "children": {
+      "multiple": true,
+      "required": true,
+      "types": [
+        {
+          "type": "edge_connector",
+          "named": true
+        },
+        {
+          "type": "node_ref_group",
+          "named": true
+        }
+      ]
+    }
+  },
+  {
+    "type": "edge_type",
+    "named": true,
+    "fields": {},
+    "children": {
+      "multiple": false,
+      "required": false,
+      "types": [
+        {
+          "type": "identifier",
+          "named": true
+        }
+      ]
+    }
+  },
+  {
+    "type": "gnarly_metadata",
+    "named": true,
+    "fields": {},
+    "children": {
+      "multiple": true,
+      "required": false,
+      "types": [
+        {
+          "type": "comment",
+          "named": true
+        },
+        {
+          "type": "metadata_assignment",
+          "named": true
+        },
+        {
+          "type": "string",
+          "named": true
+        }
+      ]
+    }
+  },
+  {
+    "type": "imperative_keyword",
+    "named": true,
+    "fields": {}
+  },
+  {
+    "type": "imperative_statement",
+    "named": true,
+    "fields": {},
+    "children": {
+      "multiple": true,
+      "required": true,
+      "types": [
+        {
+          "type": "identifier",
+          "named": true
+        },
+        {
+          "type": "imperative_keyword",
+          "named": true
+        },
+        {
+          "type": "property_block",
+          "named": true
+        }
+      ]
+    }
+  },
+  {
+    "type": "implementation_block",
+    "named": true,
+    "fields": {},
+    "children": {
+      "multiple": true,
+      "required": true,
+      "types": [
+        {
+          "type": "identifier",
+          "named": true
+        },
+        {
+          "type": "implementation_body",
+          "named": true
+        }
+      ]
+    }
+  },
+  {
+    "type": "implementation_body",
+    "named": true,
+    "fields": {},
+    "children": {
+      "multiple": true,
+      "required": false,
+      "types": [
+        {
+          "type": "implementation_body",
+          "named": true
+        },
+        {
+          "type": "implementation_text",
+          "named": true
+        }
+      ]
+    }
+  },
+  {
+    "type": "metadata_assignment",
+    "named": true,
+    "fields": {},
+    "children": {
+      "multiple": true,
+      "required": true,
+      "types": [
+        {
+          "type": "array",
+          "named": true
+        },
+        {
+          "type": "identifier",
+          "named": true
+        },
+        {
+          "type": "string",
+          "named": true
+        }
+      ]
+    }
+  },
+  {
+    "type": "node_declaration",
+    "named": true,
+    "fields": {},
+    "children": {
+      "multiple": true,
+      "required": true,
+      "types": [
+        {
+          "type": "identifier",
+          "named": true
+        },
+        {
+          "type": "property_block",
+          "named": true
+        },
+        {
+          "type": "type_name",
+          "named": true
+        }
+      ]
+    }
+  },
+  {
+    "type": "node_ref_group",
+    "named": true,
+    "fields": {},
+    "children": {
+      "multiple": true,
+      "required": true,
+      "types": [
+        {
+          "type": "identifier",
+          "named": true
+        }
+      ]
+    }
+  },
+  {
+    "type": "property",
+    "named": true,
+    "fields": {},
+    "children": {
+      "multiple": true,
+      "required": true,
+      "types": [
+        {
+          "type": "array",
+          "named": true
+        },
+        {
+          "type": "identifier",
+          "named": true
+        },
+        {
+          "type": "number",
+          "named": true
+        },
+        {
+          "type": "string",
+          "named": true
+        }
+      ]
+    }
+  },
+  {
+    "type": "property_block",
+    "named": true,
+    "fields": {},
+    "children": {
+      "multiple": true,
+      "required": false,
+      "types": [
+        {
+          "type": "property",
+          "named": true
+        }
+      ]
+    }
+  },
+  {
+    "type": "source_file",
+    "named": true,
+    "root": true,
+    "fields": {},
+    "children": {
+      "multiple": true,
+      "required": false,
+      "types": [
+        {
+          "type": "edge_declaration",
+          "named": true
+        },
+        {
+          "type": "gnarly_metadata",
+          "named": true
+        },
+        {
+          "type": "imperative_statement",
+          "named": true
+        },
+        {
+          "type": "implementation_block",
+          "named": true
+        },
+        {
+          "type": "node_declaration",
+          "named": true
+        }
+      ]
+    }
+  },
+  {
+    "type": "string",
+    "named": true,
+    "fields": {}
+  },
+  {
+    "type": "\"",
+    "named": false
+  },
+  {
+    "type": "'",
+    "named": false
+  },
+  {
+    "type": "(",
+    "named": false
+  },
+  {
+    "type": ")",
+    "named": false
+  },
+  {
+    "type": ",",
+    "named": false
+  },
+  {
+    "type": "-[",
+    "named": false
+  },
+  {
+    "type": "/",
+    "named": false
+  },
+  {
+    "type": "/*",
+    "named": false
+  },
+  {
+    "type": "//",
+    "named": false
+  },
+  {
+    "type": ":",
+    "named": false
+  },
+  {
+    "type": "=",
+    "named": false
+  },
+  {
+    "type": "COLLAPSE",
+    "named": false
+  },
+  {
+    "type": "ENTANGLE",
+    "named": false
+  },
+  {
+    "type": "EVOLVE",
+    "named": false
+  },
+  {
+    "type": "FOLD",
+    "named": false
+  },
+  {
+    "type": "FORK",
+    "named": false
+  },
+  {
+    "type": "HALT",
+    "named": false
+  },
+  {
+    "type": "INTERFERE",
+    "named": false
+  },
+  {
+    "type": "LAMINAR",
+    "named": false
+  },
+  {
+    "type": "MEASURE",
+    "named": false
+  },
+  {
+    "type": "METACOG",
+    "named": false
+  },
+  {
+    "type": "OBSERVE",
+    "named": false
+  },
+  {
+    "type": "PROCESS",
+    "named": false
+  },
+  {
+    "type": "RACE",
+    "named": false
+  },
+  {
+    "type": "SLIVER",
+    "named": false
+  },
+  {
+    "type": "SUPERPOSE",
+    "named": false
+  },
+  {
+    "type": "TUNNEL",
+    "named": false
+  },
+  {
+    "type": "VENT",
+    "named": false
+  },
+  {
+    "type": "[",
+    "named": false
+  },
+  {
+    "type": "]",
+    "named": false
+  },
+  {
+    "type": "]->",
+    "named": false
+  },
+  {
+    "type": "gnarly",
+    "named": false
+  },
+  {
+    "type": "identifier",
+    "named": true
+  },
+  {
+    "type": "impl",
+    "named": false
+  },
+  {
+    "type": "implementation_text",
+    "named": true
+  },
+  {
+    "type": "in",
+    "named": false
+  },
+  {
+    "type": "number",
+    "named": true
+  },
+  {
+    "type": "type_name",
+    "named": true
+  },
+  {
+    "type": "{",
+    "named": false
+  },
+  {
+    "type": "|",
+    "named": false
+  },
+  {
+    "type": "}",
+    "named": false
+  }
+]

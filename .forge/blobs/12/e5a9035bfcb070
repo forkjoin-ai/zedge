@@ -1,0 +1,21 @@
+{
+  "name": "tree-sitter-gnosis",
+  "sourceRoot": "open-source/zedge/grammars/gnosis/src",
+  "projectType": "library",
+  "tags": [
+    "npm:public"
+  ],
+  "targets": {
+    "build": { "executor": "a0:run-commands", "options": { "command": "echo source-only topology: checked-in parser sources are the artifact", "cwd": "open-source/zedge/grammars/gnosis" }, "metadata": { "topologyKind": "source-only" } },
+    "typecheck": {
+      "executor": "a0:run-commands",
+      "dependsOn": [
+        "^typecheck"
+      ],
+      "options": {
+        "cwd": "open-source/zedge/grammars/gnosis",
+        "command": "echo \"tree-sitter-gnosis typecheck deferred: grammar package declaration backlog\""
+      }
+    }
+  }
+}

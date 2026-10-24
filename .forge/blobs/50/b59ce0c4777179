@@ -1,0 +1,54 @@
+{
+  "name": "@affectively/zedge-companion",
+  "version": "5.0.0",
+  "description": "Zedge companion sidecar — inference bridge + compute pool node",
+  "type": "module",
+  "main": "dist/companion.mjs",
+  "exports": {
+    ".": "./dist/companion.mjs",
+    "./supervisor": "./dist/companion-supervisor.mjs",
+    "./source": "./src/index.ts"
+  },
+  "files": [
+    "dist",
+    "src"
+  ],
+  "scripts": {
+    "start": "../scripts/run-ts-entry.sh src/companion-supervisor.ts",
+    "start:dist": "node dist/companion-supervisor.mjs",
+    "direct": "../scripts/run-ts-entry.sh src/index.ts",
+    "dev": "node --watch ../../gnosis/bin/monster run src/index.ts --export main",
+    "mcp": "../scripts/run-ts-entry.sh src/mcp-stdio.ts",
+    "launch-agent:install": "../scripts/companion-launch-agent.sh install",
+    "launch-agent:uninstall": "../scripts/companion-launch-agent.sh uninstall",
+    "launch-agent:start": "../scripts/companion-launch-agent.sh start",
+    "launch-agent:stop": "../scripts/companion-launch-agent.sh stop",
+    "launch-agent:status": "../scripts/companion-launch-agent.sh status",
+    "launch-agent:logs": "../scripts/companion-launch-agent.sh logs",
+    "launch-agent:kill": "../scripts/companion-launch-agent.sh kill",
+    "launch-agent:restart": "../scripts/companion-launch-agent.sh restart",
+    "build": "node scripts/build-companion-dist.mjs",
+    "build:legacy": "pnpm exec esbuild src/index.ts --bundle --outdir=dist --platform=node --format=esm --minify --packages=external",
+    "build:mcp": "pnpm exec esbuild src/mcp-stdio.ts --bundle --outfile=dist/mcp-stdio.mjs --platform=node --format=esm --minify --packages=external",
+    "typecheck": "tsc --noEmit",
+    "type-check": "npm run typecheck"
+  },
+  "dependencies": {
+    "yjs": "^13.6.0",
+    "@dashrelay/client": "workspace:*",
+    "@a0n/auth": "workspace:*",
+    "@a0n/distributed-inference-host": "workspace:*",
+    "@a0n/gnosis": "workspace:*",
+    "@a0n/shared-utils": "workspace:*",
+    "@a0n/x-gnosis": "workspace:*",
+    "@a0n/buleyean-kernel": "workspace:*",
+    "@xenova/transformers": "^2.17.2",
+    "onnxruntime-node": "^1.23.2"
+  },
+  "devDependencies": {
+    "esbuild": "^0.27.7",
+    "typescript": "^5.9.0"
+  },
+  "author": "AFFECTIVELY <support@affectively.ai>",
+  "license": "MIT"
+}

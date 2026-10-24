@@ -218,16 +218,50 @@ describe('Zed settings model sync', () => {
 });
 
 describe('Zed keychain credentials', () => {
-  test('syncZedgeKeychainCredentials seeds macOS internet password for api_url', () => {
+  test('seeds the macOS internet password for api_url', () => {
+    const calls: string[][] = [];
+    const result = syncZedgeKeychainCredentials(
+      7331,
+      'zedge-local-test-key',
+      (args) => {
+        calls.push(args);
+      }
+    );
+
+    expect(result.apiUrl).toBe('http://127.0.0.1:7331/v1');
+
     if (process.platform !== 'darwin') {
+      // Nothing is written off macOS; that is the contract, not a skip.
+      expect(result.updated).toBe(false);
+      expect(calls).toHaveLength(0);
       return;
     }
 
-    const result = syncZedgeKeychainCredentials(7331, 'zedge-local-test-key');
     expect(result.updated).toBe(true);
-    expect(result.apiUrl).toBe('http://127.0.0.1:7331/v1');
+    expect(calls).toHaveLength(1);
+    expect(calls[0]).toEqual([
+      'add-internet-password',
+      '-a',
+      'Bearer',
+      '-s',
+      'http://127.0.0.1:7331/v1',
+      '-w',
+      'zedge-local-test-key',
+      '-U',
+    ]);
+  });
 
-    // Restore the production placeholder for Zed.
-    syncZedgeKeychainCredentials(7331, 'zedge-local');
+  test('reports why the keychain refused, instead of claiming success', () => {
+    const result = syncZedgeKeychainCredentials(7331, 'zedge-local', () => {
+      throw new Error('errSecInteractionNotAllowed');
+    });
+
+    if (process.platform !== 'darwin') {
+      expect(result.updated).toBe(false);
+      return;
+    }
+
+    expect(result.updated).toBe(false);
+    expect(result.error).toContain('errSecInteractionNotAllowed');
   });
 });

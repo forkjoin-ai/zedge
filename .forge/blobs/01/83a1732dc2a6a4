@@ -1,0 +1,163 @@
+{
+  "name": "edge-ai",
+  "projectType": "library",
+  "sourceRoot": "open-source/zedge/src",
+  "tags": [
+    "scope:open-source",
+    "type:lib"
+  ],
+  "targets": {
+    "build": {
+      "executor": "a0:run-commands",
+      "options": {
+        "command": "echo 'zedge: Rust extension built via cargo, companion hosted on x-gnosis + monster launcher'"
+      }
+    },
+    "build:companion": {
+      "executor": "a0:run-commands",
+      "options": {
+        "command": "node open-source/zedge/companion/scripts/build-companion-dist.mjs"
+      }
+    },
+    "dev": {
+      "executor": "a0:run-commands",
+      "options": {
+        "command": "open-source/zedge/scripts/run-ts-entry.sh open-source/zedge/companion/src/companion-supervisor.ts",
+        "cwd": "."
+      }
+    },
+    "start": {
+      "executor": "a0:run-commands",
+      "dependsOn": [
+        "build:companion"
+      ],
+      "options": {
+        "command": "node open-source/zedge/companion/dist/companion-supervisor.mjs",
+        "cwd": "."
+      }
+    },
+    "doctor": {
+      "executor": "a0:run-commands",
+      "options": {
+        "command": "open-source/zedge/scripts/zedge-doctor.sh",
+        "cwd": "."
+      }
+    },
+    "test": {
+      "executor": "a0:run-commands",
+      "options": {
+        "command": "node open-source/zedge/scripts/run-companion-tests.mjs",
+        "monster": {
+          "nodeLeaf": {
+            "reason": "The companion suite is discovered from the checkout and each file is run by the sovereign Monster/gnode runner. The previous find/sort/xargs spelling is an opaque shell pipeline the native dispatcher refuses; this repository-owned script carries the same discovery with bounded argv.",
+            "args": [
+              "open-source/zedge/scripts/run-companion-tests.mjs"
+            ]
+          }
+        }
+      }
+    },
+    "test:all": {
+      "executor": "a0:run-commands",
+      "options": {
+        "command": "node open-source/zedge/scripts/run-companion-tests.mjs",
+        "monster": {
+          "nodeLeaf": {
+            "reason": "The companion suite is discovered from the checkout and each file is run by the sovereign Monster/gnode runner. The previous find/sort/xargs spelling is an opaque shell pipeline the native dispatcher refuses; this repository-owned script carries the same discovery with bounded argv.",
+            "args": [
+              "open-source/zedge/scripts/run-companion-tests.mjs"
+            ]
+          }
+        }
+      }
+    },
+    "test:e2e": {
+      "executor": "a0:run-commands",
+      "options": {
+        "command": "node open-source/zedge/scripts/run-companion-tests.mjs --e2e",
+        "monster": {
+          "nodeLeaf": {
+            "reason": "The companion suite is discovered from the checkout and each file is run by the sovereign Monster/gnode runner. The previous find/sort/xargs spelling is an opaque shell pipeline the native dispatcher refuses; this repository-owned script carries the same discovery with bounded argv.",
+            "args": [
+              "open-source/zedge/scripts/run-companion-tests.mjs",
+              "--e2e"
+            ]
+          }
+        }
+      }
+    },
+    "typecheck": {
+      "executor": "a0:run-commands",
+      "options": {
+        "command": "node open-source/gnosis/bin/gnode.js x tsc -p open-source/zedge/companion/tsconfig.typecheck.json --noEmit"
+      }
+    },
+    "lint": {
+      "executor": "a0:run-commands",
+      "options": {
+        "command": "pnpm exec eslint open-source/zedge/companion/src open-source/zedge/scripts --ext .ts"
+      }
+    },
+    "github:push": {
+      "executor": "a0:run-commands",
+      "options": {
+        "command": "pnpm run monster -- scripts/open-source-repo-target.mjs github-push open-source/zedge",
+        "cwd": "."
+      }
+    },
+    "forge:push": {
+      "executor": "a0:run-commands",
+      "options": {
+        "command": "pnpm run monster -- scripts/open-source-repo-target.mjs forge-push open-source/zedge",
+        "cwd": "."
+      }
+    },
+    "push": {
+      "executor": "a0:run-commands",
+      "options": {
+        "command": "pnpm run monster -- scripts/open-source-repo-target.mjs push open-source/zedge",
+        "cwd": "."
+      }
+    },
+    "submodule:update-reference": {
+      "executor": "a0:run-commands",
+      "options": {
+        "command": "pnpm run monster -- scripts/open-source-repo-target.mjs submodule-update-reference open-source/zedge",
+        "cwd": "."
+      }
+    },
+    "pr:list": {
+      "executor": "a0:run-commands",
+      "options": {
+        "command": "pnpm run monster -- scripts/open-source-repo-target.mjs pr-list open-source/zedge",
+        "cwd": "."
+      }
+    },
+    "pr:merge-all": {
+      "executor": "a0:run-commands",
+      "options": {
+        "command": "pnpm run monster -- scripts/open-source-repo-target.mjs pr-merge-all open-source/zedge",
+        "cwd": "."
+      }
+    },
+    "test:source-launcher": {
+      "executor": "a0:run-commands",
+      "cache": false,
+      "options": {
+        "cwd": ".",
+        "command": "node open-source/gnosis/bin/monster.mjs test open-source/zedge/companion/src/__tests__/source-launcher.test.ts open-source/zedge/companion/src/__tests__/runtime-command.test.ts",
+        "monster": {
+          "nodeLeaf": {
+            "reason": "The sovereign Monster harness qualifies shell launcher argument custody and runtime resolution with bounded child processes.",
+            "args": [
+              "open-source/gnosis/bin/monster.mjs",
+              "test",
+              "open-source/zedge/companion/src/__tests__/source-launcher.test.ts",
+              "open-source/zedge/companion/src/__tests__/runtime-command.test.ts"
+            ]
+          }
+        }
+      }
+    }
+  }
+}

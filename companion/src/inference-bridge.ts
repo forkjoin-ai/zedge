@@ -14,6 +14,11 @@ import {
   resolveCloudRunUpstreamModel,
 } from './coordinator-urls.ts';
 import { isSkymeshTeleportEnabled, trySkymeshCacheTeleport, SKYMESH_DEFAULT_CACHE_URL, warmSkymeshCache, prewarmSkymeshTeleport, streamCachedAnswer } from './skymesh-cache.ts';
+import {
+  hasSkymeshCredential,
+  skymeshCredentialSource,
+  skymeshRelayAuthHeaders,
+} from './skymesh-auth.ts';
 import { appendFileSync, mkdirSync, writeFileSync } from 'fs';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
@@ -292,6 +297,13 @@ const SKYMESH_RELAY_COOLDOWN_MS = Number(
 interface SkymeshRelayBreaker {
   downUntil: number;
   reason: string;
+  /**
+   * True when the outage was "we presented no capability" (the relay's free-tier
+   * 429). That is not the model being down, and a login fixes it — so the
+   * cooldown is dropped the moment a credential appears instead of making the
+   * user wait out a timer after they signed in.
+   */
+  credentialMissing: boolean;
 }
 
 let skymeshRelayBreaker: SkymeshRelayBreaker | null = null;
@@ -299,6 +311,14 @@ let skymeshRelayBreaker: SkymeshRelayBreaker | null = null;
 /** Remaining cooldown in ms, or 0 when the lane is allowed to be tried. */
 export function skymeshRelayCooldownRemainingMs(now = Date.now()): number {
   if (!skymeshRelayBreaker) return 0;
+  // A capability that arrived AFTER the 429 retires the recorded outage: the
+  // lane was never down, the companion was simply anonymous. Checking here (the
+  // single gate the ladder calls) means a fresh `a0 edgework login` is honoured
+  // on the very next completion instead of after a cooldown nobody can explain.
+  if (skymeshRelayBreaker.credentialMissing && hasSkymeshCredential()) {
+    skymeshRelayBreaker = null;
+    return 0;
+  }
   const remaining = skymeshRelayBreaker.downUntil - now;
   if (remaining <= 0) {
     skymeshRelayBreaker = null;
@@ -312,11 +332,47 @@ export function skymeshRelayCooldownReason(): string {
   return skymeshRelayBreaker?.reason ?? '';
 }
 
-function tripSkymeshRelayBreaker(reason: string, now = Date.now()): void {
+function tripSkymeshRelayBreaker(
+  reason: string,
+  now = Date.now(),
+  credentialMissing = false
+): void {
   skymeshRelayBreaker = {
     downUntil: now + SKYMESH_RELAY_COOLDOWN_MS,
     reason: reason.slice(0, 200),
+    credentialMissing,
   };
+}
+
+/**
+ * The relay's anonymous-tier refusal. Same tier as "no login", so the remedy is
+ * a credential, not a retry: name it instead of reporting the model as down.
+ */
+const SKYMESH_FREE_TIER_PATTERN =
+  /free-tier request cap|present a ucan|free-tier/i;
+
+const SKYMESH_NO_CREDENTIAL_HINT =
+  "no Edgework credential was presented — run 'a0 edgework login' " +
+  '(writes ~/.edgework/api-key) or set EDGEWORK_API_KEY';
+
+/**
+ * The single user-visible failure sentence for the relay tier. When the
+ * recorded reason is the relay's free-tier 429 the request was not billed, which
+ * is a different problem from a dead lane — and the only one the user can fix.
+ * Both used to read "model unavailable", so a missing login looked like a
+ * broken model.
+ */
+function skymeshLaneFailureMessage(
+  model: string,
+  reason: string,
+  detail: string
+): string {
+  const head = SKYMESH_FREE_TIER_PATTERN.test(reason)
+    ? `Exact Skymesh model ${model} cannot bill this request (rejected by the anonymous tier)`
+    : `Exact Skymesh model ${model} is unavailable`;
+  const tail =
+    reason && !detail.includes(reason) ? `${detail}; ${reason}` : detail;
+  return `${head}; ${tail}`;
 }
 
 /** A working answer clears the breaker immediately — no half-open dance needed. */
@@ -1630,8 +1686,12 @@ async function trySkymeshRelayInference(
         request.model,
         sanitizeMoonshineMessages(request.messages)
       );
+      // Resolved PER REQUEST, never at boot: the companion is a launch agent and
+      // `a0 edgework login` writes the key after this module loaded. A cached
+      // answer here is what made a fresh login invisible to inference.
+      const credentialSource = skymeshCredentialSource();
       logInference(
-        `[skymesh-relay] -> ${url} model=${request.model} stream=${stream} max_tokens=${maxTokens}`
+        `[skymesh-relay] -> ${url} model=${request.model} stream=${stream} max_tokens=${maxTokens} auth=${credentialSource ?? 'none'}`
       );
 
       const controller = new AbortController();
@@ -1653,6 +1713,11 @@ async function trySkymeshRelayInference(
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
+            // The capability the relay bills against. Without it skymesh's
+            // admit guard puts the request in the anonymous tier, which is
+            // capped and answers 429 "Free-tier request cap reached" — the
+            // message that read as "the model is unavailable" after a login.
+            ...skymeshRelayAuthHeaders(),
             ...moonshinePrefillHeaders(request.prefillWindowId),
           },
           body: JSON.stringify({
@@ -1680,6 +1745,20 @@ async function trySkymeshRelayInference(
             .text()
             .then((text) => text.slice(0, 300))
             .catch(() => '');
+          // A free-tier 429 is an AUTH answer, not a lane outage: it is the
+          // anonymous tier saying "present a capability". Reporting it as the
+          // model being unavailable is what sent a logged-in user looking at
+          // the model picker instead of at their key.
+          const anonymousTier =
+            resp.status === 429 && SKYMESH_FREE_TIER_PATTERN.test(detail);
+          if (anonymousTier) {
+            const reason = credentialSource
+              ? `HTTP 429 free-tier cap: the presented Edgework credential (${credentialSource}) was not accepted — check 'a0 edgework login' / EDGEWORK_API_KEY`
+              : `HTTP 429 free-tier cap: ${SKYMESH_NO_CREDENTIAL_HINT}`;
+            logInference(`[skymesh-relay] ${reason}`);
+            tripSkymeshRelayBreaker(reason, Date.now(), !hasSkymeshCredential());
+            return null;
+          }
           logInference(
             `[skymesh-relay] upstream error ${resp.status}: ${detail}`
           );
@@ -3512,7 +3591,8 @@ export async function infer(
     // how a broken upstream turns into an editor that appears to hang.
     const cooldownMs = skymeshRelayCooldownRemainingMs();
     if (cooldownMs > 0) {
-      const detail = `lane down for ${Math.ceil(cooldownMs / 1000)}s more: ${skymeshRelayCooldownReason()}`;
+      const reason = skymeshRelayCooldownReason();
+      const detail = `lane down for ${Math.ceil(cooldownMs / 1000)}s more: ${reason}`;
       attempts.push({
         tier: 'skymesh-relay',
         status: 'skipped',
@@ -3521,7 +3601,7 @@ export async function infer(
       });
       logInference(`model=${request.model} tier=skymesh-relay skipped (${detail})`);
       throw new Error(
-        `Exact Skymesh model ${request.model} is unavailable; ${detail}`
+        skymeshLaneFailureMessage(request.model, reason, detail)
       );
     }
     const relayResponse = await trySkymeshRelayInference(request);
@@ -3622,8 +3702,15 @@ export async function infer(
     const chain = attempts
       .map((a) => `${a.tier}:${a.status}(${a.ms}ms)`)
       .join(' → ');
+    // Carry the credential reason into the user-visible error: "unavailable"
+    // with the fix only in the log file is what made a login problem read as a
+    // broken model.
     throw new Error(
-      `Exact Skymesh model ${request.model} is unavailable; refusing echo fallback (chain: ${chain})`
+      skymeshLaneFailureMessage(
+        request.model,
+        skymeshRelayCooldownReason(),
+        `refusing echo fallback (chain: ${chain})`
+      )
     );
   }
   attempts.push({ tier: 'echo', status: 'ok', ms: 0 });

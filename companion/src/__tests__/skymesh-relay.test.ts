@@ -118,6 +118,51 @@ describe('SSM lane routing', () => {
     expect(skymeshRelayCooldownRemainingMs(Date.now() + 10 * 60_000)).toBe(0);
   });
 
+  test('the relay presents the capability, so a login is actually billed', () => {
+    const start = bridgeSource.indexOf('async function trySkymeshRelayInference');
+    const end = bridgeSource.indexOf('async function tryMoonshineInference');
+    const relay = bridgeSource.slice(start, end);
+
+    // Without this header skymesh's admit guard puts the request in the
+    // anonymous tier, whatever the companion's own `whoami()` reported.
+    expect(relay).toContain('...skymeshRelayAuthHeaders()');
+    // Resolved PER REQUEST: the login is written after the launch agent booted.
+    expect(relay).toContain('skymeshCredentialSource()');
+    expect(relay).toContain('auth=');
+  });
+
+  test('a free-tier 429 is a credential problem, not a dead lane', () => {
+    const start = bridgeSource.indexOf('async function trySkymeshRelayInference');
+    const end = bridgeSource.indexOf('async function tryMoonshineInference');
+    const relay = bridgeSource.slice(start, end);
+
+    expect(relay).toContain('SKYMESH_FREE_TIER_PATTERN.test(detail)');
+    expect(relay).toContain('SKYMESH_NO_CREDENTIAL_HINT');
+    // …and the hint names the command that fixes it.
+    expect(bridgeSource).toContain("a0 edgework login");
+    // The anonymous refusal is recorded as credential-missing so a later login
+    // can retire it.
+    expect(relay).toContain('!hasSkymeshCredential()');
+    // And the user-visible sentence must not say "unavailable" for it.
+    expect(bridgeSource).toContain('cannot bill this request');
+  });
+
+  test('a login taken during a cooldown is honoured immediately', () => {
+    // The breaker gate itself drops a credential-missing outage once a
+    // capability exists; otherwise the user waits out a timer after signing in.
+    expect(bridgeSource).toContain(
+      'skymeshRelayBreaker.credentialMissing && hasSkymeshCredential()'
+    );
+    const guardAt = bridgeSource.indexOf(
+      'skymeshRelayBreaker.credentialMissing && hasSkymeshCredential()'
+    );
+    const deadlineAt = bridgeSource.indexOf(
+      'const remaining = skymeshRelayBreaker.downUntil - now;'
+    );
+    expect(guardAt).toBeGreaterThanOrEqual(0);
+    expect(deadlineAt).toBeGreaterThan(guardAt);
+  });
+
   test('headers and generation get separate deadlines', () => {
     const start = bridgeSource.indexOf('async function trySkymeshRelayInference');
     const end = bridgeSource.indexOf('async function tryMoonshineInference');

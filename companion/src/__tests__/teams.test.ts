@@ -4,11 +4,42 @@
  * Team creation/join/leave, persistence, invite generation, bridge startup
  */
 
-import { describe, test, expect, beforeEach, afterEach } from '@a0n/gnosis/test';
-import { getTeamsManager } from '../teams.ts';
+import {
+  describe,
+  test,
+  expect,
+  beforeEach,
+  afterEach,
+  afterAll,
+} from '@a0n/gnosis/test';
+import { mkdtempSync, rmSync } from 'fs';
+import { join } from 'path';
+import { tmpdir } from 'os';
+
+/**
+ * Team state is persisted to `~/.edgework/team.json`, and this suite creates,
+ * joins and leaves teams — so it used to rewrite the developer's REAL membership
+ * file (and `leaveTeam()` does not delete it, so the last test's team stuck
+ * around for the next launch). Redirect the config dir BEFORE importing the
+ * module: under a sandbox the write is EPERM, which is only the loud version of
+ * the same bug.
+ */
+const configDir = mkdtempSync(join(tmpdir(), 'zedge-teams-'));
+process.env.ZEDGE_TEAM_DIR = configDir;
+
+const { getTeamsManager } = await import('../teams.ts');
+
+type TeamsManager = ReturnType<typeof getTeamsManager>;
 
 describe('teams', () => {
-  let teamsManager: ReturnType<typeof getTeamsManager>;
+  let teamsManager: TeamsManager;
+
+  afterAll(() => {
+    if (process.env.ZEDGE_TEAM_DIR === configDir) {
+      delete process.env.ZEDGE_TEAM_DIR;
+    }
+    rmSync(configDir, { recursive: true, force: true });
+  });
 
   beforeEach(() => {
     teamsManager = getTeamsManager();

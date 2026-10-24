@@ -20,6 +20,15 @@ import type {
 process.env.ZEDGE_SKYMESH_TELEPORT = '0';
 process.env.ZEDGE_CLOUDRUN_ENABLED = '0';
 
+// Every tier calls runWithCompanionActivity(), which persists its busy window to
+// ~/.edgework/companion-activity.json. A unit test must not write the user's
+// live companion state (and a sandboxed run cannot: the write is EPERM, which
+// surfaced as "moonshine:error" in 0.3ms and nine phantom inference failures).
+process.env.ZEDGE_COMPANION_ACTIVITY_FILE = join(
+  tmpdir(),
+  `zedge-companion-activity-${process.pid}.json`
+);
+
 describe('Inference Bridge', () => {
   test('getModels falls back to the Moonshine catalog when the live catalog hangs', async () => {
     const originalFetch = global.fetch;

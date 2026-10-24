@@ -1,0 +1,7 @@
+name = "Gnarly"
+type = "language"
+path_suffixes = ["gnarly"]
+line_comments = ["//"]
+grammar = "gnosis"
+
+[language_server.gnosis-lsp]

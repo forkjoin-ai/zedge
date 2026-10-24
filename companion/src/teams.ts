@@ -17,8 +17,25 @@ import { generateInvite, parseRoomUcan } from './ucan-scope.ts';
 
 // --- Config ---
 
-const CONFIG_DIR = join(homedir(), '.edgework');
-const TEAM_FILE = join(CONFIG_DIR, 'team.json');
+/**
+ * Team state lives beside the rest of the Edgework config, but the directory is
+ * resolved PER CALL from `ZEDGE_TEAM_DIR` so the path can be redirected without
+ * re-importing this module. That matters for tests (a unit test writing
+ * ~/.edgework/team.json mutates the user's real membership) and for hermetic
+ * runs; it is the shape companion-activity.ts already uses for its file
+ * (`ZEDGE_COMPANION_ACTIVITY_FILE`). Deliberately team-scoped rather than a
+ * generic config dir, so it cannot be mistaken for a global override.
+ */
+function getConfigDir(): string {
+  const override = process.env.ZEDGE_TEAM_DIR?.trim();
+  return override && override.length > 0
+    ? override
+    : join(homedir(), '.edgework');
+}
+
+function getTeamFile(): string {
+  return join(getConfigDir(), 'team.json');
+}
 
 // --- Types ---
 
@@ -45,17 +62,19 @@ let crdt: { workspaceId: string } | null = null;
 // --- Initialization ---
 
 function ensureConfigDir(): void {
-  if (!existsSync(CONFIG_DIR)) {
-    mkdirSync(CONFIG_DIR, { recursive: true, mode: 0o700 });
+  const dir = getConfigDir();
+  if (!existsSync(dir)) {
+    mkdirSync(dir, { recursive: true, mode: 0o700 });
   }
 }
 
 function loadTeam(): Team | null {
   try {
-    if (!existsSync(TEAM_FILE)) {
+    const teamFile = getTeamFile();
+    if (!existsSync(teamFile)) {
       return null;
     }
-    const data = JSON.parse(readFileSync(TEAM_FILE, 'utf-8')) as Team;
+    const data = JSON.parse(readFileSync(teamFile, 'utf-8')) as Team;
     return data;
   } catch {
     return null;
@@ -66,7 +85,7 @@ function saveTeam(team: Team | null): void {
   ensureConfigDir();
   if (team === null) {
     try {
-      if (existsSync(TEAM_FILE)) {
+      if (existsSync(getTeamFile())) {
         // Don't delete, just clear by writing null
       }
     } catch {
@@ -74,7 +93,7 @@ function saveTeam(team: Team | null): void {
     }
     return;
   }
-  writeFileSync(TEAM_FILE, JSON.stringify(team, null, 2), { mode: 0o600 });
+  writeFileSync(getTeamFile(), JSON.stringify(team, null, 2), { mode: 0o600 });
 }
 
 // Initialize on module load
