@@ -8,6 +8,13 @@ Child: [Tests](./__tests__/README.md)
 
 Runtime entrypoints, HTTP server surfaces, Babelfish routes, and the sidecar-only bridges that back the Zed extension.
 
+## Python Type Server (TSP)
+
+- `tsp.ts` owns the Python type-server session: one TSP session per workspace, disk-backed document sync, idle shutdown, and command resolution through `ZEDGE_TYPE_SERVER_COMMAND` (default `pyright-typeserver --stdio`).
+- The protocol client, renderer, and fake server come from `@a0n/gnosis/polyglot-tsp`; see [TSP](../../../gnosis/docs/TYPE_SERVER_PROTOCOL.md) for message coverage, snapshot rules, and non-goals.
+- `mcp-stdio.ts` exposes `zedge_python_type`, `zedge_python_search_paths`, `zedge_python_resolve_import`, and `zedge_type_server_status`. Type queries take a zero-based line/character and default to the computed type.
+- `__tests__/tsp-mcp.test.ts` drives a generated child-process type server over stdio, so the suite needs no Python type checker installed.
+
 ## Highlights
 
 - `index.ts` boots the local companion service, mesh, forge, VFS, collaboration, kernel, capacitor, CRDT, and UCAN bridges.

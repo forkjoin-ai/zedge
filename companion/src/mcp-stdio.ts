@@ -31,6 +31,14 @@ import {
   collectGnosisDiagnostics,
   gnosisNavigation,
 } from './gnosis-lsp.ts';
+import {
+  getPythonTypeServerStatus,
+  queryPythonSearchPaths,
+  queryPythonType,
+  resolvePythonImport,
+  type PythonTypeQueryOptions,
+  type PythonTypeResult,
+} from './tsp.ts';
 
 function getCompanionBase(): string {
   // Use IPv4 loopback explicitly — `localhost` can resolve to ::1 while the
@@ -864,6 +872,41 @@ function optionalNumber(value: unknown): number | null {
   }
 
   return null;
+}
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+function normalizePythonTypeKind(
+  value: unknown
+): 'computed' | 'declared' | 'expected' | null {
+  if (value === undefined || value === null) return 'computed';
+  if (typeof value !== 'string') return null;
+  const normalized = value.trim().toLowerCase();
+  if (normalized === 'computed') return 'computed';
+  if (normalized === 'declared') return 'declared';
+  if (normalized === 'expected') return 'expected';
+  return null;
+}
+
+function serializePythonTypeResult(
+  result: PythonTypeResult,
+  verbose: boolean
+): Record<string, unknown> {
+  const payload: Record<string, unknown> = {
+    kind: result.kind,
+    file: result.file,
+    uri: result.uri,
+    position: result.position,
+    range: result.range,
+    snapshot: result.snapshot,
+    text: result.text,
+    description: result.description,
+  };
+  if (result.reason !== undefined) payload.reason = result.reason;
+  if (verbose) payload.raw = result.raw;
+  return payload;
 }
 
 function asRecord(value: unknown): Record<string, unknown> {
@@ -2125,6 +2168,69 @@ export async function handleToolsList(): Promise<Record<string, unknown>> {
         },
       },
       {
+        name: 'zedge_python_type',
+        description:
+          'Ask a Python type server (TSP: pyright-typeserver by default) for the computed, declared, or expected type at a zero-based position. Returns Python-ish type text plus the structural description; pass verbose to include the raw TSP type graph.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            path: { type: 'string', description: 'Workspace-relative Python file path' },
+            line: { type: 'integer', minimum: 0, description: 'Zero-based line' },
+            character: {
+              type: 'integer',
+              minimum: 0,
+              description: 'Zero-based UTF-16 character offset',
+            },
+            endLine: { type: 'integer', minimum: 0 },
+            endCharacter: { type: 'integer', minimum: 0 },
+            kind: {
+              type: 'string',
+              enum: ['computed', 'declared', 'expected'],
+              description: 'Which type query to run (default computed)',
+            },
+            verbose: {
+              type: 'boolean',
+              description: 'Include the raw TSP type graph in the response',
+            },
+          },
+          required: ['path', 'line', 'character'],
+        },
+      },
+      {
+        name: 'zedge_python_search_paths',
+        description:
+          'Ask the Python type server which directories it searches for modules from a given file (typeServer/getPythonSearchPaths).',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            path: { type: 'string', description: 'Workspace-relative Python file path' },
+          },
+          required: ['path'],
+        },
+      },
+      {
+        name: 'zedge_python_resolve_import',
+        description:
+          'Resolve a Python import specifier (for example os.path or ..pkg.mod) to a document URI and path through the type server (typeServer/resolveImport).',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            path: { type: 'string', description: 'Workspace-relative source file path' },
+            module: {
+              type: 'string',
+              description: 'Dotted module specifier, optionally with leading dots',
+            },
+          },
+          required: ['path', 'module'],
+        },
+      },
+      {
+        name: 'zedge_type_server_status',
+        description:
+          'Report the configured Python type-server command, live sessions, protocol version compatibility, snapshots, and the last failure.',
+        inputSchema: { type: 'object', properties: {} },
+      },
+      {
         name: 'zedge_tts_speak',
         description:
           'Speak text through the local Moonshine TTS relay and host/file playback mode.',
@@ -2827,6 +2933,108 @@ export async function handleToolCall(
           apply:
             'apply each edit through zedge_preview_range_replace, then zedge_apply_edit_preview',
         });
+      }
+
+      case 'zedge_python_type': {
+        const filePath = asString(args.path) ?? asString(args.file_path);
+        const line = optionalNumber(args.line);
+        const character = optionalNumber(args.character);
+        const endLine = optionalNumber(args.endLine ?? args.end_line);
+        const endCharacter = optionalNumber(
+          args.endCharacter ?? args.end_character
+        );
+        const kind = normalizePythonTypeKind(args.kind);
+        if (!filePath) {
+          return createToolResult('path is required', true);
+        }
+        if (line === null || character === null) {
+          return createToolResult(
+            'line and character are required (zero-based UTF-16 position)',
+            true
+          );
+        }
+        if (kind === null) {
+          return createToolResult(
+            'kind must be one of: computed, declared, expected',
+            true
+          );
+        }
+        try {
+          const query: PythonTypeQueryOptions = {
+            workspaceRoot: getWorkspaceRoot(),
+            filePath: resolveWorkspacePath(filePath),
+            line,
+            character,
+            kind,
+          };
+          if (endLine !== null) query.endLine = endLine;
+          if (endCharacter !== null) query.endCharacter = endCharacter;
+          const result = await queryPythonType(query);
+          const header =
+            result.text === null
+              ? result.kind + ' type: none (' + (result.reason ?? 'no result') + ')'
+              : result.kind + ' type: ' + result.text;
+          return createToolResult(
+            header +
+              '\n\n' +
+              JSON.stringify(
+                serializePythonTypeResult(result, args.verbose === true),
+                null,
+                2
+              )
+          );
+        } catch (error) {
+          return createToolResult(
+            'Python type server: ' + errorMessage(error),
+            true
+          );
+        }
+      }
+
+      case 'zedge_python_search_paths': {
+        const filePath = asString(args.path) ?? asString(args.file_path);
+        if (!filePath) {
+          return createToolResult('path is required', true);
+        }
+        try {
+          const result = await queryPythonSearchPaths({
+            workspaceRoot: getWorkspaceRoot(),
+            filePath: resolveWorkspacePath(filePath),
+          });
+          return createToolResult(JSON.stringify(result, null, 2));
+        } catch (error) {
+          return createToolResult(
+            'Python type server: ' + errorMessage(error),
+            true
+          );
+        }
+      }
+
+      case 'zedge_python_resolve_import': {
+        const filePath = asString(args.path) ?? asString(args.file_path);
+        const moduleName = asString(args.module);
+        if (!filePath || !moduleName) {
+          return createToolResult('path and module are required', true);
+        }
+        try {
+          const result = await resolvePythonImport({
+            workspaceRoot: getWorkspaceRoot(),
+            filePath: resolveWorkspacePath(filePath),
+            module: moduleName,
+          });
+          return createToolResult(JSON.stringify(result, null, 2));
+        } catch (error) {
+          return createToolResult(
+            'Python type server: ' + errorMessage(error),
+            true
+          );
+        }
+      }
+
+      case 'zedge_type_server_status': {
+        return createToolResult(
+          JSON.stringify(getPythonTypeServerStatus(), null, 2)
+        );
       }
 
       case 'zedge_tts_speak':

@@ -828,6 +828,10 @@ interface ModelSelectionRequestBody {
 
 // --- Helpers ---
 
+function describeRouteError(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
 function jsonResponse(data: unknown, status = 200): Response {
   return new Response(JSON.stringify(data), {
     status,
@@ -2464,6 +2468,129 @@ export async function handleWebRequest(req: Request): Promise<Response> {
         forceRefresh: url.searchParams.get('refresh') === '1',
       })
     );
+  }
+
+  // ==================== Python Type Server (TSP) ====================
+
+  if (path === '/tsp/status' && req.method === 'GET') {
+    const { getPythonTypeServerStatus } = await import('./tsp.ts');
+    return jsonResponse(getPythonTypeServerStatus());
+  }
+
+  if (path === '/tsp/type' && req.method === 'POST') {
+    try {
+      const body = (await req.json()) as {
+        file_path?: string;
+        filePath?: string;
+        path?: string;
+        line?: number;
+        character?: number;
+        endLine?: number;
+        endCharacter?: number;
+        kind?: string;
+        verbose?: boolean;
+      };
+      const filePath = body.file_path ?? body.filePath ?? body.path;
+      if (!filePath) {
+        return jsonResponse({ error: 'file_path is required' }, 400);
+      }
+      if (typeof body.line !== 'number' || typeof body.character !== 'number') {
+        return jsonResponse(
+          { error: 'line and character are required (zero-based)' },
+          400
+        );
+      }
+      const kind =
+        body.kind === undefined
+          ? 'computed'
+          : body.kind === 'computed' ||
+              body.kind === 'declared' ||
+              body.kind === 'expected'
+            ? body.kind
+            : null;
+      if (kind === null) {
+        return jsonResponse(
+          { error: 'kind must be computed, declared or expected' },
+          400
+        );
+      }
+      const { queryPythonType } = await import('./tsp.ts');
+      const workspaceRoot = getWorkspaceRootPath();
+      const query: {
+        workspaceRoot: string;
+        filePath: string;
+        line: number;
+        character: number;
+        kind: 'computed' | 'declared' | 'expected';
+        endLine?: number;
+        endCharacter?: number;
+      } = {
+        workspaceRoot,
+        filePath: resolvePath(workspaceRoot, filePath),
+        line: body.line,
+        character: body.character,
+        kind,
+      };
+      if (typeof body.endLine === 'number') query.endLine = body.endLine;
+      if (typeof body.endCharacter === 'number') {
+        query.endCharacter = body.endCharacter;
+      }
+      const result = await queryPythonType(query);
+      if (body.verbose === true) {
+        return jsonResponse(result);
+      }
+      const { raw: _raw, ...projected } = result;
+      void _raw;
+      return jsonResponse(projected);
+    } catch (error) {
+      return jsonResponse({ error: describeRouteError(error) }, 502);
+    }
+  }
+
+  if (path === '/tsp/search-paths' && req.method === 'GET') {
+    const filePath = url.searchParams.get('file_path') ?? url.searchParams.get('path');
+    if (!filePath) {
+      return jsonResponse({ error: 'file_path is required' }, 400);
+    }
+    try {
+      const { queryPythonSearchPaths } = await import('./tsp.ts');
+      const workspaceRoot = getWorkspaceRootPath();
+      return jsonResponse(
+        await queryPythonSearchPaths({
+          workspaceRoot,
+          filePath: resolvePath(workspaceRoot, filePath),
+        })
+      );
+    } catch (error) {
+      return jsonResponse({ error: describeRouteError(error) }, 502);
+    }
+  }
+
+  if (path === '/tsp/resolve-import' && req.method === 'POST') {
+    try {
+      const body = (await req.json()) as {
+        file_path?: string;
+        filePath?: string;
+        path?: string;
+        module?: string;
+      };
+      const filePath = body.file_path ?? body.filePath ?? body.path;
+      const moduleName = body.module;
+      if (!filePath || !moduleName) {
+        return jsonResponse({ error: 'file_path and module are required' }, 400);
+      }
+      const { resolvePythonImport } = await import('./tsp.ts');
+      const workspaceRoot = getWorkspaceRootPath();
+      return jsonResponse(
+        await resolvePythonImport({
+          workspaceRoot,
+          filePath: resolvePath(workspaceRoot, filePath),
+          module: moduleName,
+        })
+      );
+    } catch (error) {
+      return jsonResponse({ error: describeRouteError(error) }, 502);
+    }
   }
 
   if (path === '/edit/range/preview' && req.method === 'POST') {

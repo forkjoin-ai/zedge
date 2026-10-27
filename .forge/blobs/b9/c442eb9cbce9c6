@@ -7,7 +7,11 @@ import {
   mock,
   test,
 } from '@a0n/gnosis/test';
-import { readFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { writeFakeTypeServerScript } from '@a0n/gnosis/polyglot-tsp';
+import { disposePythonTypeServer } from '../tsp.ts';
 
 function jsonResponse(payload: unknown, status = 200): Response {
   return new Response(JSON.stringify(payload), {
@@ -1213,6 +1217,15 @@ function parseRouteInventory(): Set<string> {
   return new Set([...exact, ...prefix]);
 }
 
+/**
+ * Python type-server (TSP) routes run against a generated child-process fake
+ * server, so the audit never needs pyright installed and never spawns one.
+ */
+const tspScratch = mkdtempSync(join(tmpdir(), 'zedge-route-tsp-'));
+const tspWorkspace = join(tspScratch, 'python');
+const tspFile = join(tspWorkspace, 'main.py');
+let previousTspCommand: string | undefined;
+
 const routeCases: RouteCase[] = [
   getCase('/health', 200, async (response) => {
     const payload = (await response.clone().json()) as Record<string, unknown>;
@@ -1573,6 +1586,78 @@ const routeCases: RouteCase[] = [
     503
   ),
   prefixCase('POST /ucan/revoke/*', '/ucan/revoke/mock-grant', 'POST', 503, {}),
+  postCase(
+    '/tsp/type',
+    200,
+    { file_path: tspFile, line: 0, character: 0, kind: 'declared' },
+    async (response) => {
+      const payload = (await response.clone().json()) as {
+        text?: string | null;
+        kind?: string;
+        file?: string;
+        raw?: unknown;
+      };
+      expect(payload.text).toBe('int | str');
+      expect(payload.kind).toBe('declared');
+      expect(payload.file).toBe(tspFile);
+      expect(payload.raw).toBeUndefined();
+    }
+  ),
+  postCase(
+    '/tsp/type',
+    400,
+    { file_path: tspFile, character: 0 },
+    async (response) => {
+      const payload = (await response.clone().json()) as { error?: string };
+      expect(payload.error).toContain('line and character are required');
+    }
+  ),
+  {
+    key: 'GET /tsp/search-paths',
+    request: () =>
+      createRequest(
+        '/tsp/search-paths?file_path=' + encodeURIComponent(tspFile)
+      ),
+    expectedStatus: 200,
+    verify: async (response) => {
+      const payload = (await response.clone().json()) as {
+        paths?: string[];
+        available?: boolean;
+      };
+      expect(payload.available).toBe(true);
+      expect(payload.paths).toContain('/usr/lib/python3.12');
+    },
+  },
+  postCase(
+    '/tsp/resolve-import',
+    200,
+    { file_path: tspFile, module: 'os.path' },
+    async (response) => {
+      const payload = (await response.clone().json()) as {
+        resolvedUri?: string | null;
+      };
+      expect(payload.resolvedUri).toBe('file:///usr/lib/python3.12/os/path.py');
+    }
+  ),
+  postCase(
+    '/tsp/resolve-import',
+    400,
+    { file_path: tspFile },
+    async (response) => {
+      const payload = (await response.clone().json()) as { error?: string };
+      expect(payload.error).toContain('module are required');
+    }
+  ),
+  getCase('/tsp/status', 200, async (response) => {
+    const payload = (await response.clone().json()) as {
+      enabled?: boolean;
+      commandLine?: string;
+      sessions?: unknown[];
+    };
+    expect(payload.enabled).toBe(true);
+    expect(payload.commandLine).toContain('fake-type-server');
+    expect(Array.isArray(payload.sessions)).toBe(true);
+  }),
 ];
 
 const skippedRoutes = new Map<string, string>([
@@ -1608,11 +1693,86 @@ describe('server route audit', () => {
   beforeAll(() => {
     console.log = (() => undefined) as typeof console.log;
     console.warn = (() => undefined) as typeof console.warn;
+
+    mkdirSync(tspWorkspace, { recursive: true });
+    writeFileSync(
+      tspFile,
+      ['def add(x: int, y: int) -> int:', '    return x + y', '', 'result = add(1, 2)', ''].join('\n'),
+      'utf8'
+    );
+    const generated = writeFakeTypeServerScript(
+      {
+        fixtures: {
+          computed: {
+            id: 1,
+            kind: 3,
+            flags: 0,
+            declaration: {
+              kind: 0,
+              category: 6,
+              node: {
+                uri: 'file:///python/main.py',
+                range: { start: { line: 0, character: 0 }, end: { line: 0, character: 3 } },
+              },
+              name: 'int',
+            },
+          },
+          declared: {
+            id: 2,
+            kind: 4,
+            flags: 0,
+            subTypes: [
+              {
+                id: 3,
+                kind: 3,
+                flags: 0,
+                declaration: {
+                  kind: 0,
+                  category: 6,
+                  node: {
+                    uri: 'file:///python/main.py',
+                    range: { start: { line: 0, character: 0 }, end: { line: 0, character: 3 } },
+                  },
+                  name: 'int',
+                },
+              },
+              {
+                id: 4,
+                kind: 3,
+                flags: 0,
+                declaration: {
+                  kind: 0,
+                  category: 6,
+                  node: {
+                    uri: 'file:///python/main.py',
+                    range: { start: { line: 0, character: 0 }, end: { line: 0, character: 3 } },
+                  },
+                  name: 'str',
+                },
+              },
+            ],
+          },
+          expected: null,
+          searchPaths: ['/python/src', '/usr/lib/python3.12'],
+          imports: { 'os.path': 'file:///usr/lib/python3.12/os/path.py' },
+        },
+      },
+      tspScratch
+    );
+    previousTspCommand = process.env.ZEDGE_TYPE_SERVER_COMMAND;
+    process.env.ZEDGE_TYPE_SERVER_COMMAND = generated.commandLine;
   });
 
   afterAll(() => {
     console.log = originalConsoleLog;
     console.warn = originalConsoleWarn;
+    disposePythonTypeServer();
+    if (previousTspCommand === undefined) {
+      delete process.env.ZEDGE_TYPE_SERVER_COMMAND;
+    } else {
+      process.env.ZEDGE_TYPE_SERVER_COMMAND = previousTspCommand;
+    }
+    rmSync(tspScratch, { recursive: true, force: true });
   });
 
   beforeEach(() => {
@@ -1631,7 +1791,7 @@ describe('server route audit', () => {
 
     expect(missing).toEqual([]);
     expect(extra).toEqual([]);
-    expect(inventory.size).toBe(231);
+    expect(inventory.size).toBe(235);
   });
 
   test('responds to CORS preflight before route dispatch', async () => {
