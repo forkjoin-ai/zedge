@@ -20,6 +20,7 @@ import {
   getPythonTypeServerStatus,
   queryPythonType,
   resolvePythonFile,
+  tokenRangeAt,
 } from '../tsp.ts';
 
 const TSP_TOOL_NAMES = [
@@ -248,6 +249,36 @@ describe('zedge python type server MCP tools', () => {
   });
 });
 
+describe('cursor to token expansion', () => {
+  test('covers the identifier under the cursor', () => {
+    expect(tokenRangeAt('def label(value: int) -> str:', { line: 0, character: 12 })).toEqual({
+      start: { line: 0, character: 10 },
+      end: { line: 0, character: 15 },
+    });
+  });
+
+  test('expands left when the cursor sits just after a name', () => {
+    expect(tokenRangeAt('total = add(1, 2)', { line: 0, character: 5 })).toEqual({
+      start: { line: 0, character: 0 },
+      end: { line: 0, character: 5 },
+    });
+  });
+
+  test('falls back to a zero-width range on punctuation', () => {
+    expect(tokenRangeAt('a = 1', { line: 0, character: 2 })).toEqual({
+      start: { line: 0, character: 2 },
+      end: { line: 0, character: 2 },
+    });
+  });
+
+  test('clamps a position past the end of the line', () => {
+    expect(tokenRangeAt('x', { line: 9, character: 99 })).toEqual({
+      start: { line: 0, character: 0 },
+      end: { line: 0, character: 1 },
+    });
+  });
+});
+
 describe('zedge python type server session API', () => {
   test('resolves a file and refuses a directory', () => {
     const resolved = resolvePythonFile(workspace, 'main.py');
@@ -274,6 +305,11 @@ describe('zedge python type server session API', () => {
     expect(result.available).toBe(true);
     expect(result.text).toBe('int | str');
     expect(result.snapshot).not.toBe(null);
+    // line 3 is "result = add(1, 2)"; character 9 lands on "add".
+    expect(result.range).toEqual({
+      start: { line: 3, character: 9 },
+      end: { line: 3, character: 12 },
+    });
   });
 
   test('reports configuration and sessions', () => {

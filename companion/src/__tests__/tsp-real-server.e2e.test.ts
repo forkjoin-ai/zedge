@@ -1,23 +1,28 @@
 import { afterAll, beforeAll, describe, expect, test } from '@a0n/gnosis/test';
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
-import { spawn, spawnSync, type ChildProcess } from 'node:child_process';
-import { createServer } from 'node:net';
+import { spawnSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { resolveTypeScriptEntrypointCommand } from '../runtime-command';
 
 /**
- * Python type server (TSP) end to end against a REAL type server.
+ * Python type server (TSP) end to end against a REAL analyzer.
  *
  * The unit and route-audit suites use a fake server, which proves plumbing and
- * nothing about a real analyzer. This suite boots the companion with a real
- * pyright-typeserver (or whatever TSP_E2E_COMMAND names), asks real questions
- * about a real Python file over both planes -- companion HTTP and the MCP stdio
- * bridge -- and asserts the answers are the analyzer's, not a fixture's.
+ * nothing about a real type checker. This suite drives a real
+ * pyright-typeserver (or whatever TSP_E2E_COMMAND names) through two real
+ * boundaries:
  *
- * The suite self-skips when no type server is installed, so the default e2e run
- * stays green on machines without one:
+ *   - the companion HTTP router, in process, for the four /tsp/* routes;
+ *   - one real mcp-stdio bridge child process, for the MCP tools.
+ *
+ * The companion's own listener is deliberately not crossed: booting it needs the
+ * checked-in monster launcher, which is unusable in this checkout (the installed
+ * monster binary rejects the ladder flags the wrapper passes), and the
+ * pre-existing slash-command e2e fails on the same wall. The route audit covers
+ * the listener contract; this suite covers the handler plus a real analyzer.
+ *
+ * The suite self-skips when no type server is installed:
  *
  *   TSP_E2E_COMMAND='pyright-typeserver --stdio' \
  *     node open-source/zedge/scripts/run-companion-tests.mjs \
@@ -26,7 +31,10 @@ import { resolveTypeScriptEntrypointCommand } from '../runtime-command';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = join(HERE, '../../../../..');
-const COMPANION_ENTRY = join(HERE, '../index.ts');
+const TS_HOST_LOADER = join(
+  REPO_ROOT,
+  'open-source/gnosis/gnode/register-ts-host.mjs'
+);
 const MCP_STDIO_ENTRY = join(HERE, '../mcp-stdio.ts');
 
 const PY_SOURCE = [
@@ -48,148 +56,47 @@ const PY_SOURCE = [
   '',
 ].join('\n');
 
+const { handleWebRequest } = await import('../server.ts');
+
 interface PythonTypePayload {
   available?: boolean;
   kind?: string;
-  file?: string;
   text?: string | null;
   reason?: string;
   snapshot?: number | null;
-  description?: { kindName?: string; text?: string };
+  range?: { start: { line: number; character: number } };
+  description?: { kindName?: string };
 }
 
 interface SearchPathsPayload {
   available?: boolean;
   paths?: string[];
-  reason?: string;
 }
 
 interface ResolveImportPayload {
   available?: boolean;
   resolvedUri?: string | null;
-  resolvedPath?: string | null;
   reason?: string;
 }
 
 interface StatusPayload {
   enabled?: boolean;
   commandLine?: string;
-  running?: boolean;
-  lastFailure?: string | null;
-  sessions?: Array<{
-    protocolVersion?: string | null;
-    compatible?: boolean;
-    snapshot?: number | null;
-    serverName?: string | null;
-    documents?: number;
-  }>;
+  sessions?: Array<{ protocolVersion?: string | null; compatible?: boolean }>;
 }
 
-let companionProcess: ChildProcess | null = null;
-let companionPort = 0;
-let companionLogs = '';
-let testHome = '';
-let testWorkspace = '';
-let pythonFile = '';
+interface McpToolResult {
+  text: string;
+  isError: boolean;
+}
+
 let typeServerCommand = '';
 let skipReason: string | null = null;
+let testWorkspace = '';
+let pythonFile = '';
+const previousAeonRoot = process.env.AEON_ROOT;
+const previousCommand = process.env.ZEDGE_TYPE_SERVER_COMMAND;
 
-function appendLogChunk(chunk: Buffer | string): void {
-  companionLogs = companionLogs + chunk.toString();
-  if (companionLogs.length > 16_000) {
-    companionLogs = companionLogs.slice(-16_000);
-  }
-}
-
-function getLogTail(): string {
-  return companionLogs.trim().slice(-4_000);
-}
-
-async function reservePort(): Promise<number> {
-  return await new Promise<number>((resolvePort, reject) => {
-    const server = createServer();
-    server.unref();
-    server.once('error', reject);
-    server.listen(0, '127.0.0.1', () => {
-      const address = server.address();
-      if (address === null || typeof address === 'string') {
-        server.close();
-        reject(new Error('could not reserve a loopback port'));
-        return;
-      }
-      const port = address.port;
-      server.close(() => resolvePort(port));
-    });
-  });
-}
-
-async function waitForHealth(port: number, timeoutMs = 60_000): Promise<void> {
-  const url = 'http://127.0.0.1:' + String(port) + '/health';
-  const deadline = Date.now() + timeoutMs;
-  while (Date.now() < deadline) {
-    if (
-      companionProcess !== null &&
-      companionProcess.exitCode !== null &&
-      companionProcess.exitCode !== undefined
-    ) {
-      throw new Error(
-        'companion exited early with code ' +
-          String(companionProcess.exitCode) +
-          '\n' +
-          getLogTail()
-      );
-    }
-    try {
-      const response = await fetch(url, { signal: AbortSignal.timeout(2_000) });
-      if (response.ok) {
-        await response.arrayBuffer();
-        return;
-      }
-      await response.arrayBuffer();
-    } catch {
-      // not listening yet
-    }
-    await new Promise((resolveTick) => setTimeout(resolveTick, 250));
-  }
-  throw new Error(
-    'companion health never became ready on port ' +
-      String(port) +
-      '\n' +
-      getLogTail()
-  );
-}
-
-async function postJson<T>(
-  path: string,
-  body: Record<string, unknown>,
-  timeoutMs = 60_000
-): Promise<{ status: number; payload: T }> {
-  const response = await fetch(
-    'http://127.0.0.1:' + String(companionPort) + path,
-    {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
-      signal: AbortSignal.timeout(timeoutMs),
-    }
-  );
-  const payload = (await response.json()) as T;
-  return { status: response.status, payload };
-}
-
-async function getJson<T>(
-  path: string,
-  timeoutMs = 60_000
-): Promise<{ status: number; payload: T }> {
-  const response = await fetch(
-    'http://127.0.0.1:' + String(companionPort) + path,
-    { signal: AbortSignal.timeout(timeoutMs) }
-  );
-  const payload = (await response.json()) as T;
-  return { status: response.status, payload };
-}
-
-/** The command a real type server would run, or null when none is installed. */
 function resolveRealTypeServerCommand(): string | null {
   const configured =
     process.env.TSP_E2E_COMMAND ?? process.env.ZEDGE_TYPE_SERVER_COMMAND;
@@ -204,22 +111,50 @@ function resolveRealTypeServerCommand(): string | null {
   return 'pyright-typeserver --stdio';
 }
 
-/** Drive one MCP tool call through a real mcp-stdio bridge process. */
-function callMcpTool(
-  name: string,
-  args: Record<string, unknown>
-): Record<string, unknown> {
-  const request = {
-    jsonrpc: '2.0' as const,
-    id: 'tsp-e2e-' + name,
-    method: 'tools/call',
-    params: { name, arguments: args },
-  };
-  const payload = JSON.stringify(request);
-  const framed =
-    'Content-Length: ' + String(Buffer.byteLength(payload)) + '\r\n\r\n' + payload;
-  const runtimeCommand = resolveTypeScriptEntrypointCommand(MCP_STDIO_ENTRY);
-  const outputPath = join(testWorkspace, '.mcp-' + name + '.json');
+async function callRoute<T>(
+  method: 'GET' | 'POST',
+  path: string,
+  body?: Record<string, unknown>
+): Promise<{ status: number; payload: T }> {
+  const init: RequestInit = { method };
+  if (body !== undefined) {
+    init.headers = { 'Content-Type': 'application/json' };
+    init.body = JSON.stringify(body);
+  }
+  const response = await handleWebRequest(
+    new Request('http://127.0.0.1:7331' + path, init)
+  );
+  const payload = (await response.json()) as T;
+  return { status: response.status, payload };
+}
+
+/**
+ * Drive several MCP tool calls through ONE real mcp-stdio bridge process.
+ *
+ * One process means one bridge session and one type-server session, which is
+ * also what a real agent turn looks like -- and it keeps the suite to a single
+ * TypeScript compile.
+ */
+function callMcpTools(
+  calls: Array<{ name: string; args: Record<string, unknown> }>
+): McpToolResult[] {
+  const framed = calls
+    .map((call, index) => {
+      const payload = JSON.stringify({
+        jsonrpc: '2.0' as const,
+        id: 'tsp-e2e-' + String(index),
+        method: 'tools/call',
+        params: { name: call.name, arguments: call.args },
+      });
+      return (
+        'Content-Length: ' +
+        String(Buffer.byteLength(payload)) +
+        '\r\n\r\n' +
+        payload
+      );
+    })
+    .join('');
+  const outputPath = join(testWorkspace, '.mcp-session.json');
   const runner = [
     "const { writeFileSync } = require('node:fs');",
     "const { spawnSync } = require('node:child_process');",
@@ -229,41 +164,43 @@ function callMcpTool(
     '  env: { ...process.env, ...JSON.parse(envJson) },',
     '  input: framedPayload,',
     "  encoding: 'utf8',",
-    '  timeout: 60000,',
+    '  timeout: 180000,',
     '});',
     'writeFileSync(outputPath, JSON.stringify({',
     '  status: result.status,',
     '  stdout: result.stdout ?? "",',
     '  stderr: result.stderr ?? "",',
-    '  error: result.error ? { message: result.error.message } : null,',
     '}), "utf8");',
   ].join('\n');
   const env = {
-    HOME: testHome,
+    HOME: testWorkspace,
     AEON_ROOT: testWorkspace,
-    ZEDGE_COMPANION_PORT: String(companionPort),
     ZEDGE_TYPE_SERVER_COMMAND: typeServerCommand,
     ZEDGE_TYPE_SERVER_TIMEOUT_MS: '60000',
+    // These tools never touch the companion, and this suite does not want one.
+    ZEDGE_MCP_AUTOSPAWN: '0',
   };
+  // Launch through the same TypeScript host loader the sovereign runner uses,
+  // without the wrapper: the checked-in wrapper goes through monster (which
+  // rejects the ladder flags here), and gnode run stalls when its cwd is a
+  // temporary workspace rather than the checkout.
   const result = spawnSync(
     process.execPath,
     [
       '-e',
       runner,
-      runtimeCommand.command,
-      JSON.stringify(runtimeCommand.args),
+      process.execPath,
+      JSON.stringify(['--import', TS_HOST_LOADER, MCP_STDIO_ENTRY]),
       testWorkspace,
       JSON.stringify(env),
       framed,
       outputPath,
     ],
-    { encoding: 'utf8', timeout: 90_000 }
+    { encoding: 'utf8', timeout: 240_000 }
   );
   if (result.status !== 0) {
     throw new Error(
-      'MCP runner failed for ' +
-        name +
-        ': ' +
+      'MCP runner failed: ' +
         String(result.status) +
         '\nstdout=' +
         (result.stdout ?? '') +
@@ -272,44 +209,56 @@ function callMcpTool(
     );
   }
   const captured = JSON.parse(readFileSync(outputPath, 'utf8')) as {
-    status: number | null;
     stdout: string;
     stderr: string;
-    error: { message: string } | null;
   };
-  const separator = captured.stdout.indexOf('\r\n\r\n');
-  if (separator === -1) {
+  const responses: Array<{
+    id?: string;
+    result?: { content?: Array<{ text?: string }>; isError?: boolean };
+    error?: { message?: string };
+  }> = [];
+  let rest = captured.stdout;
+  for (;;) {
+    const separator = rest.indexOf('\r\n\r\n');
+    if (separator === -1) break;
+    const header = rest.slice(0, separator);
+    const match = /content-length\s*:\s*(\d+)/i.exec(header);
+    if (match === null) break;
+    const length = Number(match[1]);
+    const bodyStart = separator + 4;
+    if (rest.length < bodyStart + length) break;
+    const body = rest.slice(bodyStart, bodyStart + length);
+    rest = rest.slice(bodyStart + length);
+    responses.push(JSON.parse(body) as (typeof responses)[number]);
+  }
+  if (responses.length !== calls.length) {
     throw new Error(
-      'MCP bridge produced no framed response for ' +
-        name +
-        '\nstdout=' +
+      'MCP bridge returned ' +
+        String(responses.length) +
+        ' of ' +
+        String(calls.length) +
+        ' framed responses\nstdout=' +
         captured.stdout +
         '\nstderr=' +
         captured.stderr
     );
   }
-  const header = captured.stdout.slice(0, separator);
-  const match = /content-length\s*:\s*(\d+)/i.exec(header);
-  const length = match === null ? Number.NaN : Number(match[1]);
-  const bodyStart = separator + 4;
-  const body = captured.stdout.slice(bodyStart, bodyStart + length);
-  const response = JSON.parse(body) as {
-    result?: { content?: Array<{ text?: string }>; isError?: boolean };
-    error?: { message?: string };
-  };
-  if (response.error) {
-    throw new Error('MCP error for ' + name + ': ' + response.error.message);
-  }
-  const content = response.result?.content ?? [];
-  const text = content[0]?.text;
-  return {
-    text: typeof text === 'string' ? text : '',
-    isError: response.result?.isError === true,
-  };
+  return responses
+    .sort((left, right) => Number(left.id) - Number(right.id))
+    .map((response) => {
+      if (response.error) {
+        throw new Error('MCP error: ' + response.error.message);
+      }
+      const text = response.result?.content?.[0]?.text;
+      return {
+        text: typeof text === 'string' ? text : '',
+        isError: response.result?.isError === true,
+      };
+    });
 }
 
 describe('Python type server end to end (real analyzer)', () => {
-  beforeAll(async () => {
+  beforeAll(() => {
     const command = resolveRealTypeServerCommand();
     if (command === null) {
       skipReason =
@@ -317,10 +266,7 @@ describe('Python type server end to end (real analyzer)', () => {
       return;
     }
     typeServerCommand = command;
-    companionPort = await reservePort();
-    testHome = mkdtempSync(join(tmpdir(), 'zedge-tsp-e2e-home-'));
-    testWorkspace = mkdtempSync(join(tmpdir(), 'zedge-tsp-e2e-ws-'));
-    mkdirSync(join(testHome, '.edgework'), { recursive: true });
+    testWorkspace = mkdtempSync(join(tmpdir(), 'zedge-tsp-e2e-'));
     pythonFile = join(testWorkspace, 'app.py');
     writeFileSync(pythonFile, PY_SOURCE, 'utf8');
     writeFileSync(
@@ -328,56 +274,40 @@ describe('Python type server end to end (real analyzer)', () => {
       JSON.stringify({ include: ['app.py'], typeCheckingMode: 'basic' }, null, 2),
       'utf8'
     );
+    mkdirSync(join(testWorkspace, '.edgework'), { recursive: true });
 
-    const runtimeCommand = resolveTypeScriptEntrypointCommand(COMPANION_ENTRY);
-    companionProcess = spawn(runtimeCommand.command, [...runtimeCommand.args], {
-      cwd: testWorkspace,
-      env: {
-        ...process.env,
-        HOME: testHome,
-        AEON_ROOT: testWorkspace,
-        ZEDGE_COMPANION_PORT: String(companionPort),
-        ZEDGE_LISTENER_MODE: 'bun',
-        ZEDGE_TYPE_SERVER_COMMAND: typeServerCommand,
-        ZEDGE_TYPE_SERVER_TIMEOUT_MS: '60000',
-      },
-      detached: true,
-      stdio: ['ignore', 'pipe', 'pipe'],
-    });
-    companionProcess.stdout?.on('data', appendLogChunk);
-    companionProcess.stderr?.on('data', appendLogChunk);
-    await waitForHealth(companionPort);
-  }, 120_000);
+    process.env.AEON_ROOT = testWorkspace;
+    process.env.ZEDGE_TYPE_SERVER_COMMAND = typeServerCommand;
+    process.env.ZEDGE_TYPE_SERVER_TIMEOUT_MS = '60000';
+  }, 60_000);
 
-  afterAll(async () => {
-    if (companionProcess !== null) {
-      try {
-        process.kill(-(companionProcess.pid ?? 0), 'SIGTERM');
-      } catch {
-        companionProcess.kill('SIGTERM');
-      }
-      companionProcess = null;
+  afterAll(() => {
+    if (previousAeonRoot === undefined) {
+      delete process.env.AEON_ROOT;
+    } else {
+      process.env.AEON_ROOT = previousAeonRoot;
     }
-    if (testHome.length > 0) {
-      rmSync(testHome, { recursive: true, force: true });
+    if (previousCommand === undefined) {
+      delete process.env.ZEDGE_TYPE_SERVER_COMMAND;
+    } else {
+      process.env.ZEDGE_TYPE_SERVER_COMMAND = previousCommand;
     }
     if (testWorkspace.length > 0) {
       rmSync(testWorkspace, { recursive: true, force: true });
     }
   });
 
-  test('companion reports the configured real type server', async () => {
+  test('status reports the configured real type server', async () => {
     if (skipReason !== null) return;
-    const { status, payload } = await getJson<StatusPayload>('/tsp/status');
+    const { status, payload } = await callRoute<StatusPayload>('GET', '/tsp/status');
     expect(status).toBe(200);
     expect(payload.enabled).toBe(true);
     expect(payload.commandLine).toBe(typeServerCommand);
-    expect(Array.isArray(payload.sessions)).toBe(true);
   });
 
-  test('declared type of a union-annotated parameter over HTTP', async () => {
+  test('declared type of a union-annotated parameter', async () => {
     if (skipReason !== null) return;
-    const { status, payload } = await postJson<PythonTypePayload>('/tsp/type', {
+    const { status, payload } = await callRoute<PythonTypePayload>('POST', '/tsp/type', {
       file_path: pythonFile,
       line: 4,
       character: 11,
@@ -387,12 +317,14 @@ describe('Python type server end to end (real analyzer)', () => {
     expect(payload.available).toBe(true);
     expect(payload.kind).toBe('declared');
     expect(payload.text).toBe('int | str');
+    expect(payload.description?.kindName).toBe('Union');
+    expect(payload.range?.start.character).toBe(10);
     expect(typeof payload.snapshot).toBe('number');
   });
 
-  test('computed type narrows inside isinstance over HTTP', async () => {
+  test('computed type narrows inside isinstance', async () => {
     if (skipReason !== null) return;
-    const { status, payload } = await postJson<PythonTypePayload>('/tsp/type', {
+    const { status, payload } = await callRoute<PythonTypePayload>('POST', '/tsp/type', {
       file_path: pythonFile,
       line: 13,
       character: 8,
@@ -402,9 +334,21 @@ describe('Python type server end to end (real analyzer)', () => {
     expect(payload.text).toBe('int');
   });
 
-  test('expected type at a call argument over HTTP', async () => {
+  test('computed type keeps the literal at a call argument', async () => {
     if (skipReason !== null) return;
-    const { status, payload } = await postJson<PythonTypePayload>('/tsp/type', {
+    const { status, payload } = await callRoute<PythonTypePayload>('POST', '/tsp/type', {
+      file_path: pythonFile,
+      line: 8,
+      character: 12,
+      kind: 'computed',
+    });
+    expect(status).toBe(200);
+    expect(payload.text).toBe('Literal[1]');
+  });
+
+  test('expected type at a call argument', async () => {
+    if (skipReason !== null) return;
+    const { status, payload } = await callRoute<PythonTypePayload>('POST', '/tsp/type', {
       file_path: pythonFile,
       line: 8,
       character: 12,
@@ -414,9 +358,27 @@ describe('Python type server end to end (real analyzer)', () => {
     expect(payload.text).toBe('int');
   });
 
-  test('python search paths come from the analyzer over HTTP', async () => {
+  test('a zero-width range on an annotation yields no declared type', async () => {
     if (skipReason !== null) return;
-    const { status, payload } = await getJson<SearchPathsPayload>(
+    // Documents why token expansion exists: TSP answers for nodes, so an
+    // explicitly collapsed range can legitimately return nothing.
+    const { status, payload } = await callRoute<PythonTypePayload>('POST', '/tsp/type', {
+      file_path: pythonFile,
+      line: 4,
+      character: 20,
+      endLine: 4,
+      endCharacter: 20,
+      kind: 'declared',
+    });
+    expect(status).toBe(200);
+    expect(payload.text).toBe(null);
+    expect(typeof payload.reason).toBe('string');
+  });
+
+  test('python search paths come from the analyzer', async () => {
+    if (skipReason !== null) return;
+    const { status, payload } = await callRoute<SearchPathsPayload>(
+      'GET',
       '/tsp/search-paths?file_path=' + encodeURIComponent(pythonFile)
     );
     expect(status).toBe(200);
@@ -425,21 +387,22 @@ describe('Python type server end to end (real analyzer)', () => {
     expect((payload.paths ?? []).length).toBeGreaterThan(0);
   });
 
-  test('python import resolution comes from the analyzer over HTTP', async () => {
+  test('python import resolution comes from the analyzer', async () => {
     if (skipReason !== null) return;
-    const { status, payload } = await postJson<ResolveImportPayload>(
+    const { status, payload } = await callRoute<ResolveImportPayload>(
+      'POST',
       '/tsp/resolve-import',
       { file_path: pythonFile, module: 'os.path' }
     );
     expect(status).toBe(200);
     expect(typeof payload.resolvedUri).toBe('string');
-    expect(payload.resolvedUri ?? '').toContain('os');
-    expect(payload.resolvedPath ?? '').toContain('os');
+    expect(payload.resolvedUri ?? '').toContain('os/path');
   });
 
   test('a missing module resolves to null, not an error', async () => {
     if (skipReason !== null) return;
-    const { status, payload } = await postJson<ResolveImportPayload>(
+    const { status, payload } = await callRoute<ResolveImportPayload>(
+      'POST',
       '/tsp/resolve-import',
       { file_path: pythonFile, module: 'definitely_not_installed_zzz' }
     );
@@ -448,27 +411,30 @@ describe('Python type server end to end (real analyzer)', () => {
     expect(typeof payload.reason).toBe('string');
   });
 
-  test('the MCP bridge answers the same question over real stdio', async () => {
+  test('the MCP bridge answers over real stdio against the same analyzer', () => {
     if (skipReason !== null) return;
-    const declared = callMcpTool('zedge_python_type', {
-      path: 'app.py',
-      line: 4,
-      character: 11,
-      kind: 'declared',
-    });
-    expect(declared.isError).toBe(false);
-    expect(String(declared.text)).toContain('declared type: int | str');
-
-    const computed = callMcpTool('zedge_python_type', {
-      path: 'app.py',
-      line: 13,
-      character: 8,
-      kind: 'computed',
-    });
-    expect(String(computed.text)).toContain('computed type: int');
-
-    const status = callMcpTool('zedge_type_server_status', {});
-    expect(String(status.text)).toContain('"running": true');
-    expect(String(status.text)).toContain(typeServerCommand);
+    const results = callMcpTools([
+      {
+        name: 'zedge_python_type',
+        args: { path: 'app.py', line: 4, character: 11, kind: 'declared' },
+      },
+      {
+        name: 'zedge_python_type',
+        args: { path: 'app.py', line: 13, character: 8, kind: 'computed' },
+      },
+      {
+        name: 'zedge_python_resolve_import',
+        args: { path: 'app.py', module: 'os.path' },
+      },
+      { name: 'zedge_type_server_status', args: {} },
+    ]);
+    const [declared, computed, resolved, status] = results;
+    expect(declared?.isError).toBe(false);
+    expect(declared?.text).toContain('declared type: int | str');
+    expect(computed?.isError).toBe(false);
+    expect(computed?.text).toContain('computed type: int');
+    expect(resolved?.text).toContain('os/path');
+    expect(status?.text).toContain('"running": true');
+    expect(status?.text).toContain(typeServerCommand);
   });
 });

@@ -12,7 +12,9 @@ Runtime entrypoints, HTTP server surfaces, Babelfish routes, and the sidecar-onl
 
 - `tsp.ts` owns the Python type-server session: one TSP session per workspace, disk-backed document sync, idle shutdown, and command resolution through `ZEDGE_TYPE_SERVER_COMMAND` (default `pyright-typeserver --stdio`).
 - The protocol client, renderer, and fake server come from `@a0n/gnosis/polyglot-tsp`; see [TSP](../../../gnosis/docs/TYPE_SERVER_PROTOCOL.md) for message coverage, snapshot rules, and non-goals.
-- `mcp-stdio.ts` exposes `zedge_python_type`, `zedge_python_search_paths`, `zedge_python_resolve_import`, and `zedge_type_server_status`. Type queries take a zero-based line/character and default to the computed type.
+- `mcp-stdio.ts` exposes `zedge_python_type`, `zedge_python_search_paths`, `zedge_python_resolve_import`, and `zedge_type_server_status`. Type queries take a zero-based line/character and default to the computed type; the cursor is widened to the identifier under it because TSP answers for nodes.
+- `server.ts` mounts the same surface over HTTP: `POST /tsp/type`, `GET /tsp/search-paths`, `POST /tsp/resolve-import`, `GET /tsp/status`. The route audit pins them (inventory 235) with a generated fake type server.
+- `ZEDGE_MCP_AUTOSPAWN=0` makes the MCP bridge own no companion sidecar, so companion-independent tools (type queries, edit previews) work without one and cannot be starved by a spawn-retry loop.
 - `__tests__/tsp-mcp.test.ts` drives a generated child-process type server over stdio, so the suite needs no Python type checker installed.
 
 ## Highlights
