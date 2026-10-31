@@ -4015,8 +4015,25 @@ export async function main(): Promise<void> {
   return;
 }
 
+/**
+ * Whether this bridge owns a companion sidecar.
+ *
+ * Set ZEDGE_MCP_AUTOSPAWN=0 (or =false) when the companion is managed outside
+ * this process, or when only companion-independent tools -- the Python type
+ * server, edit previews -- are in play. Without the knob a bridge pointed at a
+ * workspace with no reachable companion retries spawns in a tight loop, which
+ * starves every tool call behind it.
+ */
+function companionAutospawnEnabled(): boolean {
+  const value = process.env.ZEDGE_MCP_AUTOSPAWN;
+  return value !== '0' && value !== 'false';
+}
+
 async function runMcpBridge(): Promise<void> {
   const companionStartup = (async () => {
+    if (!companionAutospawnEnabled()) {
+      return;
+    }
     const alreadyRunning = await isCompanionAlive();
     if (!alreadyRunning) {
       // console.log('Companion not running, spawning it...');
