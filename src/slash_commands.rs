@@ -242,7 +242,11 @@ pub fn run_models(args: &[String]) -> Result<SlashCommandOutput, String> {
     }
 
     if subcommand == "use" {
-        let Some(model_id) = args.get(1).map(|value| value.trim()).filter(|value| !value.is_empty()) else {
+        let Some(model_id) = args
+            .get(1)
+            .map(|value| value.trim())
+            .filter(|value| !value.is_empty())
+        else {
             return Ok(output_with_section(
                 "Usage: /edge-model use <model_id>".to_string(),
                 "Zedge Models",
@@ -767,7 +771,10 @@ pub fn run_voice(args: &[String]) -> Result<SlashCommandOutput, String> {
                 if let Ok(value) = serde_json::from_str::<serde_json::Value>(&body) {
                     Ok(output_with_section(render_voice_status(&value), "Voice"))
                 } else {
-                    Ok(output_with_section(format!("```json\n{body}\n```"), "Voice"))
+                    Ok(output_with_section(
+                        format!("```json\n{body}\n```"),
+                        "Voice",
+                    ))
                 }
             }
             Err(error) => Ok(output_with_section(format!("**Error**: {error}"), "Voice")),
@@ -798,7 +805,10 @@ pub fn run_voice(args: &[String]) -> Result<SlashCommandOutput, String> {
                             "Voice",
                         ))
                     } else {
-                        Ok(output_with_section(format!("```json\n{body}\n```"), "Voice"))
+                        Ok(output_with_section(
+                            format!("```json\n{body}\n```"),
+                            "Voice",
+                        ))
                     }
                 }
                 Err(error) => Ok(output_with_section(format!("**Error**: {error}"), "Voice")),
@@ -826,7 +836,10 @@ pub fn run_voice(args: &[String]) -> Result<SlashCommandOutput, String> {
                             "Voice",
                         ))
                     } else {
-                        Ok(output_with_section(format!("```json\n{body}\n```"), "Voice"))
+                        Ok(output_with_section(
+                            format!("```json\n{body}\n```"),
+                            "Voice",
+                        ))
                     }
                 }
                 Err(error) => Ok(output_with_section(format!("**Error**: {error}"), "Voice")),
@@ -1046,7 +1059,10 @@ pub fn run_mesh(args: &[String]) -> Result<SlashCommandOutput, String> {
                         if running { "running" } else { "stopped" }
                     ));
                     all_output.push_str(&format!("**Mesh**: `{}`\n", mesh_id));
-                    all_output.push_str(&format!("**Admitted**: {}\n", if admitted { "yes" } else { "no" }));
+                    all_output.push_str(&format!(
+                        "**Admitted**: {}\n",
+                        if admitted { "yes" } else { "no" }
+                    ));
                     all_output.push_str(&format!("**LAN Peers**: {}\n", lan_peers));
                     if !running {
                         all_output.push_str("\nStart with: `/edge-skymesh start`\n");
@@ -1055,7 +1071,7 @@ pub fn run_mesh(args: &[String]) -> Result<SlashCommandOutput, String> {
             }
 
             Ok(output_with_section(all_output, "Mesh"))
-        },
+        }
     }
 }
 
@@ -1068,14 +1084,20 @@ pub fn run_skymesh(args: &[String]) -> Result<SlashCommandOutput, String> {
                 format!("Skymesh bridge started.\n\n```json\n{body}\n```"),
                 "Skymesh Start",
             )),
-            Err(e) => Ok(output_with_section(format!("**Error**: {e}"), "Skymesh Start")),
+            Err(e) => Ok(output_with_section(
+                format!("**Error**: {e}"),
+                "Skymesh Start",
+            )),
         },
         "stop" => match companion_post("/skymesh/bridge/stop") {
             Ok(body) => Ok(output_with_section(
                 format!("Skymesh bridge stopped.\n\n```json\n{body}\n```"),
                 "Skymesh Stop",
             )),
-            Err(e) => Ok(output_with_section(format!("**Error**: {e}"), "Skymesh Stop")),
+            Err(e) => Ok(output_with_section(
+                format!("**Error**: {e}"),
+                "Skymesh Stop",
+            )),
         },
         "warm" => {
             if args.len() < 2 {
@@ -1085,10 +1107,13 @@ pub fn run_skymesh(args: &[String]) -> Result<SlashCommandOutput, String> {
                 ));
             }
             let prompt = args[1..].join(" ");
-            match companion_post_json("/skymesh/warm", serde_json::json!({
-                "prompt": prompt,
-                "model": "qwen2-0.5b-instruct"
-            })) {
+            match companion_post_json(
+                "/skymesh/warm",
+                serde_json::json!({
+                    "prompt": prompt,
+                    "model": "qwen2-0.5b-instruct"
+                }),
+            ) {
                 Ok(body) => {
                     if let Ok(v) = serde_json::from_str::<serde_json::Value>(&body) {
                         let hit = v["hit"].as_bool().unwrap_or(false);
@@ -1102,10 +1127,16 @@ pub fn run_skymesh(args: &[String]) -> Result<SlashCommandOutput, String> {
                             "Skymesh Warm",
                         ))
                     } else {
-                        Ok(output_with_section(format!("```json\n{body}\n```"), "Skymesh Warm"))
+                        Ok(output_with_section(
+                            format!("```json\n{body}\n```"),
+                            "Skymesh Warm",
+                        ))
                     }
                 }
-                Err(e) => Ok(output_with_section(format!("**Error**: {e}"), "Skymesh Warm")),
+                Err(e) => Ok(output_with_section(
+                    format!("**Error**: {e}"),
+                    "Skymesh Warm",
+                )),
             }
         }
         _ => match companion_get("/skymesh/bridge/status") {
@@ -1132,7 +1163,10 @@ pub fn run_skymesh(args: &[String]) -> Result<SlashCommandOutput, String> {
                     }
                     Ok(output_with_section(parts.join("\n"), "Skymesh"))
                 } else {
-                    Ok(output_with_section(format!("```json\n{body}\n```"), "Skymesh"))
+                    Ok(output_with_section(
+                        format!("```json\n{body}\n```"),
+                        "Skymesh",
+                    ))
                 }
             }
             Err(e) => Ok(output_with_section(
@@ -1169,10 +1203,16 @@ pub fn run_team(args: &[String]) -> Result<SlashCommandOutput, String> {
                             "Team Create",
                         ))
                     } else {
-                        Ok(output_with_section(format!("```json\n{body}\n```"), "Team Create"))
+                        Ok(output_with_section(
+                            format!("```json\n{body}\n```"),
+                            "Team Create",
+                        ))
                     }
                 }
-                Err(e) => Ok(output_with_section(format!("**Error**: {e}"), "Team Create")),
+                Err(e) => Ok(output_with_section(
+                    format!("**Error**: {e}"),
+                    "Team Create",
+                )),
             }
         }
         "join" => {
@@ -1197,7 +1237,10 @@ pub fn run_team(args: &[String]) -> Result<SlashCommandOutput, String> {
                             "Team Join",
                         ))
                     } else {
-                        Ok(output_with_section(format!("```json\n{body}\n```"), "Team Join"))
+                        Ok(output_with_section(
+                            format!("```json\n{body}\n```"),
+                            "Team Join",
+                        ))
                     }
                 }
                 Err(e) => Ok(output_with_section(format!("**Error**: {e}"), "Team Join")),
@@ -1216,16 +1259,20 @@ pub fn run_team(args: &[String]) -> Result<SlashCommandOutput, String> {
                     let deep_link = v["deepLink"].as_str().unwrap_or("");
                     let expires_at = v["expiresAt"].as_str().unwrap_or("?");
                     Ok(output_with_section(
-                        format!(
-                            "Invite link (expires {expires_at}):\n```\n{deep_link}\n```"
-                        ),
+                        format!("Invite link (expires {expires_at}):\n```\n{deep_link}\n```"),
                         "Team Invite",
                     ))
                 } else {
-                    Ok(output_with_section(format!("```json\n{body}\n```"), "Team Invite"))
+                    Ok(output_with_section(
+                        format!("```json\n{body}\n```"),
+                        "Team Invite",
+                    ))
                 }
             }
-            Err(e) => Ok(output_with_section(format!("**Error**: {e}"), "Team Invite")),
+            Err(e) => Ok(output_with_section(
+                format!("**Error**: {e}"),
+                "Team Invite",
+            )),
         },
         _ => match companion_get("/teams/status") {
             Ok(body) => {
@@ -1239,7 +1286,14 @@ pub fn run_team(args: &[String]) -> Result<SlashCommandOutput, String> {
                         "## Team Status\n".to_string(),
                         format!("**Team**: `{}` ({})", team_id, team_name),
                         format!("**Members**: {}", member_count),
-                        format!("**Bridge**: {}", if bridge_admitted { "admitted" } else { "pending" }),
+                        format!(
+                            "**Bridge**: {}",
+                            if bridge_admitted {
+                                "admitted"
+                            } else {
+                                "pending"
+                            }
+                        ),
                         format!("**LAN Peers**: {}", lan_peers),
                     ];
                     parts.push("\nCreate with: `/edge-team create <name>`".to_string());
@@ -2672,10 +2726,7 @@ pub fn run_agent(args: &[String]) -> Result<SlashCommandOutput, String> {
             if let Some(provider) = provider {
                 payload["provider"] = serde_json::json!(provider);
             }
-            companion_post_json(
-                "/moonshine/agent/exec",
-                payload,
-            )
+            companion_post_json("/moonshine/agent/exec", payload)
         }
         "permissions" => companion_get("/moonshine/agent/permissions"),
         "providers" => companion_get("/moonshine/agent/providers"),
@@ -2809,8 +2860,17 @@ pub fn run_agent(args: &[String]) -> Result<SlashCommandOutput, String> {
         Ok(body) => {
             if matches!(
                 sub,
-                "run" | "permissions" | "providers" | "runs" | "replay" | "verify"
-                    | "tools" | "approve-tool" | "deny-tool" | "approve" | "deny"
+                "run"
+                    | "permissions"
+                    | "providers"
+                    | "runs"
+                    | "replay"
+                    | "verify"
+                    | "tools"
+                    | "approve-tool"
+                    | "deny-tool"
+                    | "approve"
+                    | "deny"
             ) {
                 Ok(output_with_section(
                     format!("## Moonshine Agent\n\n```json\n{body}\n```"),
@@ -2827,8 +2887,17 @@ pub fn run_agent(args: &[String]) -> Result<SlashCommandOutput, String> {
             format!("**Error**: {e}"),
             if matches!(
                 sub,
-                "run" | "permissions" | "providers" | "runs" | "replay" | "verify"
-                    | "tools" | "approve-tool" | "deny-tool" | "approve" | "deny"
+                "run"
+                    | "permissions"
+                    | "providers"
+                    | "runs"
+                    | "replay"
+                    | "verify"
+                    | "tools"
+                    | "approve-tool"
+                    | "deny-tool"
+                    | "approve"
+                    | "deny"
             ) {
                 "Moonshine Agent"
             } else {
