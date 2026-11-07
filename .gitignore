@@ -15,5 +15,7 @@ node_modules/
 # Regenerated local build and agent output.
 /companion/dist/
 
-# gnit content-addressed blob store: reclaimable history, not Git history (manifests stay tracked).
-.forge/blobs/
+# gnit runtime state: content-addressed blob store and the git-sha1 <-> gnit-oid
+# round-trip index (oid-map.json). Regenerable, not Git history; manifests
+# (.forge/HEAD, chain, refs/, native-artifacts.json) that are already tracked stay tracked.
+.forge/*
