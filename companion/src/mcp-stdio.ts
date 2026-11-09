@@ -2394,12 +2394,34 @@ export async function handleToolsList(): Promise<Record<string, unknown>> {
           properties: {
             action: {
               type: 'string',
-              enum: ['status', 'candidates', 'dream', 'accept', 'reject'],
+              enum: ['status', 'candidates', 'dream', 'structural', 'structural_witness', 'structural_preview', 'structural_undo', 'structural_metrics', 'accept', 'reject'],
               description: 'Action to perform (default: candidates)',
             },
             file_path: {
               type: 'string',
               description: 'File path for dream action',
+            },
+            rule: {
+              type: 'string',
+              description:
+                'Scanner rule to seed a structural candidate (for example FUNCTION_TOO_LONG)',
+            },
+            line: {
+              type: 'number',
+              description: 'Scanner line for the structural seed',
+            },
+            pattern_hash: {
+              type: 'string',
+              description: 'Scanner pattern hash for the structural seed',
+            },
+            token: {
+              type: 'string',
+              description:
+                'Single-use preview token from structural_preview; required to apply',
+            },
+            undo_token: {
+              type: 'string',
+              description: 'Undo token returned by a successful structural apply',
             },
             id: {
               type: 'string',
@@ -3712,6 +3734,55 @@ export async function handleToolCall(
               return fetch(`${getCompanionBase()}/cera/daydream/candidates`, {
                 signal: AbortSignal.timeout(10_000),
               });
+            case 'structural': {
+              const url =
+                getCompanionBase() +
+                '/cera/daydream/structural?file=' +
+                encodeURIComponent(String(args.file_path ?? '')) +
+                '&rule=' +
+                encodeURIComponent(String(args.rule ?? '')) +
+                '&line=' +
+                encodeURIComponent(String(args.line ?? 0)) +
+                (args.pattern_hash
+                  ? '&patternHash=' + encodeURIComponent(String(args.pattern_hash))
+                  : '');
+              return fetch(url, { signal: AbortSignal.timeout(120_000) });
+            }
+            case 'structural_witness':
+              return fetch(
+                getCompanionBase() + '/cera/daydream/structural/witness',
+                {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ id: args.id }),
+                  signal: AbortSignal.timeout(120_000),
+                }
+              );
+            case 'structural_preview':
+              return fetch(
+                getCompanionBase() + '/cera/daydream/structural/preview',
+                {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ id: args.id }),
+                  signal: AbortSignal.timeout(120_000),
+                }
+              );
+            case 'structural_undo':
+              return fetch(
+                getCompanionBase() + '/cera/daydream/structural/undo',
+                {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ undo: args.undo_token }),
+                  signal: AbortSignal.timeout(120_000),
+                }
+              );
+            case 'structural_metrics':
+              return fetch(
+                getCompanionBase() + '/cera/daydream/structural/metrics',
+                { signal: AbortSignal.timeout(10_000) }
+              );
             case 'dream':
               return fetch(`${getCompanionBase()}/cera/daydream/dream`, {
                 method: 'POST',
@@ -3723,7 +3794,7 @@ export async function handleToolCall(
               return fetch(`${getCompanionBase()}/cera/daydream/accept`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ id: args.id, apply: true }),
+                body: JSON.stringify({ id: args.id, apply: true, token: args.token }),
                 signal: AbortSignal.timeout(120_000),
               });
             case 'reject':

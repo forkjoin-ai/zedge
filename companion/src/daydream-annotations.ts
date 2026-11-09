@@ -40,7 +40,8 @@ export interface DaydreamAnnotationEvent {
     | 'daydream-candidate'
     | 'daydream-cycle-complete'
     | 'daydream-accepted'
-    | 'daydream-rejected';
+    | 'daydream-rejected'
+    | 'daydream-retracted';
   candidate?: DaydreamCandidate;
   cycle?: {
     filePath: string;
@@ -48,6 +49,8 @@ export interface DaydreamAnnotationEvent {
     durationMs: number;
     model: string;
   };
+  candidateId?: string;
+  reason?: string;
   timestamp: number;
 }
 
@@ -154,6 +157,18 @@ export function broadcastAccepted(candidate: DaydreamCandidate): void {
   broadcastEvent({
     type: 'daydream-accepted',
     candidate,
+    timestamp: Date.now(),
+  });
+}
+
+/**
+ * Retract a hint whose witness failed; the editor should remove it.
+ */
+export function broadcastRetracted(candidateId: string, reason: string): void {
+  broadcastEvent({
+    type: 'daydream-retracted',
+    candidateId,
+    reason,
     timestamp: Date.now(),
   });
 }

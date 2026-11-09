@@ -4718,6 +4718,46 @@ export async function handleWebRequest(req: Request): Promise<Response> {
     return jsonResponse({ diagnostics, count: diagnostics.length });
   }
 
+  if (path === '/cera/daydream/structural/witness' && req.method === 'POST') {
+    const body = (await req.json()) as { id?: string };
+    if (!body.id) return jsonResponse({ error: 'id is required' }, 400);
+    const { witnessStructuralCandidate } = await import('./structural-daydream.ts');
+    const witness = witnessStructuralCandidate(body.id);
+    if (witness === null) {
+      return jsonResponse({ error: 'Candidate not found' }, 404);
+    }
+    return jsonResponse(witness);
+  }
+
+  if (path === '/cera/daydream/structural/preview' && req.method === 'POST') {
+    const body = (await req.json()) as { id?: string };
+    if (!body.id) return jsonResponse({ error: 'id is required' }, 400);
+    const { previewStructuralCandidate } = await import('./structural-daydream.ts');
+    const preview = previewStructuralCandidate(body.id);
+    if (preview === null) {
+      return jsonResponse({ error: 'No admissible preview' }, 409);
+    }
+    return jsonResponse(preview);
+  }
+
+  if (path === '/cera/daydream/structural/undo' && req.method === 'POST') {
+    const body = (await req.json()) as { undo?: string };
+    if (!body.undo) return jsonResponse({ error: 'undo token is required' }, 400);
+    const { undoStructuralApply } = await import('./structural-daydream.ts');
+    const result = undoStructuralApply(body.undo);
+    return jsonResponse(result, result.undone ? 200 : 409);
+  }
+
+  if (path === '/cera/daydream/structural/metrics' && req.method === 'GET') {
+    const { structuralMetricsSummary, structuralMetricsRecords } = await import(
+      './structural-daydream.ts'
+    );
+    return jsonResponse({
+      summary: structuralMetricsSummary(),
+      records: structuralMetricsRecords(),
+    });
+  }
+
   if (path === '/cera/daydream/status' && req.method === 'GET') {
     const { daydreamEngine } = await import('./daydream.ts');
     return jsonResponse(daydreamEngine.getStatus());
@@ -4726,6 +4766,40 @@ export async function handleWebRequest(req: Request): Promise<Response> {
   if (path === '/cera/daydream/candidates' && req.method === 'GET') {
     const { daydreamEngine } = await import('./daydream.ts');
     return jsonResponse(daydreamEngine.getCandidates());
+  }
+
+  // Deterministic structural daydream: the same gutter shape, no inference.
+  if (path === '/cera/daydream/structural' && req.method === 'GET') {
+    const fileParam = url.searchParams.get('file');
+    if (!fileParam) {
+      return jsonResponse({ error: 'file query param required' }, 400);
+    }
+    try {
+      const { structuralDaydreamForFile } = await import('./structural-daydream.ts');
+      const rule = url.searchParams.get('rule');
+      const line = Number(url.searchParams.get('line') ?? '0');
+      const patternHash = url.searchParams.get('patternHash');
+      const targetFinding =
+        rule === null
+          ? undefined
+          : {
+              file: fileParam,
+              line: Number.isFinite(line) ? line : 0,
+              rule,
+              ...(patternHash === null ? {} : { patternHash }),
+            };
+      return jsonResponse(
+        structuralDaydreamForFile(
+          fileParam,
+          targetFinding === undefined ? {} : { targetFinding }
+        )
+      );
+    } catch (cause) {
+      return jsonResponse(
+        { error: cause instanceof Error ? cause.message : String(cause) },
+        400
+      );
+    }
   }
 
   if (path === '/cera/daydream/dream' && req.method === 'POST') {
@@ -4740,8 +4814,35 @@ export async function handleWebRequest(req: Request): Promise<Response> {
 
   if (path === '/cera/daydream/accept' && req.method === 'POST') {
     const { daydreamEngine } = await import('./daydream.ts');
-    const body = (await req.json()) as { id?: string; apply?: boolean };
+    const body = (await req.json()) as {
+      id?: string;
+      apply?: boolean;
+      token?: string;
+    };
     if (!body.id) return jsonResponse({ error: 'id is required' }, 400);
+    const { applyStructuralCandidate, previewStructuralCandidate } = await import(
+      './structural-daydream.ts'
+    );
+    let structural = null;
+    if (body.apply !== false) {
+      let token = body.token;
+      if (token === undefined) {
+        const preview = previewStructuralCandidate(body.id);
+        token = preview?.token;
+      }
+      structural =
+        token === undefined
+          ? {
+              applied: false,
+              kind: 'function-extraction',
+              files: [],
+              reason: 'no admissible preview token',
+            }
+          : applyStructuralCandidate(body.id, token);
+    }
+    if (structural !== null) {
+      return jsonResponse({ accepted: structural.applied, structural });
+    }
     const candidate = daydreamEngine.acceptCandidate(body.id);
     if (!candidate) return jsonResponse({ error: 'Candidate not found' }, 404);
 
@@ -4767,6 +4868,10 @@ export async function handleWebRequest(req: Request): Promise<Response> {
     const { daydreamEngine } = await import('./daydream.ts');
     const body = (await req.json()) as { id?: string };
     if (!body.id) return jsonResponse({ error: 'id is required' }, 400);
+    const { rejectStructuralCandidate } = await import('./structural-daydream.ts');
+    if (rejectStructuralCandidate(body.id)) {
+      return jsonResponse({ rejected: true, structural: true });
+    }
     const candidate = daydreamEngine.rejectCandidate(body.id);
     if (!candidate) return jsonResponse({ error: 'Candidate not found' }, 404);
     return jsonResponse({ rejected: true, candidate });
