@@ -43,6 +43,7 @@ export const CODESTRAL_ZEDGE_MODEL_ID = 'codestral-22b';
 export const QWEN3_CODER_NEXT_MODEL_ID = 'qwen3-coder-next';
 export const MUSE_GLIMMER_MODEL_ID = 'muse-glimmer-30b-3';
 export const QWEN_UNCENSORED_27B_MODEL_ID = 'qwen-uncensored-27b';
+export const QWEN35_4B_UNCENSORED_MODEL_ID = 'qwen35-4b-uncensored';
 /** SSM on CF skymesh (`apps/ssm-mini` via skymesh.forkjoin.ai). Not a local fat-station. */
 export const RWKV7_MINI_MODEL_ID = 'rwkv7-mini';
 export const DEFAULT_ZEDGE_PREFERRED_MODEL_ID = RWKV7_MINI_MODEL_ID;
@@ -94,6 +95,8 @@ export function isSupersededDefaultModelId(modelId: string): boolean {
 const ZEDGE_MODEL_ALIASES = new Map<string, string>([
   ['codestral', CODESTRAL_ZEDGE_MODEL_ID],
   ['qwen38', QWEN_UNCENSORED_27B_MODEL_ID],
+  ['qwen35-4b', QWEN35_4B_UNCENSORED_MODEL_ID],
+  ['qwen3.5-4b', QWEN35_4B_UNCENSORED_MODEL_ID],
 ]);
 
 /**
@@ -299,6 +302,16 @@ const KNOWN_ZEDGE_MODELS: KnownZedgeModel[] = [
     forkjoinTier: true,
   },
   {
+    // Qwen3.5 4B dense-hybrid (Gated-DeltaNet + full-attn). Served by the
+    // local fat-station Qwen35Moe pipeline with per-token /generate-stream.
+    id: QWEN35_4B_UNCENSORED_MODEL_ID,
+    displayName: 'Qwen3.5 4B Uncensored (local Aether)',
+    maxTokens: 512,
+    ownedBy: 'gnosis',
+    sensitiveContent: 'adult',
+    forkjoinTier: true,
+  },
+  {
     // ADMITTED (Paris 6671 rank0, nan=0). Falcon-Mamba is Mamba-1 + weightless
     // RMSNorms on B/C/dt (FalconMamba's stability addition); fixes: d_inner
     // derived from conv weight (config expand=16 was wrong→8192), and the
@@ -469,6 +482,7 @@ export function isForkjoinTierModel(modelId: string): boolean {
     normalized === 'gnosis-local' ||
     normalized.startsWith('gnosis-local') ||
     normalized.startsWith('qwen-coder') ||
+    normalized.startsWith('qwen35') ||
     normalized.startsWith('codestral') ||
     normalized.startsWith('forkjoin')
   );
