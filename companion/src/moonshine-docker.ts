@@ -1558,8 +1558,13 @@ async function startLocalMoonshine(
     return false;
   }
 
-  const { modelName, layerRange, tokenizerGgufPath, tokenizerJsonPath } =
-    config;
+  const {
+    modelName,
+    layerRange,
+    tokenizerGgufPath,
+    tokenizerGgufUrl,
+    tokenizerJsonPath,
+  } = config;
 
   const fatStationRuntime = await ensureFatStationResponsive(
     config,
@@ -1659,6 +1664,7 @@ async function startLocalMoonshine(
         ? { AUX_KNOT_PATH: process.env.ZEDGE_MOONSHINE_AUX_KNOT }
         : {}),
       ...(tokenizerGgufPath ? { TOKENIZER_GGUF_PATH: tokenizerGgufPath } : {}),
+      ...(tokenizerGgufUrl ? { TOKENIZER_GGUF_URL: tokenizerGgufUrl } : {}),
     },
     stdoutPath: '/tmp/moonshine-openai-compat-launchd.out.log',
     stderrPath: '/tmp/moonshine-openai-compat-launchd.err.log',

@@ -27,6 +27,8 @@ describe('qwen35 zedge lane gate', () => {
     expect(source).toContain('qwen35-4b-uncensored-tokenizer.gguf');
     expect(source).toContain('edgework-web.taylorbuley.workers.dev');
     expect(source).toContain('TOKENIZER_GGUF_URL: config.tokenizerGgufUrl');
+    expect(source).toContain('TOKENIZER_GGUF_URL: tokenizerGgufUrl');
+    expect(source).toContain('tokenizerGgufUrl,');
     expect(source).toContain('if (spec?.tokenizerGgufUrl)');
   });
 
