@@ -395,9 +395,9 @@ const LOCAL_MOONSHINE_MODELS: Record<string, LocalMoonshineModelSpec> = {
       'qwen35-4b-uncensored-q4km.knot'
     ),
     denseFallbackUrl:
-      R2_DENSE_KNOT_BASE + '/qwen35-4b-uncensored-q4km.knot',
+      'https://edgework-web.taylorbuley.workers.dev/api/v1/r2/distributed-inference/models/qwen35-4b-uncensored-q4km.knot',
     tokenizerGgufUrl:
-      R2_DENSE_KNOT_BASE + '/qwen35-4b-uncensored-tokenizer.gguf',
+      'https://edgework-web.taylorbuley.workers.dev/api/v1/r2/distributed-inference/models/qwen35-4b-uncensored-tokenizer.gguf',
   },
   // ADMITTED (Paris 6671 rank0) after d_inner-from-weights + weightless B/C/dt
   // RMSNorms (FalconMamba is Mamba-1 + those norms). falcon-mamba->MambaPipeline.
