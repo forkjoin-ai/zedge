@@ -1,0 +1,15 @@
+{
+  "ok": true,
+  "results": [
+    {
+      "file": "qwen35-4b-uncensored-q4km.knot",
+      "status": 206,
+      "ok": true
+    },
+    {
+      "file": "qwen35-4b-uncensored-tokenizer.gguf",
+      "status": 206,
+      "ok": true
+    }
+  ]
+}
