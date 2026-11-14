@@ -1,0 +1,14 @@
+{
+  "recordedAt": "2026-11-14T16:11:00.745Z",
+  "base": "https://aeon-puppet-qwen35-4b-cf.taylorbuley.workers.dev",
+  "stream": {
+    "status": 200,
+    "deltas": 24,
+    "content": "Here is the count from one to five in words:\n\n1. One\n2. Two\n3. Three\n"
+  },
+  "tool": {
+    "status": 200,
+    "name": "ping",
+    "args": "{}"
+  }
+}
