@@ -1,7 +1,12 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, test } from '@a0n/gnosis/test';
 
-import { getKnownZedgeModel, isForkjoinTierModel } from '../model-catalog.ts';
+import {
+  getKnownZedgeModel,
+  isForkjoinTierModel,
+  isModelVisible,
+  normalizeZedgeModelId,
+} from '../model-catalog.ts';
 import { buildForkjoinRequestBody } from '../inference-bridge.ts';
 
 describe('qwen35 zedge lane gate', () => {
@@ -10,6 +15,9 @@ describe('qwen35 zedge lane gate', () => {
     expect(model?.maxTokens).toBe(512);
     expect(model?.forkjoinTier).toBe(true);
     expect(isForkjoinTierModel('qwen35-4b-uncensored')).toBe(true);
+    expect(normalizeZedgeModelId('qwen35-4b')).toBe('qwen35-4b-uncensored');
+    expect(normalizeZedgeModelId('qwen3.5-4b')).toBe('qwen35-4b-uncensored');
+    expect(isModelVisible('qwen35-4b-uncensored')).toBe(false);
   });
 
   test('local spec carries real artifact URLs and a dedicated tokenizer', () => {
